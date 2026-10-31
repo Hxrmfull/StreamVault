@@ -9,6 +9,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Console commands in English:** `record`, `download`, `info`,
+  `platforms` and `--help` speak the window's language — from the
+  settings, or the Windows language until it is chosen.
 - **New logo:** a safe door on hinges with a combination lock and a play
   button, and a red recording dot in the corner — in the window, the
   exe, the installer and the README. The tray icon shows the dot only

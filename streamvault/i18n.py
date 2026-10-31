@@ -10,8 +10,8 @@
 в настройках. Всё, что не русское, показывается по-английски: своего
 перевода для других языков нет, а английский понятнее русского для иностранца.
 
-Переводятся окно, сообщения об ошибках и журнал. Консольные команды
-остаются на русском — это инструмент для своих.
+Переводятся окно, сообщения об ошибках, журнал и консольные команды —
+у них язык тот же, что у окна (cli.choose_language).
 """
 
 import locale
@@ -592,4 +592,86 @@ STRINGS = {
     'не узнать, когда начался эфир': 'cannot tell when the stream started',
     'у канала выключен архив прошедших эфиров': 'the channel has past broadcasts turned off',
     'у этой площадки начала эфира не взять': 'this platform cannot give the start of a stream',
+    # консольные команды (cli.py)
+    'StreamVault {version}: запись эфиров и скачивание записей и клипов Twitch, Kick, YouTube, VK Video Live':
+        'StreamVault {version}: records live streams and downloads VODs and clips from Twitch, Kick, YouTube and VK Video Live',
+    'ФАЙЛ': 'FILE',
+    'файл настроек (по умолчанию settings.json рядом с программой)':
+        'settings file (settings.json next to the program by default)',
+    'КОМАНДА': 'COMMAND',
+    'УРОВЕНЬ': 'LEVEL',
+    'открыть окно программы (так же без команды)':
+        'open the program window (also without a command)',
+    'открыть в браузере, а не в отдельном окне':
+        'open in the browser instead of a separate window',
+    'порт для режима браузера': 'port for the browser mode',
+    'не открывать браузер самому, только напечатать адрес':
+        "don't open the browser, only print the address",
+    'запуститься свёрнутым в трей, без окна': 'start minimized to the tray, without a window',
+    'записывать эфиры, пока не нажат Ctrl+C': 'record live streams until Ctrl+C is pressed',
+    '[ПЛАТФОРМА:]КАНАЛ': '[PLATFORM:]CHANNEL',
+    'например kick:xqc или legendaafk; можно повторять и перечислять через запятую. Без префикса — twitch. С этим ключом список каналов в настройках не меняется':
+        "for example kick:xqc or legendaafk; can be repeated or comma-separated. Without a prefix it's twitch. The channel list in the settings isn't changed",
+    'КАЧЕСТВО': 'QUALITY',
+    'качество записи, например best или 720p': 'recording quality, for example best or 720p',
+    'не конвертировать, просто переносить записи': "don't convert, just move the recordings",
+    'скачать записи и клипы по ссылкам': 'download VODs and clips by links',
+    'ССЫЛКА': 'LINK',
+    'best, worst, audio, высота кадра (1080, 720...) или формат из команды info':
+        'best, worst, audio, frame height (1080, 720...) or a format from the info command',
+    'НАЧАЛО-КОНЕЦ': 'START-END',
+    'скачать только отрезок, например 1:00:00-1:30:00':
+        'download only a section, for example 1:00:00-1:30:00',
+    'скачать заново, даже если уже скачано': 'download again even if already downloaded',
+    'чат записей и клипов Twitch через TwitchDownloader: none, text (HTML и JSON) или render (ещё и видео чата); по умолчанию — как в настройках':
+        'chat of Twitch VODs and clips via TwitchDownloader: none, text (HTML and JSON) or render (also a chat video); by default as in the settings',
+    'что лежит по ссылке или какие записи есть у канала':
+        'what is at a link, or which VODs a channel has',
+    'ССЫЛКА|ПЛАТФОРМА:КАНАЛ': 'LINK|PLATFORM:CHANNEL',
+    'vods, clips, highlights, uploads (Twitch), videos, shorts (YouTube); по умолчанию vods':
+        'vods, clips, highlights, uploads (Twitch), videos, shorts (YouTube); vods by default',
+    'за какой срок клипы Twitch: 24hr, 7d, 30d, all':
+        'period for Twitch clips: 24hr, 7d, 30d, all',
+    'сколько записей показать': 'how many entries to show',
+    'показать поддерживаемые платформы': 'show the supported platforms',
+    'перенести config.py старого рекордера в настройки':
+        'import config.py of the old recorder into the settings',
+    'перезаписать уже существующий файл настроек': 'overwrite an existing settings file',
+    'опрос раз в {seconds} с': 'checked every {seconds} s',
+    'ошибка: StreamVault уже запущен — окном или другой консольной командой. Закрой его или добавь каналы и ссылки в нём':
+        'error: StreamVault is already running — as a window or another console command. Close it or add the channels and links there',
+    'ошибка: {error}': 'error: {error}',
+    'неизвестный уровень логирования: {level}': 'unknown log level: {level}',
+    '{path} уже есть. Чтобы перезаписать, добавь --force':
+        '{path} already exists. Add --force to overwrite it',
+    'не удалось прочитать {path}: {error}': "couldn't read {path}: {error}",
+    'настройки сохранены в {path}': 'settings saved to {path}',
+    'каналов: {count}{names}': 'channels: {count}{names}',
+    'ключи Twitch перенесены': 'Twitch keys imported',
+    'не задан ни один канал: добавь каналы в {path} (channels) или передай -u':
+        'no channels: add them to {path} (channels) or pass -u',
+    'повторный Ctrl+C — выхожу, не дожидаясь обработки. Необработанные записи подхватятся при следующем запуске':
+        'Ctrl+C again — exiting without waiting for processing. Unprocessed recordings will be picked up on the next start',
+    'осталось необработанных записей: {count}. Они подхватятся при следующем запуске':
+        'unprocessed recordings left: {count}. They will be picked up on the next start',
+    'Б': 'B',
+    'КБ': 'KB',
+    'МБ': 'MB',
+    'ГБ': 'GB',
+    'чат': 'chat',
+    '{done} из {total}': '{done} of {total}',
+    '{size}/с': '{size}/s',
+    'осталось {time}': '{time} left',
+    'склейка': 'merging',
+    'начинаю': 'starting',
+    'уже скачано: {path} (заново — с --force)':
+        'already downloaded: {path} (again with --force)',
+    'остановлено. Скачанное сохранено: та же команда продолжит загрузку с того же места':
+        'stopped. What was downloaded is kept: the same command resumes from the same place',
+    'скачано {done} из {total}': 'downloaded {done} of {total}',
+    'канал': 'channel',
+    'дата': 'date',
+    'длительность': 'duration',
+    'качество': 'quality',
+    'пусто': 'empty',
 }

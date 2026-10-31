@@ -18,7 +18,8 @@ Records live streams and downloads VODs and clips from **Twitch**, **Kick**,
 is live, record with one click or automatically, and watch recordings with
 the chat running alongside, all in a window that looks like a streaming site.
 
-The interface is in English and Russian; switch the language in the settings.
+The interface is in English and Russian; switch the language in the settings. The console
+commands speak the same language.
 
 ![StreamVault window](docs/screenshot.png)
 
