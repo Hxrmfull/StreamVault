@@ -351,30 +351,19 @@ export function liveQualityLabel(quality) {
   return LIVE_QUALITY_NOTES[quality] ? t(LIVE_QUALITY_NOTES[quality]) : quality || "";
 }
 
-// сколько дней хранить записи канала; пусто — как в настройках
+// сколько дней хранить записи канала
 export const KEEP_DAYS = [0, 7, 14, 30, 60, 90, 180, 365];
 
 export function keepDaysLabel(days) {
-  if (days === null || days === undefined) {
-    const general = state.settings.keep_days || 0;
-    return t("как в настройках ({keep})", { keep: general ? general + " " + tp(general, "день|дня|дней") : t("всегда") });
-  }
   return days ? t("хранить {keep}", { keep: days + " " + tp(days, "день|дня|дней") }) : t("хранить всегда");
-}
-
-export function setKeepDays(select, days) {
-  const value = days === null || days === undefined ? "" : String(days);
-  if (![...select.options].some((option) => option.value === value)) {
-    select.append(h("option", { value: value, text: keepDaysLabel(days) }));
-  }
-  select.value = value;
 }
 
 export function keepDaysSelect(days) {
   const select = h("select", { title: t("Сколько дней хранить записи канала: старые уходят в корзину вместе с чатом") },
-    h("option", { value: "", text: keepDaysLabel(null) }),
     KEEP_DAYS.map((value) => h("option", { value: String(value), text: keepDaysLabel(value) })));
-  setKeepDays(select, days);
+  // своё число, вписанное в settings.json руками, тоже должно показываться
+  if (!KEEP_DAYS.includes(days)) select.append(h("option", { value: String(days), text: keepDaysLabel(days) }));
+  select.value = String(days);
   return select;
 }
 
@@ -401,16 +390,10 @@ export function chatSelect(value) {
 /*
  * Качество записи — выпадающим списком. Раньше было поле с подсказками,
  * и браузер показывал в них только похожее на уже введённое: выбрав
- * "best", другое качество было уже не выбрать. inherit — подпись пустого
- * варианта ("как в настройках"), если он нужен.
+ * "best", другое качество было уже не выбрать.
  */
-export function liveQualitySelect(value, inherit) {
+export function liveQualitySelect(value) {
   const select = h("select", { title: t("Качество записи") });
-  // «как в настройках» — и какое там стоит
-  if (inherit) {
-    const inherited = state.settings && state.settings.quality;
-    select.append(h("option", { value: "", text: inherited ? inherit + " (" + liveQualityLabel(inherited) + ")" : inherit }));
-  }
   for (const quality of LIVE_QUALITIES) select.append(h("option", { value: quality, text: liveQualityLabel(quality) }));
   setLiveQuality(select, value);
   return select;

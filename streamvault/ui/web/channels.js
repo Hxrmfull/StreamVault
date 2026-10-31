@@ -350,7 +350,9 @@ export function buildChannelHeader() {
   refreshChannelHeader();
 }
 
-// свои настройки записи канала поверх общих: что не выбрано — «как в настройках»
+// свои настройки записи канала поверх общих. Списки сразу стоят на значении
+// канала, а нет своего — на общем; совпало с общим — у канала своего нет,
+// и смена общих настроек его тоже меняет
 const SPLIT_MODES = [["off", "не делить"], ["size", "по размеру"], ["duration", "по длительности"],
                      ["count", "на равные части"]];
 
@@ -364,14 +366,18 @@ export function openChannelOptions(id) {
     const found = choices.find(([choice]) => choice === value);
     return found ? found[1] : String(value);
   };
-  // «как в настройках: да» — чтобы было видно, что выйдет, если не трогать
   const choice = (key, choices) => {
     const select = h("select", null,
-      h("option", { value: "", text: t("как в настройках: {value}", { value: labelOf(choices, general[key]) }) }),
       choices.map(([value, label]) => h("option", { value: JSON.stringify(value), text: label })));
-    select.value = key in options ? JSON.stringify(options[key]) : "";
+    const current = key in options ? options[key] : general[key];
+    // значение, вписанное в settings.json руками, тоже должно показываться
+    if (!choices.some(([value]) => value === current)) {
+      select.append(h("option", { value: JSON.stringify(current), text: labelOf(choices, current) }));
+    }
+    select.value = JSON.stringify(current);
     return select;
   };
+  const own = (key, value) => (value === general[key] ? null : value);
   const field = (label, control, hint) => h("div", { class: "field" }, h("label", { text: label }), control,
     hint ? h("div", { class: "hint", text: hint }) : null);
   const chatChoices = CHAT_MODES.map(([mode, label]) => [mode, t(label)]);
@@ -383,24 +389,24 @@ export function openChannelOptions(id) {
     mp4_faststart: choice("mp4_faststart", yesNo),
     split_mode: choice("split_mode", splitChoices),
   };
-  // у каждого способа деления своё число; пусто — как в общих настройках
+  // у каждого способа деления своё число; стоит общее, пока у канала нет своего
   const number = (key, step) => {
     const input = h("input", { type: "number", step: step || "1", placeholder: String(general[key]) });
-    if (key in options) input.value = String(options[key]);
+    input.value = String(key in options ? options[key] : general[key]);
     return input;
   };
   const numbers = { split_size_gb: number("split_size_gb", "0.1"), split_minutes: number("split_minutes"),
                     split_count: number("split_count") };
-  const quality = liveQualitySelect(channel.quality, t("как в настройках: {value}",
-                                                       { value: liveQualityLabel(general.quality) }));
-  const keep = keepDaysSelect(channel.keep_days);
+  const quality = liveQualitySelect(channel.quality || general.quality);
+  const keep = keepDaysSelect(channel.keep_days === undefined || channel.keep_days === null
+                              ? general.keep_days || 0 : channel.keep_days);
   const numberFields = {
     size: field(t("Кусок не больше, ГБ"), numbers.split_size_gb),
     duration: field(t("Кусок длиной, минут"), numbers.split_minutes),
     count: field(t("На сколько частей"), numbers.split_count),
   };
   const showNumbers = () => {
-    const mode = fields.split_mode.value ? JSON.parse(fields.split_mode.value) : general.split_mode;
+    const mode = JSON.parse(fields.split_mode.value);
     for (const [name, element] of Object.entries(numberFields)) element.hidden = name !== mode;
   };
   fields.split_mode.addEventListener("change", showNumbers);
@@ -408,16 +414,17 @@ export function openChannelOptions(id) {
   const modal = openModal();
   const save = button(t("Сохранить"), { kind: "primary", onclick: () => {
     const changes = {};
-    for (const [key, select] of Object.entries(fields)) changes[key] = select.value ? JSON.parse(select.value) : null;
+    for (const [key, select] of Object.entries(fields)) changes[key] = own(key, JSON.parse(select.value));
     for (const [key, input] of Object.entries(numbers)) {
       const value = input.value.trim().replace(",", ".");
-      // непонятное число не превращается молча в «как в настройках» — его проверит программа
-      changes[key] = value === "" ? null : Number.isNaN(Number(value)) ? value : Number(value);
+      // непонятное число не превращается молча в общее — его проверит программа
+      changes[key] = value === "" ? null : Number.isNaN(Number(value)) ? value : own(key, Number(value));
     }
     save.disabled = true;
-    const days = keep.value === "" ? null : Number(keep.value);
+    const days = Number(keep.value) === (general.keep_days || 0) ? null : Number(keep.value);
+    const qualityOwn = quality.value === general.quality ? null : quality.value;
     const calls = [bridge.call("set_channel_options", id, changes)];
-    if ((quality.value || null) !== (channel.quality || null)) calls.push(bridge.call("set_quality", id, quality.value || null));
+    if (qualityOwn !== (channel.quality || null)) calls.push(bridge.call("set_quality", id, qualityOwn));
     if (days !== (channel.keep_days === undefined ? null : channel.keep_days)) calls.push(bridge.call("set_keep_days", id, days));
     Promise.all(calls)
       .then(() => {
@@ -431,7 +438,7 @@ export function openChannelOptions(id) {
   } });
   modal.body.append(
     h("h2", { text: t("Настройки записи канала") }),
-    h("div", { class: "muted field-gap", text: t("Что не выбрано — как в общих настройках. Идущая запись подхватит изменения со следующей части, конвертация — со следующей записи.") }),
+    h("div", { class: "muted field-gap", text: t("Сразу выбрано то, что стоит в общих настройках; изменённое здесь действует только для этого канала. Идущая запись подхватит изменения со следующей части, конвертация — со следующей записи.") }),
     field(t("Качество записи"), quality),
     field(t("Чат прямых эфиров при записи"), fields.live_chat),
     field(t("Записывать с начала эфира, если запись началась позже"), fields.record_from_start),

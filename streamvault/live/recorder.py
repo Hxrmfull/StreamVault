@@ -110,6 +110,10 @@ class ChannelRecorder(threading.Thread):
     UNAUTHORIZED_LIMIT = 3
     # Сколько ждать, пока streamlink сам закроет файл после остановки по Ctrl+C.
     STOP_GRACE = 10
+    # Поток пропал, а канал «не в эфире»: столько секунд ждать возвращения
+    # эфира (короткий обрыв у стримера) и так часто его проверять.
+    RETURN_GRACE = 300
+    RETURN_CHECK = 15
     # Сколько последних строк вывода streamlink показывать, когда запись не пошла.
     OUTPUT_TAIL = 5
 
@@ -286,6 +290,26 @@ class ChannelRecorder(threading.Thread):
         bus = self._bus
         if bus is not None:
             bus.emit("channel", channel=self.snapshot())
+
+    def _wait_for_return(self):
+        """
+        streamlink потерял поток, а площадка говорит «не в эфире». Короткий
+        обрыв у стримера (переподключился OBS, пропала сеть) выглядит так же,
+        как конец эфира, — поэтому эфиру даётся RETURN_GRACE секунд вернуться.
+        Вернулся — (статус, сведения о нём): пишется следующая часть того же
+        эфира. Нет, или запись остановили — None.
+        """
+        logging.info(tr("{tag}: эфир прервался — жду его возвращения {minutes} мин",
+                        tag=self.tag, minutes=self.RETURN_GRACE // 60))
+        for _ in range(max(1, self.RETURN_GRACE // self.RETURN_CHECK)):
+            self._sleep(self.RETURN_CHECK)
+            if self._stop.is_set() or self._end_session.is_set():
+                return None
+            status, again = self._probe.check(self._platform, self._channel)
+            if status is Status.ONLINE:
+                logging.info(tr("{tag}: эфир вернулся", tag=self.tag))
+                return status, again
+        return None
 
     def _done_once(self):
         """Канал записывали кнопкой, и эта запись закончилась."""
@@ -670,6 +694,12 @@ class ChannelRecorder(threading.Thread):
             # канал всё ещё в эфире? значит это был обрыв, а не конец стрима
             status, again = self._probe.check(self._platform, self._channel)
             if status is not Status.ONLINE:
+                returned = self._wait_for_return()
+                if returned is not None:
+                    status, again = returned
+            if status is not Status.ONLINE:
+                if self._stop.is_set() or self._end_session.is_set():
+                    return recorded_any
                 logging.info(tr("{tag}: эфир закончился", tag=self.tag))
                 # запись по кнопке относилась к этому эфиру
                 self._manual = self._skip = False

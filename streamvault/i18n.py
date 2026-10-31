@@ -593,6 +593,9 @@ STRINGS = {
     'у канала выключен архив прошедших эфиров': 'the channel has past broadcasts turned off',
     'у этой площадки начала эфира не взять': 'this platform cannot give the start of a stream',
     # консольные команды (cli.py)
+    '{tag}: эфир прервался — жду его возвращения {minutes} мин':
+        '{tag}: the stream dropped — waiting {minutes} min for it to come back',
+    '{tag}: эфир вернулся': '{tag}: the stream is back',
     # живая строка консоли (console.py)
     'чат {count}': 'chat {count}',
     'наблюдаю за каналами: {count}, в эфире: {live}': 'watching channels: {count}, live: {live}',

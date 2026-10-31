@@ -5,6 +5,24 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- **Channel recording settings** show the actual values with the general
+  settings chosen to begin with, instead of "as in settings: …" lines.
+  A value equal to the general setting is not stored for the channel, so
+  changing the general settings still changes it. The same in the Add
+  channel window.
+
+### Fixed
+
+- **A short stream drop no longer ends the recording.** When the
+  streamer reconnects, the platform briefly reports the stream as
+  offline; a recording started with the button used to stop for good.
+  Now the app waits up to 5 minutes, checking every 15 seconds, and
+  continues with the next part of the same stream.
+
 ## 0.1.3 — 2026-10-31
 
 ### Changed

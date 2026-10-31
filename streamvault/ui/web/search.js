@@ -12,7 +12,8 @@ export function openAddChannel() {
   let chosen = null;      // канал, выбранный из выдачи
   const chosenLine = h("div", { class: "chosen-channel" });
   chosenLine.hidden = true;
-  const quality = liveQualitySelect("", t("как в настройках"));
+  // сразу стоит общее качество; не меняли — своего у канала нет
+  const quality = liveQualitySelect(state.settings.quality);
   const autorecord = h("input", { type: "checkbox" });
   const error = h("div", { class: "error-text" });
   const submit = button(t("Добавить"), { kind: "primary", type: "submit" });
@@ -34,7 +35,8 @@ export function openAddChannel() {
     submit.disabled = true;
     try {
       const id = await bridge.call("add_channel", chosen ? chosen.id : input.value,
-                                   quality.value || null, autorecord.checked,
+                                   quality.value === state.settings.quality ? null : quality.value,
+                                   autorecord.checked,
                                    chosen ? knownProfile(chosen.id) : null);
       modal.close();
       toast(t("Канал добавлен"), "ok");
