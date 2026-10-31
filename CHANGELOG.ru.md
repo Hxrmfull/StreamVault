@@ -5,7 +5,7 @@
 Формат — по [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версии — по [семантическому версионированию](https://semver.org/lang/ru/).
 
-## Ещё не выпущено
+## 0.1.2 — 2026-10-31
 
 ### Изменено
 
