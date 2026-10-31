@@ -35,6 +35,25 @@ from .settings import DEFAULT_SETTINGS_PATH, Settings, SettingsError, import_leg
 # Как часто консольная загрузка пишет прогресс, секунды.
 PROGRESS_REPORT_INTERVAL = 5
 
+# Свои заголовки и ошибки argparse пишет через gettext, по-английски. Ключ —
+# его английская строка (в tr() наоборот — русская), поэтому таблица своя.
+ARGPARSE_RUSSIAN = {
+    "usage: ": "использование: ",
+    "positional arguments": "аргументы",
+    "options": "ключи",
+    "show this help message and exit": "показать эту справку и выйти",
+    " (default: %(default)s)": " (по умолчанию: %(default)s)",
+    "%(prog)s: error: %(message)s\n": "%(prog)s: ошибка: %(message)s\n",
+    "the following arguments are required: %s": "не хватает аргументов: %s",
+    "unrecognized arguments: %s": "непонятные аргументы: %s",
+    "argument %(argument_name)s: %(message)s": "аргумент %(argument_name)s: %(message)s",
+    "invalid choice: %(value)r (choose from %(choices)s)": "нет такого варианта: %(value)r (есть: %(choices)s)",
+    "invalid %(type)s value: %(value)r": "не подходит как %(type)s: %(value)r",
+    "expected one argument": "нужно одно значение",
+    "ambiguous option: %(option)s could match %(matches)s": "неоднозначный ключ: %(option)s — это %(matches)s?",
+}
+_ARGPARSE_GETTEXT = argparse._
+
 
 def choose_language(argv):
     """
@@ -50,6 +69,11 @@ def choose_language(argv):
         i18n.init(Settings.load(known.settings), persist=False)
     except SettingsError:
         pass      # о битых настройках скажет сама команда — на языке Windows
+    # argparse берёт переводы у своей глобальной _ в момент вывода: подменяем её
+    if i18n.current_language() == i18n.RUSSIAN:
+        argparse._ = lambda text: ARGPARSE_RUSSIAN.get(text, _ARGPARSE_GETTEXT(text))
+    else:
+        argparse._ = _ARGPARSE_GETTEXT
 
 
 def build_parser():
