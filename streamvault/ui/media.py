@@ -64,10 +64,20 @@ def remux_command(ffmpeg, path, start, follow=False):
     if start > 0:
         command += ["-ss", "%.3f" % start]
     if follow:
-        command += ["-follow", "1", "-rw_timeout", str(FOLLOW_TIMEOUT)]
-    # звук в .ts — AAC в обёртке ADTS: mp4 её не принимает
+        # -seekable 0: иначе ffmpeg прыгает в конец растущего файла (длительность,
+        # поиск start) и у конца ждёт, пока streamlink допишет следующий кусок, —
+        # у YouTube с кусками по 5 с первый кадр приходил через 10–15 с, и окно
+        # сдавалось раньше. Без прыжков start ищется чтением по порядку, а разбор
+        # потока хватает и секунды: в .ts эфира всегда H.264 и AAC.
+        command += ["-follow", "1", "-rw_timeout", str(FOLLOW_TIMEOUT), "-seekable", "0",
+                    "-analyzeduration", "1000000"]
+    # звук в .ts — AAC в обёртке ADTS: mp4 её не принимает. delay_moov — заголовок
+    # пишется после первых кадров, когда aac_adtstoasc уже знает настоящие параметры
+    # звука: у YouTube в низком качестве это HE-AAC, и с заголовком наперёд окно
+    # получало неверные параметры и останавливалось с ошибкой декодирования
     return command + ["-i", path, "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-bsf:a", "aac_adtstoasc",
-                      "-sn", "-dn", "-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof", "pipe:1"]
+                      "-sn", "-dn", "-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof+delay_moov",
+                      "pipe:1"]
 
 
 class MediaServer:

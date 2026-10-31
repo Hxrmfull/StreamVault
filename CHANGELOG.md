@@ -16,6 +16,15 @@ versions follow [Semantic Versioning](https://semver.org/).
   item, smooth opening, and opening upwards when there is no room below.
   The keyboard works as before.
 
+### Fixed
+
+- **Watching a YouTube recording in the window** — live or left in `.ts` —
+  stopped with a decode error: at low quality YouTube sends HE-AAC sound,
+  and the stream told the player wrong sound settings.
+- **Watching a recording that is still being written** starts within a
+  couple of seconds on every platform. On YouTube the first frame used to
+  take 10–15 s, and the player gave up and asked again in a loop.
+
 ## 0.1.1 — 2026-10-31
 
 ### Added
