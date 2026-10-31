@@ -233,15 +233,18 @@ class LiveService:
         util.join_interruptibly(self._chat_finisher, 10)
         return self._processing.pending()
 
-    def convert_recording(self, path):
-        """Запись, оставленную в .ts, — в mp4 рядом с ней (кнопка в библиотеке)."""
+    def convert_recording(self, path, split=None):
+        """
+        Запись, оставленную в .ts, — в mp4 рядом с ней (кнопка в библиотеке).
+        split — (mode, size_gb, minutes, count), выбранные в окне конвертации.
+        """
         with self._lock:
             processing = self._processing
         if processing is None:
             raise ValueError(tr("конвертация недоступна: запись эфиров не запущена"))
         if not path.lower().endswith(".ts"):
             raise ValueError(tr("в mp4 конвертируются только записи .ts"))
-        processing.submit(path, path, trusted=True, convert=True)
+        processing.submit(path, path, trusted=True, convert=True, split=split)
 
     def _join_busy(self, path):
         """

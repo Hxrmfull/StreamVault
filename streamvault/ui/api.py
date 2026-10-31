@@ -761,9 +761,22 @@ class Api:
     def library_preview(self, path):
         return self._need_library().preview(self._media(path))
 
-    def convert_recording(self, path):
-        """Запись эфира в .ts — в mp4 (если автоконвертация была выключена)."""
-        self._live.convert_recording(self._media(path))
+    def convert_recording(self, path, split=None):
+        """
+        Запись эфира в .ts — в mp4 (если автоконвертация была выключена).
+        split — {mode, size_gb, minutes, count} из окна конвертации; None —
+        делить по настройкам канала.
+        """
+        chosen = None
+        if split is not None:
+            if not isinstance(split, dict) or split.get("mode") not in ("off", "size", "duration", "count"):
+                raise ValueError(tr("как делить: off, size, duration или count"))
+            from ..platforms import channel_option_value
+            chosen = (split["mode"],
+                      channel_option_value("split_size_gb", split.get("size_gb", self._settings["split_size_gb"])),
+                      channel_option_value("split_minutes", split.get("minutes", self._settings["split_minutes"])),
+                      channel_option_value("split_count", split.get("count", self._settings["split_count"])))
+        self._live.convert_recording(self._media(path), chosen)
 
     def delete_file(self, path):
         self._need_library().delete(self._media(path))

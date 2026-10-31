@@ -351,6 +351,10 @@ export function liveQualityLabel(quality) {
   return LIVE_QUALITY_NOTES[quality] ? t(LIVE_QUALITY_NOTES[quality]) : quality || "";
 }
 
+// как делить запись на куски при конвертации: настройки канала и окно конвертации
+export const SPLIT_MODES = [["off", "не делить"], ["size", "по размеру"], ["duration", "по длительности"],
+                            ["count", "на равные части"]];
+
 // сколько дней хранить записи канала
 export const KEEP_DAYS = [0, 7, 14, 30, 60, 90, 180, 365];
 

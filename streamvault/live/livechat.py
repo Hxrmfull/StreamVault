@@ -630,9 +630,17 @@ class ChatFinisher(threading.Thread):
         # не при импорте: library тянет archive, а тот — live
         from ..library import parse_recording_name, probe_duration
         source = jsonl_path(recorded)
-        if not os.path.exists(source):
-            return
         videos = list(video) if isinstance(video, (list, tuple)) else [video]
+        if not os.path.exists(source):
+            # запись лежала в .ts с уже готовым чатом и её поделили кнопкой
+            # «Конвертировать в mp4» — готовый чат делится по кускам так же
+            ready = archive_chat.chat_paths(recorded)
+            if len(videos) > 1 and os.path.exists(ready["json"]):
+                lengths = [probe_duration(self._ffmpeg.path(), piece) for piece in videos]
+                for key in ("html", "video"):
+                    remove_quietly(ready[key])
+                self._split(ready["json"], videos, lengths)
+            return
         stem = os.path.splitext(os.path.basename(recorded))[0]
         lengths = [probe_duration(self._ffmpeg.path(), piece) for piece in videos]
         # запись взяла эфир с начала — чат сдвигается вслед за видео

@@ -88,6 +88,12 @@
     "Чат: для браузера (HTML) и по желанию видео чата":
       "Chat: for the browser (HTML) and, optionally, as a video",
     "Склеивать начало эфира с записью": "Join the stream beginning with the recording",
+    "Конвертировать": "Convert",
+    "Делить на куски": "Split into pieces",
+    "Частей эфира в .ts: {count}. Каждая станет mp4 и поделится так, как выбрано; чат — вместе с ней.":
+      "Stream parts in .ts: {count}. Each becomes an mp4 and is split as chosen; the chat goes along.",
+    "Запись станет mp4 без перекодирования и поделится так, как выбрано; у каждого куска свой чат. Файл .ts после этого удалится.":
+      "The recording becomes an mp4 without re-encoding and is split as chosen; each piece gets its own chat. The .ts file is deleted afterwards.",
     "Включено — когда начало скачано и запись обработана, они склеиваются в один файл без перекодирования: стык ищется по кадрам, без повтора и дыры, чат тоже склеивается, а части удаляются. Выключено — начало и запись остаются двумя файлами и играют в окне подряд.":
       "On — once the beginning is downloaded and the recording is processed, they are joined into one file without re-encoding: the seam is found by frames, with no repeat or gap, the chat is joined too, and the parts are deleted. Off — the beginning and the recording stay two files and play one after the other in the window.",
     "Записывать с начала эфира, если запись началась позже":

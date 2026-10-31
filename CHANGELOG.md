@@ -9,6 +9,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Convert to mp4 asks how to split:** the button on a `.ts` card opens a
+  window to choose not to split, by size, by duration or into equal
+  parts, with the channel's setting chosen to begin with.
 - **The stream beginning is joined with the recording** into one file
   when both are ready (setting "Join the stream beginning with the
   recording", on by default, also per channel). The seam is found by
@@ -17,6 +20,11 @@ versions follow [Semantic Versioning](https://semver.org/).
   codec differ, or the seam is not found, the parts stay side by side
   and the log says why. Checked on live Twitch and Kick streams: every
   frame before and after the seam matches the sources.
+
+### Fixed
+
+- A recording left in `.ts` with its chat ready, then split by Convert to mp4,
+  kept one chat for the whole recording; now every piece gets its own.
 
 ## 0.1.4 — 2026-10-31
 

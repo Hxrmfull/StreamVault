@@ -618,6 +618,7 @@ STRINGS = {
     'стык начала и записи не найден (разница {score})':
         'the seam between the beginning and the recording was not found (difference {score})',
     'чат не склеился: {name} — {error}': 'the chat was not joined: {name} — {error}',
+    'как делить: off, size, duration или count': 'how to split: off, size, duration or count',
     # живая строка консоли (console.py)
     'чат {count}': 'chat {count}',
     'наблюдаю за каналами: {count}, в эфире: {live}': 'watching channels: {count}, live: {live}',

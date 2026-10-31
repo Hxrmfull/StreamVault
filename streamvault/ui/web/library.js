@@ -3,7 +3,7 @@
  * эфиры из частей одной карточкой, отбор, порядок и место на диске.
  */
 
-import { bridge, button, channelName, confirmDialog, displayTitle, ensureProfiles, failed, fmt, h, icon, iconButton, openModal, platformName, safeUrl, setSrc, setText, state, syncList, t, toast, tp } from "./common.js";
+import { SPLIT_MODES, bridge, button, channelName, confirmDialog, displayTitle, ensureProfiles, failed, fmt, h, icon, iconButton, openModal, platformName, safeUrl, setSrc, setText, state, syncList, t, toast, tp } from "./common.js";
 import { openWatch } from "./player.js";
 import { openChatSearch, openSummary } from "./summary.js";
 import { view } from "./app.js";
@@ -309,17 +309,7 @@ export function createLibraryCard() {
   });
   card._convert = iconButton("convert", t("Конвертировать в mp4"), (event) => {
     event.stopPropagation();
-    card._convert.disabled = true;
-    for (const item of partsOf(card._item).filter((part) => /\.ts$/i.test(part.path))) {
-      state.converting.add(item.path);
-      bridge.call("convert_recording", item.path)
-        .then(() => toast(t("Конвертирую в mp4: {name}", { name: item.name }), "ok"))
-        .catch((error) => {
-          state.converting.delete(item.path);
-          card._convert.disabled = false;
-          failed(error);
-        });
-    }
+    openConvert(card);
   });
   card._summary = iconButton("stats", t("Сводка эфира"), (event) => {
     event.stopPropagation();
@@ -346,6 +336,65 @@ export function createLibraryCard() {
       h("div", { class: "corner bottom-right" }, card._size)),
     h("div", { class: "card-body" }, h("div", { class: "card-text" }, card._title, card._sub)));
   return card;
+}
+
+// «Конвертировать в mp4»: сначала окно — делить ли и как; сразу стоит то, что у канала
+function openConvert(card) {
+  const parts = partsOf(card._item).filter((part) => /\.ts$/i.test(part.path));
+  if (!parts.length) return;
+  const item = card._item;
+  const channel = [...state.channels.values()].find((entry) => entry.platform === item.platform
+    && String(entry.label || "").toLowerCase() === String(item.channel || "").toLowerCase());
+  const options = (channel && channel.options) || {};
+  const setting = (key) => (key in options ? options[key] : state.settings[key]);
+  const mode = h("select", null, SPLIT_MODES.map(([value, label]) => h("option", { value: value, text: t(label) })));
+  mode.value = setting("split_mode") || "off";
+  if (!mode.value) mode.value = "off";
+  const number = (key, step) => h("input", { type: "number", min: step === "0.1" ? "0.1" : "1", step: step || "1",
+                                             value: String(setting(key)) });
+  const numbers = { size: number("split_size_gb", "0.1"), duration: number("split_minutes"),
+                    count: number("split_count") };
+  const field = (label, control) => h("div", { class: "field" }, h("label", { text: label }), control);
+  const numberFields = {
+    size: field(t("Кусок не больше, ГБ"), numbers.size),
+    duration: field(t("Кусок длиной, минут"), numbers.duration),
+    count: field(t("На сколько частей"), numbers.count),
+  };
+  const showNumbers = () => {
+    for (const [name, element] of Object.entries(numberFields)) element.hidden = name !== mode.value;
+  };
+  mode.addEventListener("change", showNumbers);
+  showNumbers();
+  const modal = openModal();
+  const start = button(t("Конвертировать"), { kind: "primary", onclick: () => {
+    const split = { mode: mode.value, size_gb: Number(numbers.size.value.replace(",", ".")),
+                    minutes: Number(numbers.duration.value), count: Number(numbers.count.value) };
+    start.disabled = true;
+    card._convert.disabled = true;
+    Promise.all(parts.map((part) => {
+      state.converting.add(part.path);
+      return bridge.call("convert_recording", part.path, split)
+        .then(() => toast(t("Конвертирую в mp4: {name}", { name: part.name }), "ok"))
+        .catch((error) => {
+          state.converting.delete(part.path);
+          throw error;
+        });
+    }))
+      .then(() => modal.close())
+      .catch((error) => {
+        start.disabled = false;
+        card._convert.disabled = false;
+        failed(error);
+      });
+  } });
+  modal.body.append(
+    h("h2", { text: t("Конвертировать в mp4") }),
+    h("div", { class: "muted field-gap", text: parts.length > 1
+      ? t("Частей эфира в .ts: {count}. Каждая станет mp4 и поделится так, как выбрано; чат — вместе с ней.", { count: parts.length })
+      : t("Запись станет mp4 без перекодирования и поделится так, как выбрано; у каждого куска свой чат. Файл .ts после этого удалится.") }),
+    field(t("Делить на куски"), mode),
+    numberFields.size, numberFields.duration, numberFields.count,
+    h("div", { class: "actions" }, button(t("Отмена"), { onclick: () => modal.close() }), start));
 }
 
 export function updateLibraryCard(card, item) {

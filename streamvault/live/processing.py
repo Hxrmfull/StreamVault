@@ -117,6 +117,7 @@ class ProcessingQueue(threading.Thread):
         self._active = set()
         self._trusted = set()
         self._forced = set()     # конвертировать, даже если автоконвертация выключена
+        self._split_once = {}    # как делить запись, выбранную в окне конвертации
         self._watched = []
         self._current = None   # что обрабатывается прямо сейчас
         # взводится, когда рекордеры отработали и новых заданий больше не будет
@@ -158,12 +159,14 @@ class ProcessingQueue(threading.Thread):
         with self._lock:
             self._active.discard(path)
 
-    def submit(self, recorded, processed, delay=0, trusted=False, convert=False):
+    def submit(self, recorded, processed, delay=0, trusted=False, convert=False, split=None):
         """
         trusted=True ставит рекордер после выхода streamlink: запись заведомо
         закончена, выдержку по времени изменения для неё применять не нужно.
         convert=True — сконвертировать в mp4, даже если автоконвертация
-        выключена (кнопка в библиотеке).
+        выключена (кнопка в библиотеке). split — как делить именно эту запись
+        (mode, size_gb, minutes, count), выбрано в окне конвертации; None —
+        по настройкам канала.
         """
         with self._lock:
             if recorded in (self._forced if convert else self._known):
@@ -173,6 +176,8 @@ class ProcessingQueue(threading.Thread):
                 self._trusted.add(recorded)
             if convert:
                 self._forced.add(recorded)
+            if split is not None:
+                self._split_once[recorded] = tuple(split)
         self._queue.put((time.time() + delay, next(self._counter), 1, recorded, processed))
         self._emit("queued", recorded)
 
@@ -387,9 +392,11 @@ class ProcessingQueue(threading.Thread):
         склеивает, и видео выходит короче, чем говорит заголовок .ts);
         иначе — от ffmpeg.
         """
-        if self._split is None:
+        with self._lock:
+            chosen = self._split_once.pop(recorded, None)
+        if chosen is None and self._split is None:
             return []
-        mode, size_gb, minutes, count = self._split(recorded)
+        mode, size_gb, minutes, count = chosen or self._split(recorded)
         if mode not in ("size", "duration", "count"):
             return []
         from ..library import probe_duration
