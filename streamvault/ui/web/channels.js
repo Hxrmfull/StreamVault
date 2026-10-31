@@ -211,7 +211,7 @@ export function updateChannelRow(row, channel) {
   setText(row._title, channelName(channel.id));
   setText(row._platform, platformName(channel.platform));
   row._sub.className = "row-sub " + stateTone(channel);
-  const key = [channel.state, channel.message, channel.last_check].join("|");
+  const key = [channel.state, channel.message, channel.last_check, recordStarting(channel.id, channel)].join("|");
   if (row._sub.dataset.key === key) return;
   row._sub.dataset.key = key;
   row._sub.replaceChildren(stateText(channel));
@@ -470,7 +470,8 @@ export function refreshChannelHeader() {
   }
   refreshRecordButton();
   const key = channel ? [channel.state, channel.message, channel.last_check,
-                         (channel.stream || {}).viewers, channel.probe].join("|") : "untracked";
+                         (channel.stream || {}).viewers, channel.probe,
+                         recordStarting(channel.id, channel)].join("|") : "untracked";
   if (view.stateLine.dataset.key !== key) {
     view.stateLine.dataset.key = key;
     view.stateLine.replaceChildren();
@@ -712,7 +713,7 @@ export function createVideoBrowser(key, load) {
 
 export function entryMeta(entry) {
   return {
-    id: entry.id, title: entry.title, channel: entry.channel, platform: entry.platform,
+    id: entry.id, title: entry.title, channel: entry.channel, folder: entry.folder, platform: entry.platform,
     kind: entry.kind, duration: entry.duration, thumbnail: entry.thumbnail, timestamp: entry.timestamp,
   };
 }

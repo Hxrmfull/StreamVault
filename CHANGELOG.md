@@ -12,6 +12,15 @@ versions follow [Semantic Versioning](https://semver.org/).
 - **"Start recording" answers right away:** while streamlink connects to
   the stream (a few seconds), the button shows a spinner and "Recording
   is starting…", the live card shows "Starting…". A second click cancels.
+  The status line under the channel name says "recording is starting…"
+  too.
+- **Channel search on VK Video Live** finds channels by part of the name
+  or nick, like the site's own search, with who is live, viewers and the
+  category. It used to check only the exact channel name.
+- **Downloads go to the channel's folder by its ID** (login, @handle,
+  name in the address) — the same folder as its recorded streams. A
+  YouTube video of Lofi Girl used to land in "Lofi Girl" while the
+  recordings were in "LofiGirl".
 
 ### Fixed
 

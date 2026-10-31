@@ -108,6 +108,7 @@
     "Хранить записи": "Keep recordings",
     "идёт запись": "recording",
     "в эфире, не записывается": "live, not recording",
+    "запись начинается…": "recording is starting…",
     "в эфире, но записать не удаётся: {reason}": "live, but cannot be recorded: {reason}",
     "в эфире, но записать не удаётся": "live, but cannot be recorded",
     "не в эфире": "offline",

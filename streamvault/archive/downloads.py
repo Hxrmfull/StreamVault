@@ -226,6 +226,8 @@ class DownloadManager:
         for entry in result.get("entries", []):
             # в списке записей Twitch канал не указан — он тот, чей список
             entry["channel"] = entry["channel"] or channel
+            # и папка — того канала, чья страница: как у записей его эфиров
+            entry["folder"] = channel
         sites.enrich_listing(platform, channel, kind, result)
         return result
 
@@ -276,7 +278,7 @@ class DownloadManager:
             if entry["url"] in urls or (video_id and (entry.get("platform") or platform, video_id) in ids):
                 known += 1
                 continue
-            meta = {key: entry.get(key) for key in ("id", "title", "channel", "platform", "kind",
+            meta = {key: entry.get(key) for key in ("id", "title", "channel", "folder", "platform", "kind",
                                                     "duration", "thumbnail", "timestamp", "live_status")}
             self.add(entry["url"], quality=quality, meta=meta, chat_mode=chat_mode)
             urls.add(entry["url"])
@@ -349,6 +351,7 @@ class DownloadManager:
                 "section": section,
                 "state": QUEUED,
                 "title": "", "channel": "", "platform": "", "kind": "",
+                "folder": "",       # идентификатор канала для папки (ytdlp.channel_folder)
                 "video_id": "", "duration": None, "thumbnail": "", "timestamp": None,
                 "live_status": "",
                 "target": "",       # путь без расширения, выбирается при первом запуске
@@ -544,6 +547,7 @@ class DownloadManager:
     def _apply_meta(job, meta):
         job["title"] = meta.get("title") or job["title"]
         job["channel"] = meta.get("channel") or job["channel"]
+        job["folder"] = meta.get("folder") or job.get("folder") or ""
         job["platform"] = meta.get("platform") or job["platform"]
         job["kind"] = meta.get("kind") or job["kind"]
         job["video_id"] = meta.get("id") or job["video_id"]
@@ -857,7 +861,7 @@ class DownloadManager:
         """Свободный путь: не занят ни готовым файлом, ни другой загрузкой."""
         # платформа становится именем папки, а приходить может и из окна программы
         platform = re.sub(r"[^a-z0-9_-]", "", (job["platform"] or "").lower()) or "other"
-        label = channel_label(job["channel"] or "unknown")
+        label = channel_label(job.get("folder") or job["channel"] or "unknown")
         if platform in _LOWERCASE_LABELS:
             label = label.lower()
         directory = os.path.join(self.downloads_dir(), platform, label)

@@ -15,6 +15,8 @@ NAME = "VK Video Live"
 
 BLOG = "https://api.live.vkvideo.ru/v1/blog/{name}"
 STREAM = "https://api.live.vkvideo.ru/v1/blog/{name}/public_video_stream"
+# поиск каналов по части имени — тот же запрос, что делает строка поиска сайта
+SEARCH = "https://api.live.vkvideo.ru/v8/search/channel"
 # Имя канала VK Video Live: латиница, цифры, точка, дефис и подчёркивание.
 CHANNEL_NAME = re.compile(r"^[A-Za-z0-9_.-]{2,64}$")
 # Кадр эфира: опрос каналов частый, а кадр сайт меняет раз в минуты.
@@ -34,11 +36,6 @@ BEGINNING = "ended"
 
 UNSUPPORTED = {}
 
-# Поиск по части имени. Открытого запроса, которым сайт ищет без входа,
-# пока не нашлось: страница поиска собирается у зрителя, а в облаке, где
-# писалась программа, сайт недоступен. Поэтому проверяется точное имя.
-SEARCH_NOTE = "нет канала с точно таким именем"
-
 _streams = Memo(PREVIEW_SECONDS)
 
 
@@ -48,17 +45,29 @@ def _name(channel):
 
 
 def search(query, limit, tools=None):
-    name = _name(query)
-    if not name:
+    """
+    По части имени канала или ника. Кто в эфире, сколько зрителей и что идёт —
+    в том же ответе: идущие эфиры и их категории лежат в refs.
+    """
+    text = str(query or "").strip().lstrip("@")
+    if not text:
         return []
-    data = get_json("GET", BLOG.format(name=name))
-    if not isinstance(data, dict) or not data.get("blogUrl"):
-        return []
-    owner = data.get("owner") or {}
-    return [search_result("vkvideolive", str(data["blogUrl"]),
-                          owner.get("displayName") or owner.get("nick"),
-                          owner.get("avatarUrl") if owner.get("hasAvatar", True) else "",
-                          (data.get("count") or {}).get("subscribers"))][:limit]
+    data = get_json("GET", SEARCH, params={"searchQuery": text, "limit": limit})
+    data = data if isinstance(data, dict) else {}
+    refs = data.get("refs") or {}
+    streams, categories = refs.get("streams") or {}, refs.get("categories") or {}
+    found = []
+    for item in ((data.get("data") or {}).get("channels") or [])[:limit]:
+        if not isinstance(item, dict) or not item.get("url"):
+            continue
+        live = item.get("channelStatus") == "online"
+        stream = (streams.get(item.get("streamId")) or {}) if live else {}
+        category = categories.get(stream.get("categoryId")) or {}
+        found.append(search_result("vkvideolive", str(item["url"]), item.get("nick"), https(item.get("avatarUrl")),
+                                   (item.get("counters") or {}).get("subscribers"), live=live,
+                                   viewers=(stream.get("counters") or {}).get("viewers") if live else None,
+                                   game=category.get("title") or ""))
+    return found
 
 
 def profile(channel, tools=None):

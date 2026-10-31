@@ -14,7 +14,7 @@ import re
 import subprocess
 import tempfile
 import time
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from .. import util
 from ..platforms import is_url
@@ -119,18 +119,44 @@ def _timestamp(info):
     return None
 
 
+# в адресе записи или клипа имя канала идёт первым: kick.com/<канал>/videos/…,
+# live.vkvideo.ru/<канал>/record/…, twitch.tv/<канал>/clip/…
+_CHANNEL_PATH_KINDS = ("videos", "video", "clips", "clip", "record")
+
+
+def channel_folder(info, platform, url):
+    """
+    Папка канала для скачанного — тот же идентификатор, что у записей его
+    эфиров (логин, @имя без @, имя в адресе), а не отображаемое имя: иначе
+    записи и скачанное одного канала лежали бы в разных папках («LofiGirl»
+    и «Lofi Girl»). Не понять — пусто: тогда папка по имени канала.
+    """
+    path = [part for part in urlsplit(url or "").path.split("/") if part]
+    if len(path) >= 3 and path[1].lower() in _CHANNEL_PATH_KINDS:
+        return path[0]
+    uploader_id = str(info.get("uploader_id") or "")
+    if platform == "youtube" and uploader_id.startswith("@"):
+        return uploader_id[1:]
+    # у записи эфира Twitch uploader_id — логин канала; у клипа — автор клипа
+    if platform == "twitch" and (info.get("ie_key") or info.get("extractor_key")) == "TwitchVod":
+        return uploader_id
+    return ""
+
+
 def describe_entry(info):
     """Одно видео в виде, удобном окну программы. Годится и для записей списка."""
     extractor = info.get("ie_key") or info.get("extractor_key")
     live_status = info.get("live_status")
+    url = _clean_url(info.get("webpage_url") or info.get("url"))
     return {
         "id": str(info.get("id") or ""),
-        "url": _clean_url(info.get("webpage_url") or info.get("url")),
+        "url": url,
         "title": info.get("title") or "",
         "platform": platform_of(extractor),
         "kind": kind_of(extractor),
         # у клипа Twitch uploader — автор клипа, а канал — в channel
         "channel": info.get("channel") or info.get("uploader") or info.get("uploader_id") or "",
+        "folder": channel_folder(info, platform_of(extractor), url),
         "duration": info.get("duration"),
         "thumbnail": _thumbnail(info),
         "timestamp": _timestamp(info),

@@ -71,7 +71,7 @@ LOG_LEVELS = ("debug", "info", "warning", "error")
 SPLIT_MODES = ("off", "size", "duration", "count")
 
 # Какие сведения о видео окно может передать вместе со ссылкой.
-META_TEXT = ("id", "title", "channel", "platform", "kind", "thumbnail", "live_status")
+META_TEXT = ("id", "title", "channel", "folder", "platform", "kind", "thumbnail", "live_status")
 META_NUMBERS = ("duration", "timestamp")
 
 

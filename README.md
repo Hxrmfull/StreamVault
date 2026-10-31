@@ -74,7 +74,7 @@ themselves from the app.
 
 | Feature | Twitch | Kick | YouTube | VK Video Live |
 |---|---|---|---|---|
-| Channel search | by part of the name | by part of the name | yes, via yt-dlp | exact name only |
+| Channel search | by part of the name | by part of the name | yes, via yt-dlp | by part of the name or nick |
 | Live preview, avatar | yes | yes | yes | yes |
 | Live chat | yes | yes | yes | yes |
 | Record from the start | right away (if the channel keeps past broadcasts) | right away | after the stream ends | after the stream ends |

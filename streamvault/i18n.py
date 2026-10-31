@@ -505,7 +505,6 @@ STRINGS = {
         'VK Video Live did not say which recording this clip is from',
     'у YouTube нет списка клипов канала — вместо них вкладка Shorts':
         'YouTube has no list of channel clips — the Shorts tab is there instead',
-    'нет канала с точно таким именем': 'no channel with exactly this name',
     '{tag}: место на диске кончается — останавливаю запись':
         '{tag}: the disk is running out of space — stopping the recording',
     '{value} ГБ': '{value} GB',

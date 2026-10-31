@@ -492,6 +492,8 @@ export function channelUrl(id) {
 }
 
 export function stateText(channel) {
+  // «Записать» нажали, streamlink ещё подключается — в тон кнопке
+  if (recordStarting(channel.id, channel)) return t("запись начинается…");
   switch (channel.state) {
     case "recording": return t("идёт запись");
     case "live": return t("в эфире, не записывается");
