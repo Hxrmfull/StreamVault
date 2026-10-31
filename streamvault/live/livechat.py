@@ -675,6 +675,15 @@ class ChatFinisher(threading.Thread):
         finally:
             remove_quietly(whole)
 
+    def enqueue(self, video):
+        """HTML и видео чата заново — например, после склейки начала эфира с записью."""
+        self._enqueue(video)
+
+    def busy(self, video):
+        """Чат этой записи ещё доделывается (в очереди или в работе)."""
+        with self._lock:
+            return video in self._queued
+
     def _enqueue(self, video):
         with self._lock:
             if video in self._queued:

@@ -13,6 +13,7 @@
 """
 
 import logging
+import os
 import re
 import threading
 import time
@@ -62,6 +63,13 @@ class Beginning:
 
     def stop(self):
         self._stop.set()
+
+    def busy(self, path):
+        """Начало эфира path (файл «… - part00») ещё качается — с чатом или без."""
+        stem = os.path.splitext(path)[0]
+        final = ("done", "failed", "cancelled")
+        return any(job.get("fixed_target") == stem and job.get("state") not in final
+                   for job in self._downloads.snapshot()["jobs"])
 
     def session_started(self, platform, channel, began, target, title, quality, chat_mode,
                         meta=None, report=None):

@@ -87,6 +87,9 @@
       "Lost connection to the program. It may have been closed.",
     "Чат: для браузера (HTML) и по желанию видео чата":
       "Chat: for the browser (HTML) and, optionally, as a video",
+    "Склеивать начало эфира с записью": "Join the stream beginning with the recording",
+    "Включено — когда начало скачано и запись обработана, они склеиваются в один файл без перекодирования: стык ищется по кадрам, без повтора и дыры, чат тоже склеивается, а части удаляются. Выключено — начало и запись остаются двумя файлами и играют в окне подряд.":
+      "On — once the beginning is downloaded and the recording is processed, they are joined into one file without re-encoding: the seam is found by frames, with no repeat or gap, the chat is joined too, and the parts are deleted. Off — the beginning and the recording stay two files and play one after the other in the window.",
     "Записывать с начала эфира, если запись началась позже":
       "Record from the start of the stream if recording began later",
     "Начало эфира ({length}) скачается, когда площадка выложит запись эфира":

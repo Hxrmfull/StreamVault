@@ -56,7 +56,9 @@ themselves from the app.
   chat, recording from the start, MP4 conversion, splitting and how long to
   keep recordings.
 - **From the very start:** if recording begins mid-stream, the part before it
-  is downloaded from the platform's own archive and saved as the first part.
+  is downloaded from the platform's own archive and joined with the recording
+  into one file, frame-exact and without re-encoding (or kept as a separate
+  first part, if you switch joining off).
 - **Chat:** live chat of all four platforms is saved next to the recording;
   VOD and clip chat downloads as HTML, JSON or a rendered chat video.
 - **Downloads:** VODs, highlights and clips from a link or a channel tab,

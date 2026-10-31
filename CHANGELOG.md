@@ -5,6 +5,19 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- **The stream beginning is joined with the recording** into one file
+  when both are ready (setting "Join the stream beginning with the
+  recording", on by default, also per channel). The seam is found by
+  comparing frames, so there is no repeat or gap; nothing is re-encoded,
+  the chat is joined too, and the parts are deleted. If the frame size or
+  codec differ, or the seam is not found, the parts stay side by side
+  and the log says why. Checked on live Twitch and Kick streams: every
+  frame before and after the seam matches the sources.
+
 ## 0.1.4 — 2026-10-31
 
 ### Changed

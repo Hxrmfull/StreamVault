@@ -46,12 +46,12 @@ EDITABLE = ("language", "root_path", "quality", "twitch_client_id", "twitch_clie
             "close_to_tray", "tray_notifications",
             "chat_mode", "chat_width", "chat_height", "chat_font_size", "check_updates",
             "live_chat", "convert_recordings", "mp4_faststart",
-            "record_from_start", "min_free_gb", "keep_days",
+            "record_from_start", "join_beginning", "min_free_gb", "keep_days",
             "split_mode", "split_size_gb", "split_minutes", "split_count")
 
 # Да/нет из окна приходят как true/false.
 FLAGS = ("close_to_tray", "tray_notifications", "check_updates", "convert_recordings", "mp4_faststart",
-         "record_from_start")
+         "record_from_start", "join_beginning")
 
 # Секреты окну не отдаются: оно узнаёт только, заданы ли они.
 SECRETS = ("twitch_client_secret", "twitch_auth_token")

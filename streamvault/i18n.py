@@ -596,6 +596,28 @@ STRINGS = {
     '{tag}: эфир прервался — жду его возвращения {minutes} мин':
         '{tag}: the stream dropped — waiting {minutes} min for it to come back',
     '{tag}: эфир вернулся': '{tag}: the stream is back',
+    # склейка начала эфира с записью (live/joining.py)
+    'начало эфира не склеено с записью {name}: мало места на диске':
+        'the stream beginning was not joined to {name}: not enough disk space',
+    'начало эфира не склеено с записью {name}: не прочитать длительность':
+        "the stream beginning was not joined to {name}: couldn't read the duration",
+    'начало эфира не склеено с записью {name}: размер кадра разный ({head} и {main}) — части остались рядом':
+        'the stream beginning was not joined to {name}: different frame sizes ({head} and {main}) — the parts stay side by side',
+    'начало эфира не склеено с записью {name}: кодеки разные ({head} и {main}) — части остались рядом':
+        'the stream beginning was not joined to {name}: different codecs ({head} and {main}) — the parts stay side by side',
+    'начало эфира не склеено с записью {name}: стык не найден — части остались рядом':
+        'the stream beginning was not joined to {name}: the seam was not found — the parts stay side by side',
+    'начало эфира не склеилось с записью {name}: {error}':
+        'joining the stream beginning to {name} failed: {error}',
+    'начало эфира не склеилось с записью {name}: длина вышла {got} вместо {want}':
+        'joining the stream beginning to {name} failed: the length came out {got} instead of {want}',
+    'начало эфира склеено с записью: {name} — стык на {at}, вышло {length}':
+        'stream beginning joined to the recording: {name} — seam at {at}, {length} in total',
+    'склеиваю начало эфира с записью: {name}': 'joining the stream beginning to the recording: {name}',
+    'склейка начала эфира: сбой': 'joining the stream beginning: failure',
+    'стык начала и записи не найден (разница {score})':
+        'the seam between the beginning and the recording was not found (difference {score})',
+    'чат не склеился: {name} — {error}': 'the chat was not joined: {name} — {error}',
     # живая строка консоли (console.py)
     'чат {count}': 'chat {count}',
     'наблюдаю за каналами: {count}, в эфире: {live}': 'watching channels: {count}, live: {live}',

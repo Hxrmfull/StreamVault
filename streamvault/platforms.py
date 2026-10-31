@@ -186,7 +186,7 @@ def keep_days_value(value):
 
 # Свои настройки записи у канала (entry["options"]) поверх общих: те же
 # ключи, что в settings.json. Чего у канала нет — берётся общее.
-CHANNEL_FLAGS = ("record_from_start", "convert_recordings", "mp4_faststart")
+CHANNEL_FLAGS = ("record_from_start", "join_beginning", "convert_recordings", "mp4_faststart")
 CHANNEL_CHOICES = {"live_chat": ("none", "text", "render"), "split_mode": ("off", "size", "duration", "count")}
 CHANNEL_NUMBERS = {"split_size_gb": (0.1, 1000, float), "split_minutes": (5, 1440, int), "split_count": (2, 100, int)}
 CHANNEL_OPTIONS = CHANNEL_FLAGS + tuple(CHANNEL_CHOICES) + tuple(CHANNEL_NUMBERS)

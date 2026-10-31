@@ -25,6 +25,7 @@ from ..platforms import (MIN_REFRESH_API, MIN_REFRESH_STREAMLINK, channel_id,
                          parse_channel, refresh_for)
 from .probes import PublicProfiles, Status, TwitchProbe, build_probes, describe_stream
 from .chatreaders import make_chat
+from .joining import Joiner
 from .livechat import ChatFinisher
 from .processing import ProcessingQueue
 from .recorder import ChannelRecorder
@@ -154,6 +155,7 @@ class LiveService:
         self._retention = None
         self._processing = None
         self._chat_finisher = None
+        self._joiner = None
         self._started = False
 
     # ------------------------------------------------------------ запуск и остановка
@@ -188,6 +190,10 @@ class LiveService:
                 split=lambda recorded: tuple(self._recording_setting(recorded, key) for key in
                                              ("split_mode", "split_size_gb", "split_minutes", "split_count")))
             self._processing.start()
+            # начало эфира, скачанное отдельно, — склеить с записью, когда обе части готовы
+            self._joiner = Joiner(self._settings, self._ffmpeg.path, self._join_busy, self._chat_finisher,
+                                  threading.Event())
+            self._joiner.start()
             # записи старше срока — в корзину, раз в час
             self._retention = Retention(self._settings, stop_event=self._stop)
             self._retention.start()
@@ -220,6 +226,8 @@ class LiveService:
         # только теперь очередь вправе считать, что заданий больше не будет
         self._processing.close_inputs()
         util.join_interruptibly(self._processing, self._settings["drain_grace"] + 30)
+        # недоклеенное начало эфира склеится при следующем запуске
+        self._joiner.stop()
         # недоделанный HTML чата подхватится при следующем запуске
         self._chat_finisher.stop()
         util.join_interruptibly(self._chat_finisher, 10)
@@ -234,6 +242,28 @@ class LiveService:
         if not path.lower().endswith(".ts"):
             raise ValueError(tr("в mp4 конвертируются только записи .ts"))
         processing.submit(path, path, trusted=True, convert=True)
+
+    def _join_busy(self, path):
+        """
+        Часть эфира ещё не готова к склейке: начало качается, запись пишется
+        или конвертируется (её .ts ещё в in-progress), чат доделывается.
+        """
+        with self._lock:
+            beginning, finisher = self._beginning, self._chat_finisher
+        if beginning is not None and beginning.busy(path):
+            return True
+        if finisher is not None and finisher.busy(path):
+            return True
+        stem = os.path.splitext(path)[0]
+        if any(os.path.exists(stem + suffix) for suffix in (".part", ".mp4.part", ".ts.part", ".ytdl")):
+            return True
+        finished = os.path.join(self._settings["root_path"], util.FINISHED_DIR)
+        try:
+            relative = os.path.relpath(stem, finished)
+        except ValueError:
+            return False
+        recording = os.path.join(self._settings["root_path"], util.IN_PROGRESS_DIR, relative)
+        return any(os.path.exists(recording + ext) for ext in (".ts", ".chat.jsonl"))
 
     def set_beginning(self, beginning):
         """

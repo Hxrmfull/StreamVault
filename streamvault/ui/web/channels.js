@@ -384,6 +384,7 @@ export function openChannelOptions(id) {
   const splitChoices = SPLIT_MODES.map(([mode, label]) => [mode, t(label)]);
   const fields = {
     record_from_start: choice("record_from_start", yesNo),
+    join_beginning: choice("join_beginning", yesNo),
     live_chat: choice("live_chat", chatChoices),
     convert_recordings: choice("convert_recordings", yesNo),
     mp4_faststart: choice("mp4_faststart", yesNo),
@@ -442,6 +443,7 @@ export function openChannelOptions(id) {
     field(t("Качество записи"), quality),
     field(t("Чат прямых эфиров при записи"), fields.live_chat),
     field(t("Записывать с начала эфира, если запись началась позже"), fields.record_from_start),
+    field(t("Склеивать начало эфира с записью"), fields.join_beginning),
     field(t("Конвертировать записи в mp4"), fields.convert_recordings),
     field(t("Готовить mp4 к просмотру по сети"), fields.mp4_faststart),
     field(t("Делить запись на куски"), fields.split_mode),
