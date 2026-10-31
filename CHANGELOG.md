@@ -9,6 +9,10 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **New logo:** a safe door on hinges with a combination lock and a play
+  button, and a red recording dot in the corner — in the window, the
+  exe, the installer and the README. The tray icon shows the dot only
+  while something is recording.
 - **"Start recording" answers right away:** while streamlink connects to
   the stream (a few seconds), the button shows a spinner and "Recording
   is starting…", the live card shows "Starting…". A second click cancels.

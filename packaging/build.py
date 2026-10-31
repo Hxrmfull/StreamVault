@@ -106,7 +106,7 @@ def make_icon():
     from streamvault.ui.tray import draw_icon
     sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256]
     # каждый размер рисуется отдельно: мелкие значки чёткие, а не уменьшенные
-    images = [draw_icon(size=size) for size in sizes]
+    images = [draw_icon(size=size, dot=True) for size in sizes]
     images[-1].save(os.path.join(BUILD, "StreamVault.ico"), format="ICO",
                     sizes=[(size, size) for size in sizes], append_images=images[:-1])
 

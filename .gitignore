@@ -36,3 +36,6 @@ NOTES.md
 # в репозитории — то, что нужно программе, её сборке и README.
 tests/
 .github/workflows/
+
+# картинка превью ссылки на репозиторий: загружается в настройках GitHub вручную
+docs/social-preview.png

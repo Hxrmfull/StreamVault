@@ -11,21 +11,52 @@ from ..i18n import tr
 from ..live.storage import human_size
 
 
-def draw_icon(recording=False, size=64):
+ACCENT, DOOR, DIAL, FRAME, LIGHT, RED = "#9147ff", "#0e0e10", "#bf94ff", "#55446f", "#efeff1", "#eb0400"
+# рисуется крупнее и уменьшается: у мелких значков (16 px) сглаженные края
+SUPERSAMPLE = 8
+
+
+def draw_icon(recording=False, size=64, dot=None):
     """
-    Значок программы, нарисованный кодом, — тот же, что logo.svg. Во время
-    записи в углу горит красная точка: видно, не открывая окно.
+    Значок программы, нарисованный кодом, — тот же, что logo.svg: дверь сейфа
+    на петлях, на ней кодовый замок с плеем. Красная точка записи в углу —
+    у значка exe и логотипа всегда (dot=True), а в трее только во время
+    записи: видно, не открывая окно.
     """
-    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    dot = recording if dot is None else dot
+    big = size * SUPERSAMPLE
+    image = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
-    unit = size / 32
-    draw.rounded_rectangle([2 * unit, 4 * unit, 30 * unit, 28 * unit], radius=6 * unit, fill="#9147ff")
-    draw.rounded_rectangle([6 * unit, 8 * unit, 26 * unit, 24 * unit], radius=3 * unit, fill="#0e0e10")
-    draw.polygon([(13 * unit, 11 * unit), (13 * unit, 21 * unit), (21 * unit, 16 * unit)], fill="#efeff1")
-    if recording:
-        draw.ellipse([19 * unit, 0, 32 * unit, 13 * unit], fill="#eb0400",
-                     outline="#0e0e10", width=max(1, int(2 * unit)))
-    return image
+    u = big / 32
+
+    def box(x1, y1, x2, y2):
+        return [x1 * u, y1 * u, x2 * u, y2 * u]
+
+    def ring(cx, cy, r, width, color):
+        half = width / 2
+        draw.ellipse(box(cx - r - half, cy - r - half, cx + r + half, cy + r + half), outline=color,
+                     width=max(1, round(width * u)))
+
+    draw.rounded_rectangle(box(2, 2, 30, 30), radius=7 * u, fill=ACCENT)
+    for top in (8.4, 19.2):                                        # петли двери
+        draw.rounded_rectangle(box(2.6, top, 5.6, top + 4.4), radius=1.2 * u, fill=DOOR)
+    draw.rounded_rectangle(box(6, 5, 27, 27), radius=4.5 * u, fill=DOOR)
+    draw.rounded_rectangle(box(7.3, 6.3, 25.7, 25.7), radius=3.6 * u, outline=FRAME,
+                           width=max(1, round(0.8 * u)))
+    # шкала кодового замка: 12 рисок, как штрихи stroke-dasharray в logo.svg
+    cx, cy, r, width = 16.5, 16.2, 6.6, 1.6
+    half = width / 2
+    for tick in range(12):
+        start = tick * 30
+        draw.arc(box(cx - r - half, cy - r - half, cx + r + half, cy + r + half), start, start + 7.8,
+                 fill=DIAL, width=max(1, round(width * u)))
+    ring(cx, cy, 4.5, 1.1, DIAL)
+    draw.polygon([(16.5 * u, 9.1 * u), (15.3 * u, 7.3 * u), (17.7 * u, 7.3 * u)], fill=LIGHT)   # указатель
+    draw.polygon([(15.3 * u, 14.2 * u), (15.3 * u, 18.2 * u), (18.5 * u, 16.2 * u)], fill=LIGHT)  # плей
+    if dot:
+        draw.ellipse(box(26.6 - 4.4, 5.4 - 4.4, 26.6 + 4.4, 5.4 + 4.4), fill=DOOR)
+        draw.ellipse(box(26.6 - 3.0, 5.4 - 3.0, 26.6 + 3.0, 5.4 + 3.0), fill=RED)
+    return image.resize((size, size), Image.LANCZOS)
 
 
 def status_text(status):
