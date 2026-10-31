@@ -18,6 +18,7 @@ import os
 import shutil
 import subprocess
 import sys
+import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -64,6 +65,11 @@ def main():
         if not os.path.isfile(path):
             sys.exit("нет файла: %s" % path)
         print("%s: %d байт" % (os.path.basename(path), os.path.getsize(path)))
+    # кэш Python в архиве — путь к исходникам на машине сборки; его там быть не должно
+    with zipfile.ZipFile(files[1]) as archive:
+        cached = [name for name in archive.namelist() if "__pycache__/" in name or name.endswith(".pyc")]
+    if cached:
+        sys.exit("в архиве кэш Python: %s" % ", ".join(cached[:5]))
 
     if args.dry_run:
         print("без публикации:", ", ".join(files))
