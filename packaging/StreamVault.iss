@@ -49,6 +49,9 @@ SolidCompression=yes
 WizardStyle=modern
 ; Программа может быть запущена во время обновления — предлагаем закрыть.
 CloseApplications=yes
+; После установки Проводник обновляет иконки: иначе ярлыки показывают старую
+; иконку из кэша — exe заменён по тому же пути, и Windows этого не замечает.
+ChangesAssociations=yes
 RestartApplications=no
 
 [Languages]

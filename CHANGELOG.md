@@ -23,6 +23,8 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- After an update the desktop and Start menu shortcuts kept the old icon from
+  the Windows icon cache; the installer now tells Explorer to refresh icons.
 - A recording left in `.ts` with its chat ready, then split by Convert to mp4,
   kept one chat for the whole recording; now every piece gets its own.
 
