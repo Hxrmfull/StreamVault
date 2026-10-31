@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: data: http://127.0.0.1:*; media-src http://127.0.0.1:*; style-src 'self'; script-src 'self'; connect-src 'self'">
+<title>StreamVault</title>
+<link rel="icon" href="logo.svg">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="#live" title="StreamVault">
+    <img src="logo.svg" alt="" width="28" height="28">
+    <span>StreamVault</span>
+  </a>
+  <nav class="nav" id="nav">
+    <a href="#live" data-view="live"><span data-i18n="Эфиры">Эфиры</span></a>
+    <a href="#downloads" data-view="downloads"><span data-i18n="Загрузки">Загрузки</span> <span class="nav-count" id="downloads-count" hidden></span></a>
+    <a href="#library" data-view="library"><span data-i18n="Библиотека">Библиотека</span></a>
+    <a href="#log" data-view="log"><span data-i18n="Журнал">Журнал</span></a>
+  </nav>
+  <form class="search" id="search-form" autocomplete="off">
+    <input id="search-input" type="text" spellcheck="false"
+           data-i18n-placeholder="Канал или ссылка на запись или клип"
+           placeholder="Канал или ссылка на запись или клип">
+    <button type="submit" class="search-button" data-i18n-title="Открыть" title="Открыть"></button>
+  </form>
+  <div class="topbar-actions">
+    <button class="update-badge" id="update-badge" hidden></button>
+    <button class="icon-button" id="settings-button" data-i18n-title="Настройки" title="Настройки"></button>
+    <button class="icon-button" id="quit-button" data-i18n-title="Выйти из StreamVault" title="Выйти из StreamVault"></button>
+  </div>
+</header>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <span data-i18n="Отслеживаемые каналы">Отслеживаемые каналы</span>
+      <button class="icon-button small" id="add-channel-button" data-i18n-title="Добавить канал" title="Добавить канал"></button>
+    </div>
+    <ul class="channel-list" id="channel-list"></ul>
+    <div class="sidebar-empty" id="sidebar-empty" hidden>
+      <span data-i18n="Каналов пока нет.">Каналов пока нет.</span>
+      <button class="link-button" id="sidebar-add" data-i18n="Добавить канал">Добавить канал</button>
+    </div>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+<div class="toasts" id="toasts"></div>
+<div id="modal-root"></div>
+<script src="i18n.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

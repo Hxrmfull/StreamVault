@@ -1,0 +1,60 @@
+{
+  "language": "",
+  "root_path": "D:\\Streams",
+  "quality": "best",
+  "channels": [
+    {
+      "platform": "twitch",
+      "channel": "legendaafk",
+      "enabled": true
+    },
+    {
+      "platform": "kick",
+      "channel": "xqc",
+      "enabled": false,
+      "quality": "720p60",
+      "keep_days": 30
+    },
+    "youtube:@SomeHandle",
+    "https://live.vkvideo.ru/somechannel"
+  ],
+  "twitch_client_id": "",
+  "twitch_client_secret": "",
+  "refresh": {
+    "twitch": 15,
+    "kick": 60,
+    "youtube": 60,
+    "vkvideolive": 60
+  },
+  "probe_timeout": 180,
+  "ffmpeg_path": "",
+  "convert_recordings": true,
+  "mp4_faststart": true,
+  "split_mode": "off",
+  "split_size_gb": 2.0,
+  "split_minutes": 60,
+  "split_count": 2,
+  "record_from_start": false,
+  "min_free_gb": 5,
+  "keep_days": 0,
+  "ffmpeg_attempts": 3,
+  "ffmpeg_retry_delay": 120,
+  "drain_grace": 900,
+  "downloads_path": "",
+  "download_quality": "best",
+  "max_downloads": 2,
+  "download_fragments": 4,
+  "twitch_auth_token": "",
+  "ytdlp_extra_args": [],
+  "chat_mode": "none",
+  "live_chat": "text",
+  "chat_width": 422,
+  "chat_height": 1080,
+  "chat_font_size": 18,
+  "log_level": "info",
+  "log_max_bytes": 5242880,
+  "log_backup_count": 5,
+  "close_to_tray": true,
+  "tray_notifications": true,
+  "check_updates": true
+}

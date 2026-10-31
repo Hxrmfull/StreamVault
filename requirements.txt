@@ -1,0 +1,7 @@
+requests>=2.31
+websockets>=13
+streamlink>=8.0
+yt-dlp[default]>=2026.10.21
+pywebview>=6.2
+pystray>=0.19
+pillow>=10
