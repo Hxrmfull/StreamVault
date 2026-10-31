@@ -593,6 +593,12 @@ STRINGS = {
     'у канала выключен архив прошедших эфиров': 'the channel has past broadcasts turned off',
     'у этой площадки начала эфира не взять': 'this platform cannot give the start of a stream',
     # консольные команды (cli.py)
+    # живая строка консоли (console.py)
+    'чат {count}': 'chat {count}',
+    'наблюдаю за каналами: {count}, в эфире: {live}': 'watching channels: {count}, live: {live}',
+    'обработка: {name}': 'processing: {name}',
+    'ждут обработки: {count}': 'waiting for processing: {count}',
+    'в очереди: {count}': 'queued: {count}',
     'StreamVault {version}: запись эфиров и скачивание записей и клипов Twitch, Kick, YouTube, VK Video Live':
         'StreamVault {version}: records live streams and downloads VODs and clips from Twitch, Kick, YouTube and VK Video Live',
     'ФАЙЛ': 'FILE',

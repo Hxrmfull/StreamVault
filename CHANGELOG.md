@@ -9,6 +9,11 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Live status line in the console:** `record` shows each recording's
+  time, size and chat count with a blinking REC dot (or a spinner and
+  how many channels are live), plus what is being processed; `download`
+  shows a progress bar with speed and time left. It is redrawn in place,
+  log lines go above it, and it is off when the output goes to a file.
 - **Console commands in English:** `record`, `download`, `info`,
   `platforms` and `--help` speak the window's language — from the
   settings, or the Windows language until it is chosen. argparse's own

@@ -25,6 +25,7 @@ from . import __version__, i18n, sites, util
 from .archive import chat
 from .archive import downloads as dl
 from .archive import ytdlp
+from .console import StatusLine, download_status, format_duration, format_size, recording_status
 from .i18n import tr
 from .live.recorder import ChannelRecorder
 from .live.service import LiveService
@@ -238,45 +239,32 @@ def record(args, parser):
         return 2
 
     service.start()
+    # живая строка горит и после Ctrl+C: видно, что ещё обрабатывается
+    status = StatusLine(recording_status(service)).start()
     try:
-        while service.is_running():
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        logging.info(tr("остановка по Ctrl+C"))
+        try:
+            while service.is_running():
+                time.sleep(0.5)
+        except KeyboardInterrupt:
+            logging.info(tr("остановка по Ctrl+C"))
 
-    try:
-        # Ctrl+C дошёл и до streamlink: даём ему закрыть файл самому
-        left = service.shutdown(grace=ChannelRecorder.STOP_GRACE)
-    except KeyboardInterrupt:
-        # второй Ctrl+C, пока доделывается обработка: выходим без трассировки.
-        # Недописанный mp4 останется с расширением .part и будет убран сам.
-        logging.warning(tr("повторный Ctrl+C — выхожу, не дожидаясь обработки. "
-                           "Необработанные записи подхватятся при следующем запуске"))
-        return 130
+        try:
+            # Ctrl+C дошёл и до streamlink: даём ему закрыть файл самому
+            left = service.shutdown(grace=ChannelRecorder.STOP_GRACE)
+        except KeyboardInterrupt:
+            # второй Ctrl+C, пока доделывается обработка: выходим без трассировки.
+            # Недописанный mp4 останется с расширением .part и будет убран сам.
+            logging.warning(tr("повторный Ctrl+C — выхожу, не дожидаясь обработки. "
+                               "Необработанные записи подхватятся при следующем запуске"))
+            return 130
+    finally:
+        status.stop()
 
     if left:
         logging.info(tr("осталось необработанных записей: {count}. "
                         "Они подхватятся при следующем запуске", count=left))
     logging.info(tr("завершено"))
     return 0
-
-
-def format_size(value):
-    if not value:
-        return "?"
-    for unit in ("Б", "КБ", "МБ", "ГБ"):
-        if value < 1024 or unit == "ГБ":
-            return ("%.0f %s" if unit == "Б" else "%.1f %s") % (value, tr(unit))
-        value /= 1024.0
-
-
-def format_duration(seconds):
-    if seconds is None:
-        return ""
-    seconds = int(seconds)
-    hours, rest = divmod(seconds, 3600)
-    return ("%d:%02d:%02d" % (hours, rest // 60, rest % 60) if hours
-            else "%d:%02d" % (rest // 60, rest % 60))
 
 
 def describe_progress(job):
@@ -332,6 +320,7 @@ def download(args, parser):
         return 0
 
     manager.start()
+    status = StatusLine(download_status(manager, wanted, describe_progress)).start()
     finished = (dl.DONE, dl.FAILED, dl.CANCELLED, dl.PAUSED)
     reported = 0.0
     try:
@@ -339,7 +328,8 @@ def download(args, parser):
             jobs = [manager.job(job_id) for job_id in wanted]
             if all(job["state"] in finished for job in jobs):
                 break
-            if time.monotonic() - reported >= PROGRESS_REPORT_INTERVAL:
+            # в консоли прогресс рисует живая строка; в файл или другой программе — строки раз в 5 с
+            if not status.enabled and time.monotonic() - reported >= PROGRESS_REPORT_INTERVAL:
                 reported = time.monotonic()
                 for job in jobs:
                     if job["state"] in dl.ACTIVE:
@@ -351,6 +341,8 @@ def download(args, parser):
         logging.info(tr("остановлено. Скачанное сохранено: та же команда продолжит "
                         "загрузку с того же места"))
         return 130
+    finally:
+        status.stop()
     manager.shutdown()
 
     # о скачанном уже сказал сам менеджер, здесь — только итог
