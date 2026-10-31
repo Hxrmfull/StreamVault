@@ -5,6 +5,22 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.1.1 — 2026-10-31
+
+### Added
+
+- **Installer** `StreamVault-<version>-setup.exe`: pick the folder, Start
+  menu and desktop shortcuts, uninstall from Windows settings. It installs
+  for the current user without admin rights, or for all users. An installed
+  copy updates itself by downloading and running the new installer.
+
+### Fixed
+
+- The window did not open when the archive was unpacked with Windows
+  Explorer: Windows marks every unpacked file as downloaded from the
+  internet, and .NET refused to load the window's library. The app now
+  removes this mark from its own files on start.
+
 ## 0.1.0 — 2026-10-31
 
 The first public version.

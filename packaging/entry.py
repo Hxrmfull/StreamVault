@@ -32,8 +32,36 @@ def honor_ioencoding():
             pass
 
 
+def unblock_own_files():
+    """
+    Архив, скачанный браузером и распакованный Проводником, помечает каждый
+    файл «из интернета» (поток Zone.Identifier). С такой пометкой .NET
+    отказывается грузить Python.Runtime.dll, и окно (pywebview на WinForms)
+    не запускается. Пометка снимается с файлов самой программы — то же, что
+    «Разблокировать» в свойствах файла. Программа стоит там, куда писать
+    нельзя, — снять не выйдет, но туда её кладёт установщик, а он пометок
+    не ставит.
+    """
+    if os.name != "nt":
+        return
+    folder = os.path.dirname(os.path.abspath(sys.executable))
+    probe = os.path.join(folder, "_internal", "pythonnet", "runtime", "Python.Runtime.dll")
+    if not os.path.exists(probe + ":Zone.Identifier"):
+        return
+    for name in ("StreamVault.exe", util.CONSOLE_EXE, "_internal"):
+        path = os.path.join(folder, name)
+        files = [path] if os.path.isfile(path) else \
+            [os.path.join(root, file) for root, _, names in os.walk(path) for file in names]
+        for file in files:
+            try:
+                os.remove(file + ":Zone.Identifier")
+            except OSError:
+                pass
+
+
 def main(args):
     honor_ioencoding()
+    unblock_own_files()
     if args[:1] == [util.RUN_STREAMLINK]:
         from streamlink_cli.main import main as streamlink
         sys.argv = ["streamlink", *args[1:]]

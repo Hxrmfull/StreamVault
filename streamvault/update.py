@@ -18,6 +18,11 @@
 (StreamVault.exe, StreamVaultCLI.exe, _internal) и запускает обновлённую.
 Настройки, загрузки, журналы и скачанные кнопками инструменты остаются.
 Не вышло — старые файлы возвращаются на место.
+
+Установленную копию (рядом с ней unins000.exe) обновляет установщик новой
+версии — как в DTTConvert: он знает, куда и для кого программа поставлена,
+и сам попросит права администратора, если её ставили для всех. Программа
+скачивает его во временную папку, сверяет так же и запускает с /SILENT.
 """
 
 import ctypes
@@ -28,6 +33,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import zipfile
@@ -41,6 +47,12 @@ REPO = "Hxrmfull/StreamVault"
 LATEST_URL = "https://api.github.com/repos/%s/releases/latest" % REPO
 RELEASES_PAGE = "https://github.com/%s/releases" % REPO
 ASSET = "StreamVault-{version}-windows.zip"
+SETUP_ASSET = "StreamVault-{version}-setup.exe"
+# /SILENT — без вопросов мастера, только полоса прогресса; /RELAUNCH —
+# запустить программу после установки (StreamVault.iss); /CLOSEAPPLICATIONS —
+# закрыть то, что ещё держит файлы, не спрашивая: программа и так выходит.
+SETUP_ARGUMENTS = "/SILENT /SP- /CLOSEAPPLICATIONS /RELAUNCH"
+UNINSTALLER = "unins000.exe"
 # Проверка руками: программа спрашивает о выпуске свой сервер вместо GitHub.
 URL_ENV = "STREAMVAULT_UPDATE_URL"
 
@@ -64,6 +76,16 @@ def is_newer(remote, local=__version__):
 def program_dir():
     """Папка собранной программы; из исходников — None: их обновляют через git."""
     return os.path.dirname(os.path.abspath(sys.executable)) if util.FROZEN else None
+
+
+def installed(folder):
+    """Поставлена ли программа установщиком: рядом лежит его деинсталлятор."""
+    return bool(folder) and os.path.isfile(os.path.join(folder, UNINSTALLER))
+
+
+def setup_dir():
+    """Куда установленная копия качает установщик: в её папку писать может быть нельзя."""
+    return os.path.join(tempfile.gettempdir(), "StreamVault-update")
 
 
 # ------------------------------------------------------------ замена файлов программы
@@ -169,9 +191,14 @@ class AppUpdater(Installer):
                    require_https=host not in ("127.0.0.1", "localhost"))
 
     def can_install(self):
-        """Ставить можно собранную программу из папки, куда разрешено писать."""
+        """
+        Ставить можно собранную программу из папки, куда разрешено писать,
+        и любую установленную — права попросит её установщик.
+        """
         if not self._folder:
             return False
+        if installed(self._folder):
+            return True
         try:
             probe = os.path.join(self._folder, ".update-probe")
             with open(probe, "wb"):
@@ -241,7 +268,7 @@ class AppUpdater(Installer):
     # ------------------------------------------------------------ скачивание
 
     def _work_dir(self):
-        return os.path.join(self._folder, UPDATE_DIR)
+        return setup_dir() if installed(self._folder) else os.path.join(self._folder, UPDATE_DIR)
 
     def _plan(self):
         if not self.can_install():
@@ -252,10 +279,10 @@ class AppUpdater(Installer):
         if not is_newer(version, self._current):
             self._set(version=version)
             return None
-        name = ASSET.format(version=version)
+        name = (SETUP_ASSET if installed(self._folder) else ASSET).format(version=version)
         archive = release["assets"].get(name)
         if not archive:
-            raise InstallError(tr("в выпуске {version} нет архива программы", version=version))
+            raise InstallError(tr("в выпуске {version} нет файла {name}", version=version, name=name))
         digest = str(archive.get("digest") or "").lower()
         if not digest.startswith("sha256:"):
             raise InstallError(tr("GitHub не сообщил контрольную сумму архива"))
@@ -273,6 +300,13 @@ class AppUpdater(Installer):
 
     def _install(self, path, version, source):
         """Распаковка в update\\StreamVault-<версия> — только файлы программы. Сумма уже сверена."""
+        if installed(self._folder):
+            # установщик ставится как есть: недокачанное убирается, поэтому — под своим именем
+            setup = os.path.join(self._work_dir(), SETUP_ASSET.format(version=version))
+            _remove(setup)
+            os.replace(path, setup)
+            self._set(staged=setup)
+            return setup
         staging = os.path.join(self._work_dir(), "StreamVault-" + version)
         _remove(staging)
         try:
@@ -319,8 +353,15 @@ class AppUpdater(Installer):
         """
         snapshot = self.snapshot()
         staged = snapshot.get("staged")
-        if snapshot["state"] != "done" or not staged or not os.path.isdir(staged):
+        if snapshot["state"] != "done" or not staged or not os.path.exists(staged):
             return False
+        if os.path.isfile(staged):
+            # установщик: через оболочку — так Windows сама спросит права администратора,
+            # если программу ставили для всех
+            os.startfile(staged, "open", SETUP_ARGUMENTS)
+            logging.info(tr("обновление до {version}: программа закроется и запустится заново",
+                            version=snapshot["version"]))
+            return True
         helper = os.path.join(staged, util.CONSOLE_EXE)
         subprocess.Popen([helper, util.APPLY_UPDATE, self._folder, str(os.getpid())], cwd=staged,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -421,5 +462,9 @@ def finish_previous(folder):
 
     if os.path.isdir(update_dir):
         threading.Thread(target=clean, name="update-cleanup", daemon=True).start()
+    if installed(folder) and os.path.isdir(setup_dir()):
+        # установщик прошлого обновления больше не нужен
+        threading.Thread(target=shutil.rmtree, args=(setup_dir(), True), name="setup-cleanup",
+                         daemon=True).start()
     return result
 

@@ -433,7 +433,7 @@ STRINGS = {
     'обновления: выпусков на GitHub пока нет': 'updates: there are no releases on GitHub yet',
     'обновления: проверить не удалось — {error}': 'updates: could not check — {error}',
     'проверка обновлений упала': 'the update check crashed',
-    'в выпуске {version} нет архива программы': 'release {version} has no program archive',
+    'в выпуске {version} нет файла {name}': 'release {version} has no {name}',
     'в чате эфира ни одного сообщения: {name}': 'no messages in the stream chat: {name}',
     'после обработки {name}: сбой': 'after processing {name}: crash',
     'сообщение|сообщения|сообщений': 'message|messages',

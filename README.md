@@ -24,9 +24,16 @@ The interface is in English and Russian; switch the language in the settings.
 
 ## Download
 
-Windows 10/11, 64-bit — `StreamVault-<version>-windows.zip` on the
-[releases](../../releases) page. Unzip it and run `StreamVault.exe`; keep the
-**whole folder** (the `_internal` folder next to the exe is required).
+Windows 10/11, 64-bit — see the [releases](../../releases) page.
+
+| File | What it is |
+|---|---|
+| `StreamVault-<version>-setup.exe` | Installer — the easiest option: pick the folder, no admin rights needed |
+| `StreamVault-<version>-windows.zip` | Portable: unzip and run `StreamVault.exe` |
+
+The portable version runs from any folder; move the **whole folder** (the
+`_internal` folder next to the exe is required). Both versions update
+themselves from the app.
 
 - **No accounts or API keys needed.** The app asks the platforms the same
   way their websites do for a viewer who is not logged in.
@@ -35,8 +42,9 @@ Windows 10/11, 64-bit — `StreamVault-<version>-windows.zip` on the
   build, checked against its checksum).
 - **SmartScreen** ("Windows protected your PC"): the app has no digital
   signature. Click "More info" → "Run anyway".
-- **Portable:** settings, logs and the downloaded FFmpeg live in the app
-  folder, or in `%APPDATA%\StreamVault` if that folder is read-only.
+- **Settings, logs and the downloaded FFmpeg** live in the app folder, or
+  in `%APPDATA%\StreamVault` if that folder is read-only (an install for all
+  users in Program Files).
 
 ## Features
 
@@ -86,17 +94,20 @@ python -m streamvault download <link>    # download a VOD or clip
 ```
 
 `python -m streamvault --help` lists all commands. Windows build (makes
-`dist\StreamVault` and the release archive):
+`dist\StreamVault` and the archive; the installer needs
+[Inno Setup 6](https://jrsoftware.org/isdl.php)):
 
 ```bash
-python packaging/build.py
+python packaging/build.py                          # the app and the archive
+python packaging/release.py <version> --dry-run    # plus the installer
 ```
 
 ## Other
 
 - **Updates:** on start the app checks GitHub for a new release and shows
-  an update button. The downloaded archive must match the size and SHA-256
-  that GitHub reports; settings and recordings are kept. yt-dlp updates
+  an update button. An installed copy downloads and runs the new installer,
+  a portable copy the new archive; either file must match the size and
+  SHA-256 that GitHub reports. Settings and recordings are kept. yt-dlp updates
   separately with a button in the settings, without a new release.
 - **Subscriber-only VODs on Twitch:** paste your `auth-token` cookie into
   the settings; it stays in `settings.json` on your computer.
