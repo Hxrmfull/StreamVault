@@ -17,6 +17,7 @@ import { refreshDownloadsCount, renderDownloads } from "./downloads.js";
 import { renderLibrary, scheduleLibraryReload } from "./library.js";
 import { ffmpegBlock, openAppUpdate, openSettings, refreshAppUpdate, refreshFfmpegBlocks, refreshTwitchdownloaderBlocks, refreshYtdlpBlocks, setAppUpdate } from "./settings.js";
 import { attachChannelSearch, openAddChannel } from "./search.js";
+import { enhanceSelects } from "./dropdown.js";
 
 export function receive(batch) {
   let channelsChanged = false, jobsChanged = false;
@@ -398,5 +399,7 @@ export async function start() {
   setInterval(scheduleLiveResync, 30000);
 }
 
+// выпадающие списки — свои, в тон окну (dropdown.js)
+enhanceSelects(document.body);
 window.sv = { receive: receive, askQuit: () => askQuit(false) };
 start();

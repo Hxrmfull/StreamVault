@@ -289,10 +289,10 @@ export function createLibraryCard() {
   card._gaps = h("span", { class: "badge warn" });
   card._title = h("div", { class: "card-title" });
   card._sub = h("div", { class: "card-sub" });
-  card._watch = iconButton("play", t("Смотреть в окне"), (event) => {
+  // значок «играть» — проигрыватель Windows; щелчок по карточке — проигрыватель в окне
+  card._watch = iconButton("play", t("Открыть в проигрывателе"), (event) => {
     event.stopPropagation();
-    // эфир из частей — с первой, дальше они идут подряд
-    openWatch(partsOf(card._item)[0]);
+    bridge.call("open_file", card._item.path).catch(failed);
   });
   card._chatOpen = iconButton("chat", t("Открыть чат"), (event) => {
     event.stopPropagation();
@@ -336,8 +336,8 @@ export function createLibraryCard() {
       event.stopPropagation();
       confirmDelete(card._item);
     }));
-  card.addEventListener("click", () => bridge.call("open_file", card._item.path).catch(failed));
-  card.title = t("Открыть в проигрывателе");
+  // эфир из частей — с первой, дальше они идут подряд
+  card.addEventListener("click", () => openWatch(partsOf(card._item)[0]));
   card.append(
     h("div", { class: "thumb" }, h("div", { class: "placeholder" }, icon("video")), card._img,
       h("div", { class: "corner top-left" }, card._kind, card._parts, card._ts, card._gaps),
@@ -354,7 +354,7 @@ export function updateLibraryCard(card, item) {
   const chatFiles = item.chat || {};
   // смотреть в окне можно любую запись: с чатом он идёт рядом, а клип вырезается и без него
   const withChat = parts.some((part) => part.chat && part.chat.json);
-  card._watch.title = card._watch.ariaLabel = withChat ? t("Смотреть с чатом") : t("Смотреть в окне");
+  card.title = withChat ? t("Смотреть с чатом") : t("Смотреть в окне");
   card._overlay.hidden = Boolean(item.edit) || !parts.some((part) => part.chat && part.chat.video);
   card._chatOpen.hidden = !chatFiles.html;
   card._chatVideo.hidden = !chatFiles.video;

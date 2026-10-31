@@ -5,6 +5,17 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- **Library:** a click on a card opens the recording in the app's player
+  with chat; the play icon on the card opens it in the Windows player.
+- **Drop-down lists** are drawn by the app instead of Windows: even
+  arrows, a list in the window's style with a check mark on the chosen
+  item, smooth opening, and opening upwards when there is no room below.
+  The keyboard works as before.
+
 ## 0.1.1 — 2026-10-31
 
 ### Added

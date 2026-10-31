@@ -413,9 +413,98 @@ input[type=text], input[type=password], input[type=number], select, textarea {
   border-radius: var(--radius);
   outline: none;
 }
+input[type=text], input[type=password], input[type=number], textarea {
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
 input:hover, select:hover, textarea:hover { border-color: #7c7c86; }
-input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(145, 71, 255, .22); }
 select { padding-right: 6px; }
+
+/* ---------------------------------------------------------------- выпадающие списки (dropdown.js) */
+
+/* системный select остаётся в странице ради значения и событий, но не виден */
+.dropdown { position: relative; display: inline-flex; vertical-align: middle; min-width: 0; max-width: 100%; }
+.dropdown > select.dropdown-native { display: none; }
+.dropdown-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 8px 0 12px;
+  background: var(--bg);
+  border: 2px solid var(--control-border);
+  border-radius: var(--radius);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
+}
+.dropdown-button:hover { border-color: #7c7c86; background: #141417; }
+.dropdown-button:focus-visible, .dropdown.open .dropdown-button {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(145, 71, 255, .22);
+}
+.dropdown-button:disabled { opacity: .5; cursor: default; border-color: var(--control-border); background: var(--bg); }
+/* все варианты в одной клетке: кнопка шириной с самый длинный, виден только выбранный */
+.dropdown-value { flex: 1; min-width: 0; display: grid; }
+.dropdown-label {
+  grid-area: 1 / 1;
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dropdown-label.current { visibility: visible; height: auto; }
+.dropdown-chevron {
+  width: 18px; height: 18px;
+  color: var(--muted);
+  transition: transform .2s ease, color .15s ease;
+}
+.dropdown-button:hover .dropdown-chevron { color: var(--text); }
+.dropdown.open .dropdown-chevron { transform: rotate(180deg); color: var(--accent-text); }
+
+.dropdown-menu {
+  position: fixed;
+  z-index: 90;
+  max-width: min(420px, calc(100vw - 16px));
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--side);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .55), 0 2px 6px rgba(0, 0, 0, .4);
+  outline: none;
+  opacity: 0;
+  transform: translateY(-6px) scale(.98);
+  transform-origin: top center;
+  transition: opacity .14s ease, transform .14s ease;
+}
+.dropdown-menu.up { transform: translateY(6px) scale(.98); transform-origin: bottom center; }
+.dropdown-menu.shown { opacity: 1; transform: none; }
+.dropdown-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 6px 8px 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color .1s ease, color .1s ease;
+}
+.dropdown-option-text { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.dropdown-option.active { background: var(--raised); }
+.dropdown-option.selected { color: var(--accent-text); font-weight: 600; }
+.dropdown-option.disabled { color: var(--faint); cursor: default; }
+.dropdown-check { width: 16px; height: 16px; visibility: hidden; }
+.dropdown-option.selected .dropdown-check { visibility: visible; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dropdown-menu, .dropdown-chevron, .dropdown-button, .dropdown-option { transition: none; }
+}
 
 .switch { position: relative; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
 .switch input { position: absolute; opacity: 0; pointer-events: none; }
@@ -802,6 +891,7 @@ select { padding-right: 6px; }
 .hint { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .modal fieldset > .hint { margin: -6px 0 14px; }
 .modal .field input[type=text], .modal .field input[type=password], .modal .field select { width: 100%; }
+.modal .field .dropdown { display: flex; width: 100%; }
 .modal .field .with-button { display: flex; gap: 8px; }
 .modal .field .with-button input { flex: 1; }
 .modal .error-text { color: var(--error); min-height: 18px; }
@@ -905,7 +995,7 @@ select { padding-right: 6px; }
 
 /* библиотека: отбор и место на диске */
 .library-filters { margin-top: -6px; margin-bottom: 14px; }
-.library-filters select { width: auto; }
+.library-filters select, .library-filters .dropdown { width: auto; }
 .usage-stats { display: flex; flex-wrap: wrap; gap: 12px; margin: 6px 0 18px; }
 .usage-stat { flex: 1; min-width: 140px; padding: 10px 14px; border-radius: var(--radius); background: var(--card); }
 .usage-stat strong { font-size: 18px; }
@@ -1079,7 +1169,7 @@ select { padding-right: 6px; }
 .watch-info-channel { font-size: 16px; font-weight: 700; }
 .watch-info-title { margin: 2px 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .watch-info .muted { font-size: 13px; }
-.watch-info select { width: auto; flex: none; }
+.watch-info select, .watch-info .dropdown { width: auto; flex: none; }
 .watch-body.theatre .watch-info, .watch-body.theatre .watch-clip { display: none; }
 
 /* чат справа: шапка «Чат», строки как на Twitch */
