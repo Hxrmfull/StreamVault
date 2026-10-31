@@ -586,6 +586,13 @@ select { padding-right: 6px; }
 }
 .spinner.small { width: 16px; height: 16px; border-width: 2px; margin: 0; display: inline-block; vertical-align: middle; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* в кнопке — цветом её текста: «Запись начинается…» */
+.btn .spinner.small, .card-action .spinner.small {
+  width: 14px; height: 14px;
+  border-color: currentColor;
+  border-top-color: transparent;
+  opacity: .85;
+}
 
 /* ---------------------------------------------------------------- карточки */
 

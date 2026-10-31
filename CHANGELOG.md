@@ -5,6 +5,21 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- **"Start recording" answers right away:** while streamlink connects to
+  the stream (a few seconds), the button shows a spinner and "Recording
+  is starting…", the live card shows "Starting…". A second click cancels.
+
+### Fixed
+
+- The window took port 42001, the one every pywebview app uses by
+  default. If another such program was already running there, the
+  window could silently show its pages. The port is now a free one
+  chosen by Windows.
+
 ## 0.1.2 — 2026-10-31
 
 ### Changed

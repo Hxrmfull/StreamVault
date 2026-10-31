@@ -322,6 +322,7 @@ export const state = {
   edits: new Map(),        // правки записей: клипы и видео с чатом поверх
   converting: new Set(),   // записи .ts, которые конвертируются по кнопке в библиотеке
   recordBusy: new Set(),   // каналы, которым только что нажали «Записать» или «Остановить»
+  recordStarting: new Map(), // «Записать» нажали, запись ещё не пошла: id канала → когда нажали
   route:{ name: "live" },
   stopped: false,
 };
@@ -453,6 +454,19 @@ export function isLive(channel) { return ["live", "recording", "unavailable"].in
 export function isRecording(channel) {
   return Boolean(channel) && (channel.state === "recording" || channel.state === "unavailable"
                               || (channel.temporary && channel.state === "starting"));
+}
+
+// Между «Записать» и началом записи проходит несколько секунд: streamlink
+// подключается к эфиру. Всё это время кнопка показывает, что запись запускается.
+// Кончается, когда запись пошла, не вышла («не удаётся записать» — та уже кнопка
+// «Остановить»), эфир кончился или ждать надоело.
+export const START_WAIT = 90 * 1000;
+export function recordStarting(id, channel) {
+  const since = state.recordStarting.get(id);
+  if (!since) return false;
+  const settled = (channel && !["live", "starting"].includes(channel.state)) || Date.now() - since > START_WAIT;
+  if (settled) state.recordStarting.delete(id);
+  return !settled;
 }
 
 export function splitId(id) {

@@ -13,6 +13,7 @@ import logging
 import mimetypes
 import os
 import shutil
+import socket
 import threading
 import webbrowser
 
@@ -190,6 +191,13 @@ def run(settings_path=DEFAULT_SETTINGS_PATH, browser=False, port=0, open_browser
     return 0
 
 
+def free_port():
+    """Свободный порт на 127.0.0.1 — его выбирает система."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
 def tray_status(live, downloads):
     """Что сейчас пишется и сколько загрузок идёт — для значка в трее."""
     recording = [channel["label"] for channel in live.snapshot()["channels"]
@@ -276,8 +284,12 @@ def _run_window(api, bus, live, downloads, settings, app_dir, start_hidden, tray
     window.events.loaded += on_loaded
     window.events.closing += on_closing
     try:
-        # своё хранилище — чтобы окно помнило выбранную страницу между запусками
-        webview.start(private_mode=False, storage_path=os.path.join(app_dir, "webview"))
+        # своё хранилище — профиль WebView2 в папке программы. Порт — свободный от
+        # системы: без него pywebview вне приватного режима берёт всегда 42001,
+        # а Windows пускает на занятый порт второй сервер молча — и окно получало
+        # страницы другой программы на pywebview (или другой копии StreamVault)
+        webview.start(private_mode=False, storage_path=os.path.join(app_dir, "webview"),
+                      http_port=free_port())
     finally:
         pump.stop()
         if notifier is not None:

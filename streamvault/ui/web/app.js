@@ -11,7 +11,7 @@
  * программы, маршруты, журнал и запуск.
  */
 
-import { bridge, button, ensureProfiles, failed, fmt, h, icon, openModal, rememberProfile, setText, showStopped, state, t, toast } from "./common.js";
+import { START_WAIT, bridge, button, ensureProfiles, failed, fmt, h, icon, openModal, rememberProfile, setText, showStopped, state, t, toast } from "./common.js";
 import { refreshSidebar, renderChannel, renderLink, renderLive } from "./channels.js";
 import { refreshDownloadsCount, renderDownloads } from "./downloads.js";
 import { renderLibrary, scheduleLibraryReload } from "./library.js";
@@ -158,6 +158,10 @@ export function applyLive(live) {
 // длительность идущих записей и "проверено N минут назад" обновляются сами
 export function tick() {
   const now = Date.now() / 1000;
+  // запись так и не пошла за отведённое время — кнопка возвращается к «Начать запись»
+  if (state.recordStarting.size && [...state.recordStarting.values()].some((since) => Date.now() - since > START_WAIT)) {
+    refreshView();
+  }
   for (const el of document.querySelectorAll("[data-since]")) {
     const label = "REC " + fmt.duration(now - Number(el.dataset.since))
                   + (el.dataset.bytes ? " · " + fmt.size(Number(el.dataset.bytes)) : "")

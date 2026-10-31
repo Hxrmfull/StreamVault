@@ -3,7 +3,7 @@
  * канала, списки записей и клипов, одно видео и запись по ссылке.
  */
 
-import { CHAT_MODES, DOWNLOAD_QUALITIES, KIND_LABELS, PAGE, PERIOD_LABELS, bridge, button, channelName, channelUrl, chatSelect, chatSupported, confirmDialog, displayTitle, ensureProfiles, entryChannelName, failed, fillAvatar, fmt, h, icon, iconButton, isLive, isRecording, isUrl, keepDaysSelect, knownProfile, liveQualityLabel, liveQualitySelect, liveThumb, openModal, platformName, qualitySelect, setSrc, setText, siteInfo, sortedChannels, splitId, state, stateText, stateTone, syncList, t, toast } from "./common.js";
+import { CHAT_MODES, DOWNLOAD_QUALITIES, KIND_LABELS, PAGE, PERIOD_LABELS, bridge, button, channelName, channelUrl, chatSelect, chatSupported, confirmDialog, displayTitle, ensureProfiles, entryChannelName, failed, fillAvatar, fmt, h, icon, iconButton, isLive, isRecording, isUrl, recordStarting, keepDaysSelect, knownProfile, liveQualityLabel, liveQualitySelect, liveThumb, openModal, platformName, qualitySelect, setSrc, setText, siteInfo, sortedChannels, splitId, state, stateText, stateTone, syncList, t, toast } from "./common.js";
 import { twitchdownloaderBlock } from "./settings.js";
 import { openAddChannel } from "./search.js";
 import { navigate, recBadge, refreshView, render, routeHash, view } from "./app.js";
@@ -156,27 +156,38 @@ export function updateLiveCard(card, channel) {
       : h("span", { class: "badge dark", text: t("без записи") }));
   }
   const recording = isRecording(channel);
+  const starting = recordStarting(channel.id, channel);
   card._watch.hidden = !(channel.state === "recording" && channel.recording);
   const busy = state.recordBusy.has(channel.id);
-  const actionKey = [recording, busy].join("|");
+  const actionKey = [recording, starting, busy].join("|");
   if (card._action.dataset.key !== actionKey) {
     card._action.dataset.key = actionKey;
     card._action.disabled = busy;
-    card._action.classList.toggle("start", !recording);
-    card._action.title = recording ? t("Остановить запись; записанное сохранится") : t("Записать идущий эфир сейчас");
-    card._action.replaceChildren(icon(recording ? "stop" : "record"),
-      busy ? t("Подождите…") : recording ? t("Остановить") : t("Записать"));
+    card._action.classList.toggle("start", !recording && !starting);
+    card._action.title = starting ? t("Запись запускается — нажми, чтобы отменить")
+      : recording ? t("Остановить запись; записанное сохранится") : t("Записать идущий эфир сейчас");
+    card._action.replaceChildren(starting ? h("span", { class: "spinner small" }) : icon(recording ? "stop" : "record"),
+      busy ? t("Подождите…") : starting ? t("Запускаю…") : recording ? t("Остановить") : t("Записать"));
   }
 }
 
 // начать или остановить запись канала — с карточки эфира или страницы канала
 export function quickRecord(id) {
-  const recording = isRecording(state.channels.get(id));
+  const channel = state.channels.get(id);
+  // пока запись запускается, кнопка её отменяет
+  const recording = isRecording(channel) || recordStarting(id, channel);
   state.recordBusy.add(id);
   refreshView();
   return bridge.call(recording ? "stop_recording" : "record_now", id)
-    .then(() => toast(recording ? t("Запись остановлена, записанное сохранится")
-                                : t("Запись началась"), "ok"))
+    .then(() => {
+      if (recording) {
+        state.recordStarting.delete(id);
+        toast(t("Запись остановлена, записанное сохранится"), "ok");
+      } else {
+        // о начале скажет сама кнопка: «Запись начинается…», затем «Остановить запись»
+        state.recordStarting.set(id, Date.now());
+      }
+    })
     .catch(failed)
     .finally(() => {
       state.recordBusy.delete(id);
@@ -536,19 +547,22 @@ function beginningLine(beginning) {
 export function refreshRecordButton() {
   const channel = state.channels.get(view.id) || view.probed;
   const recording = isRecording(channel);
+  const starting = recordStarting(view.id, channel);
   view.watchButton.hidden = !(channel && channel.state === "recording" && channel.recording);
   const busy = state.recordBusy.has(view.id);
   const live = Boolean(channel) && isLive(channel);
-  const mode = [busy, recording, live].join("|");
+  const mode = [busy, recording, starting, live].join("|");
   if (view.recordButton.dataset.mode === mode) return;
   view.recordButton.dataset.mode = mode;
   view.recordButton.disabled = busy;
-  view.recordButton.className = "btn" + (recording ? " stop-record" : live ? " record-live" : "");
-  view.recordButton.title = recording ? t("Остановить запись; записанное сохранится")
+  view.recordButton.className = "btn" + (starting ? " stop-record starting" : recording ? " stop-record"
+                                         : live ? " record-live" : "");
+  view.recordButton.title = starting ? t("Запись запускается — нажми, чтобы отменить")
+    : recording ? t("Остановить запись; записанное сохранится")
     : live ? t("Записать идущий эфир сейчас") : t("Проверить, не в эфире ли канал, и записать");
-  view.recordButton.replaceChildren(icon(recording ? "stop" : "record"),
-    busy ? (recording ? t("Останавливаю…") : t("Проверяю эфир…"))
-         : recording ? t("Остановить запись") : t("Начать запись"));
+  view.recordButton.replaceChildren(starting ? h("span", { class: "spinner small" }) : icon(recording ? "stop" : "record"),
+    busy ? (recording || starting ? t("Останавливаю…") : t("Проверяю эфир…"))
+         : starting ? t("Запись начинается…") : recording ? t("Остановить запись") : t("Начать запись"));
 }
 
 export function downloadAllListing() {
