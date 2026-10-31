@@ -1,0 +1,52 @@
+name: Bug report / Ошибка
+description: Something doesn't record, download or show up right / Что-то не пишется, не скачивается или показывается не так
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version / Версия
+      description: Settings → "Installed version" / Настройки → «Установлена версия»
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform / Площадка
+      multiple: true
+      options:
+        - Twitch
+        - Kick
+        - YouTube
+        - VK Video Live
+        - Not about a platform / Не про площадку
+    validations:
+      required: true
+  - type: dropdown
+    id: variant
+    attributes:
+      label: Build / Сборка
+      options:
+        - Windows build (exe) / Сборка для Windows (exe)
+        - From source / Из исходников
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened / Что случилось
+      description: What you did, what you expected and what you got / Что делали, чего ждали и что получилось
+    validations:
+      required: true
+  - type: input
+    id: link
+    attributes:
+      label: Link / Ссылка
+      description: The channel, VOD or clip, if it's public / Канал, запись или клип, если они открытые
+  - type: textarea
+    id: log
+    attributes:
+      label: Log / Журнал
+      description: Log → "Logs folder", streamvault.log (the last lines are enough; remove anything private) / Журнал → «Папка логов», streamvault.log (хватит последних строк; уберите личное)
+      render: text

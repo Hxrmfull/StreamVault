@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Download the latest version / Скачать последнюю версию
+    url: https://github.com/Hxrmfull/StreamVault/releases/latest
+    about: The Windows build / Сборка для Windows
