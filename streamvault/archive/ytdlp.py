@@ -28,6 +28,9 @@ FILE_MARK = "SVFILE "
 # Сколько ждать ответа на вопрос "что по этой ссылке".
 INSPECT_TIMEOUT = 120
 
+# Приставка качества: сначала те же кодеки, что у записи эфира (format_args).
+H264 = "h264:"
+
 # Вкладки страницы канала (ссылки на списки записей) — в модулях площадок:
 # sites.listings(). В клипах Twitch {period} — за какой срок брать самые
 # просматриваемые.
@@ -319,9 +322,22 @@ def format_args(quality):
     """
     Качество -> выбор формата yt-dlp: best, worst, audio, высота (720 или 720p)
     или прямо id формата, как его называет платформа ("1080p60" у Twitch).
+    Приставка "h264:" ("h264:1080", "h264:best") — сначала H.264 со звуком AAC,
+    как у записи эфира: начало эфира склеивается с ней только при тех же
+    кодеках, а YouTube по «лучшему» отдаёт VP9 или AV1. Нет такого — как без неё.
     """
     value = (quality or "best").strip()
     lowered = value.lower()
+    if lowered.startswith(H264):
+        rest = value[len(H264):]
+        if rest.lower() == "best":
+            limit = ""
+        elif re.fullmatch(r"\d{3,4}p?", rest.lower()):
+            limit = "[height<=%d]" % int(rest.lower().rstrip("p"))
+        else:
+            return format_args(rest)
+        same = "bv*[vcodec^=avc1]{0}+ba[acodec^=mp4a]/b[vcodec^=avc1]{0}/".format(limit)
+        return ["-f", same + format_args(rest)[1]]
     if lowered == "best":
         return ["-f", "bv*+ba/b"]
     if lowered == "worst":

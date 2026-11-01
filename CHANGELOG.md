@@ -13,6 +13,10 @@ versions follow [Semantic Versioning](https://semver.org/).
   ahead of the spot under the mouse: on a two-hour stream, 6–8 seconds
   later than where a click would land. Each preview now shows exactly its
   moment.
+- **The stream beginning on YouTube** was downloaded in VP9 or AV1, while
+  the recording is H.264, so the two parts could not be joined. The
+  beginning is now taken in the recording's codecs (H.264 and AAC) when the
+  platform has them — Twitch, Kick and VK Video Live already did.
 
 ## 0.2.0 — 2026-11-01
 

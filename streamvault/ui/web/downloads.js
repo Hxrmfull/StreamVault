@@ -106,7 +106,9 @@ export function sectionText(section) {
 }
 
 export function qualityText(quality) {
-  const known = DOWNLOAD_QUALITIES.find((option) => option.quality === quality);
+  // "h264:1080" — начало эфира: те же кодеки, что у записи; качество то же
+  const plain = String(quality || "").replace(/^h264:/, "");
+  const known = DOWNLOAD_QUALITIES.find((option) => option.quality === plain);
   return known ? t(known.label) : quality;
 }
 

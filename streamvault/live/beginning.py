@@ -19,6 +19,7 @@ import threading
 import time
 
 from .. import sites
+from ..archive.ytdlp import H264
 from ..i18n import tr
 from ..platforms import channel_id
 
@@ -35,12 +36,15 @@ ENDED_PATIENCE = 6 * 3600
 
 
 def download_quality(quality):
-    """Качество записи эфира ("720p60", "best", "audio_only") — в качество загрузки."""
+    """
+    Качество записи эфира ("720p60", "best", "audio_only") — в качество загрузки:
+    с приставкой h264 — те же кодеки, что у записи, иначе не склеить.
+    """
     first = str(quality or "best").split(",")[0].strip().lower()
     if first.startswith("audio"):
         return "audio"
     match = re.match(r"(\d{3,4})p", first)
-    return match.group(1) if match else "best"
+    return H264 + (match.group(1) if match else "best")
 
 
 def clock(seconds):
