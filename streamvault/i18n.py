@@ -458,6 +458,11 @@ STRINGS = {
     'нет связи ({error})': 'no connection ({error})',
     'платформа ответила {status}': 'the platform answered {status}',
     'платформа ответила непонятно': 'the platform gave an unexpected answer',
+    'эта трансляция VK Видео уже закончилась': 'this VK Video stream has already ended',
+    'у трансляции VK Видео не видно автора': 'the VK Video stream does not show its author',
+    'эфира «{author}» нет на VK Video Live — программа записывает эфиры оттуда':
+        '"{author}" is not live on VK Video Live — that is where the program records from',
+    'это не ссылка на видео VK': 'this is not a VK video link',
     'поиск по {platform} недоступен': 'search on {platform} is not available',
     'ffmpeg сейчас занят конвертацией — повтори, когда она закончится':
         'ffmpeg is busy converting right now — try again when it finishes',

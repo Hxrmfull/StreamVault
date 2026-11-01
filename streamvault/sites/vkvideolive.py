@@ -9,7 +9,7 @@ import re
 
 from ..i18n import tr
 from ..platforms import is_url
-from .common import Memo, get_json, https, search_result
+from .common import Memo, SiteError, get_json, https, search_result
 
 NAME = "VK Video Live"
 
@@ -93,6 +93,39 @@ def live_preview(channel, meta):
     if not isinstance(data, dict) or not data.get("isOnline"):
         return ""
     return https(data.get("previewUrl"))
+
+
+def _same_title(first, second):
+    """Одно название эфира: без регистра, пробелов и знаков (эмодзи VK Видео может отдать иначе)."""
+    def letters(text):
+        return "".join(char for char in str(text or "").casefold() if char.isalnum())
+    return bool(letters(first)) and letters(first) == letters(second)
+
+
+def same_stream(video):
+    """
+    Трансляция обычного VK Видео (vkvideo.ru/live-…) — тот же эфир на VK
+    Video Live: VK показывает эфиры VK Video Live и у себя, а записывать
+    лучше оттуда — там отслеживание, чат и начало эфира. video — сведения
+    yt-dlp о трансляции (describe_entry): автор и название. Ищется канал
+    по имени автора: в эфире и с тем же названием, а если названия не
+    совпали — единственный идущий канал с тем же именем. Возвращает имя
+    канала; не нашлось — SiteError с причиной.
+    """
+    if not video.get("is_live"):
+        raise SiteError(tr("эта трансляция VK Видео уже закончилась"))
+    author = str(video.get("channel") or "").strip()
+    if not author:
+        raise SiteError(tr("у трансляции VK Видео не видно автора"))
+    live = [found for found in search(author, 10) if found.get("live")]
+    for found in live:
+        data = get_json("GET", STREAM.format(name=found["channel"])) or {}
+        if data.get("isOnline") and _same_title(data.get("title"), video.get("title")):
+            return found["channel"]
+    namesakes = [found for found in live if str(found.get("name") or "").casefold() == author.casefold()]
+    if len(namesakes) == 1:
+        return namesakes[0]["channel"]
+    raise SiteError(tr("эфира «{author}» нет на VK Video Live — программа записывает эфиры оттуда", author=author))
 
 
 def list_channel(channel, kind, limit, start, period, inspect=None):

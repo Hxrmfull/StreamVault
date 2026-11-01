@@ -29,7 +29,7 @@ from ..library import broadcast_parts, probe_duration
 from ..live.livechat import jsonl_path, video_backlog
 from ..positions import Positions
 from ..i18n import tr
-from ..platforms import PLATFORMS, channel_id, channel_option_value, is_url, parse_channel
+from ..platforms import PLATFORMS, channel_id, channel_option_value, is_url, parse_channel, vk_video_url
 from ..search import ChannelSearch, SearchError
 from .media import MediaServer
 
@@ -89,7 +89,7 @@ class Api:
         "init", "live_snapshot", "resolve", "profiles", "search_channels",
         "add_channel", "remove_channel", "set_enabled", "set_quality", "check_now",
         "record_now", "stop_recording", "check_channel", "set_keep_days", "set_channel_options",
-        "channel_draft", "disk_status",
+        "channel_draft", "vk_video_live", "disk_status",
         "inspect", "list_channel", "download_all",
         "add_download", "pause_download", "resume_download", "cancel_download",
         "remove_download", "clear_finished", "downloads_snapshot",
@@ -334,6 +334,19 @@ class Api:
         clean = {key: None if value is None else channel_option_value(key, value)
                  for key, value in changes.items()}
         self._live.set_options(str(cid), clean)
+
+    def vk_video_live(self, url):
+        """
+        Ссылка на трансляцию обычного VK Видео — тот же эфир на VK Video Live:
+        {"id": ключ канала}. Не нашёлся — ValueError с причиной.
+        """
+        video = vk_video_url(str(url))
+        if not video:
+            raise ValueError(tr("это не ссылка на видео VK"))
+        try:
+            return {"id": channel_id("vkvideolive", sites.vkvideolive.same_stream(self._downloads.inspect(video)))}
+        except (sites.SiteError, ytdlp.YtdlpError) as error:
+            raise ValueError(str(error))
 
     def channel_draft(self, cid):
         """Свои настройки записи канала не из списка — для окна его настроек."""

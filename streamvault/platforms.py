@@ -6,6 +6,7 @@
 """
 
 import logging
+import re
 
 from .util import sanitize_filename
 from .i18n import tr
@@ -76,6 +77,8 @@ def canonical_channel(platform, channel):
         return name.lower() if platform in _CASE_INSENSITIVE_PLATFORMS else name
 
     _, parts, query = _url_parts(channel)
+    if platform == "vkvideolive" and vk_video_url(channel):
+        return channel      # трансляция обычного VK Видео, а не канал (sites.vkvideolive.same_stream)
     if platform in _NAME_IN_PATH_PLATFORMS and len(parts) == 1:
         # kick.com/name?clip=... — это клип, а не трансляция
         if not (platform == "kick" and "clip=" in query):
@@ -84,6 +87,26 @@ def canonical_channel(platform, channel):
             and (len(parts) == 1 or (len(parts) == 2 and parts[1].lower() == "live"))):
         return canonical_channel(platform, parts[0])
     return channel
+
+
+# Видео или трансляция обычного VK Видео: vkvideo.ru/live-197477005_456243748,
+# vk.com/video-1_2, vk.com/…?z=video-1_2%2F… — владелец (минус — сообщество) и номер.
+_VK_VIDEO_HOSTS = ("vk.com", "vk.ru", "vkvideo.ru")
+_VK_VIDEO = re.compile(r"(?:^|[/=])(?:live|video)(-?\d+)_(\d+)")
+
+
+def vk_video_url(text):
+    """Ссылка на видео обычного VK Видео — в виде, понятном yt-dlp и streamlink, иначе ""."""
+    if not is_url(str(text)):
+        return ""
+    host, parts, query = _url_parts(str(text))
+    if not any(host == known or host.endswith("." + known) for known in _VK_VIDEO_HOSTS):
+        return ""
+    # у VK Video Live свой поддомен: live.vkvideo.ru/<канал>
+    if host.startswith("live."):
+        return ""
+    match = _VK_VIDEO.search("/".join(parts) + "&" + query.replace("%2F", "/").replace("%2f", "/"))
+    return "https://vk.com/video%s_%s" % match.groups() if match else ""
 
 
 def stream_url(platform, channel):

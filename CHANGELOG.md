@@ -14,6 +14,12 @@ versions follow [Semantic Versioning](https://semver.org/).
   when you record it with the button or start following it.
 - **A link to a live stream** (YouTube `watch?v=…`) opens the channel page
   with the stream and "Start recording" instead of offering a download.
+- **A link to a stream on regular VK Video** (`vkvideo.ru/live-…`,
+  `vk.com/video-…`) finds the same stream on VK Video Live — VK shows
+  VK Video Live streams on its own site too — and opens that channel with
+  "Start recording", chat and the stream beginning. Before, the link opened
+  a nonexistent channel "live-…". A stream that has ended can be downloaded
+  as a video.
 
 ### Changed
 

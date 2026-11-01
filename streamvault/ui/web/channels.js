@@ -919,6 +919,21 @@ export async function renderLink(main, url) {
   main.append(h("h1", { class: "page-title", text: t("По ссылке") }),
               h("div", { class: "muted", text: url }),
               h("div", { class: "spinner" }));
+  // трансляция обычного VK Видео (vkvideo.ru/live-…) — тот же эфир есть на VK Video Live:
+  // страница его канала с «Начать запись», чатом и началом эфира
+  let vkNote = null;
+  if (/^https?:\/\/([a-z0-9-]+\.)*(vk\.com|vk\.ru|vkvideo\.ru)\//i.test(url) && !/^https?:\/\/live\./i.test(url)) {
+    try {
+      const found = await bridge.call("vk_video_live", url);
+      if (view !== shown) return;
+      toast(t("Это эфир VK Video Live — открыта страница канала"), "ok");
+      location.replace(routeHash("channel", found.id));
+      return;
+    } catch (error) {
+      if (view !== shown) return;
+      vkNote = h("div", { class: "hint", text: error.message });
+    }
+  }
   let result;
   try {
     result = await bridge.call("inspect", url, PAGE, 1);
@@ -931,6 +946,7 @@ export async function renderLink(main, url) {
   }
   if (view !== shown) return;
   main.lastChild.remove();
+  if (vkNote) main.append(vkNote);
   if (result.type === "video" && result.is_live && result.folder) {
     // ссылка на идущий эфир (YouTube watch?v=…) — это не запись для скачивания:
     // страница канала с эфиром, «Начать запись» и настройками записи
