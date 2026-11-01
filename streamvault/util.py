@@ -182,6 +182,105 @@ def kill_process_tree(process):
         process.kill()
 
 
+# Задание Windows (Job Object), в которое программа кладёт себя: всё, что она
+# запускает, попадает туда же и закрывается вместе с ней — даже если её сняли
+# диспетчером задач. Иначе streamlink писал бы эфир дальше сам по себе (без
+# чата), а после запуска программа начала бы вторую запись того же эфира;
+# ffmpeg и yt-dlp дописывали бы файлы, которые новая копия начнёт заново.
+_job = None
+JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x0800
+JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
+CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+# Сеанс Windows завершается (выключение, перезагрузка, выход из системы).
+SM_SHUTTINGDOWN = 0x2000
+
+
+def bind_children():
+    """
+    Кладёт программу в задание Windows с «закрыть всех вместе с ней».
+    Возвращает True, если получилось. Что должно пережить программу
+    (проигрыватель, браузер, установщик), запускается через spawn_outside.
+    """
+    global _job
+    if os.name != "nt" or _job is not None:
+        return _job is not None
+    import ctypes
+    from ctypes import wintypes
+
+    class Basic(ctypes.Structure):
+        _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                    ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                    ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                    ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
+                    ("SchedulingClass", wintypes.DWORD)]
+
+    class Extended(ctypes.Structure):
+        _fields_ = [("BasicLimitInformation", Basic), ("IoInfo", ctypes.c_ulonglong * 6),
+                    ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                    ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+    kernel32 = _kernel32()
+    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel32.CreateJobObjectW.argtypes = (ctypes.c_void_p, wintypes.LPCWSTR)
+    kernel32.SetInformationJobObject.argtypes = (wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD)
+    kernel32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        return False
+    info = Extended()
+    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK
+    if not (kernel32.SetInformationJobObject(job, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+                                             ctypes.byref(info), ctypes.sizeof(info))
+            and kernel32.AssignProcessToJobObject(job, kernel32.GetCurrentProcess())):
+        logging.debug("задание Windows не создано: ошибка %s", ctypes.get_last_error())
+        kernel32.CloseHandle(job)
+        return False
+    # дескриптор не закрывается до выхода: его закроет Windows — и потомков вместе с ним
+    _job = job
+    return True
+
+
+def spawn_outside(command, **options):
+    """
+    Запуск того, что должно пережить программу, — вне её задания Windows.
+    Если внешнее задание (бывает у лаунчеров) выход из него запрещает —
+    запуск как обычно.
+    """
+    if _job is not None:
+        try:
+            return subprocess.Popen(command, creationflags=options.pop("creationflags", 0)
+                                    | CREATE_BREAKAWAY_FROM_JOB, **options)
+        except OSError as error:
+            logging.debug("запуск вне задания Windows не вышел (%s): %s", error, command)
+    return subprocess.Popen(command, **options)
+
+
+def open_outside(target):
+    """
+    Файл, папка или ссылка — в программе Windows по умолчанию. Через
+    Проводник, вне задания: проигрыватель и браузер не закрываются вместе
+    с программой. Без задания — как раньше, os.startfile.
+    """
+    if os.name != "nt":
+        import webbrowser
+        webbrowser.open(target)
+        return
+    if _job is None:
+        os.startfile(target)
+        return
+    spawn_outside(["explorer.exe", target])
+
+
+def session_ending():
+    """Windows выключается, перезагружается или выходит из сеанса."""
+    if os.name != "nt":
+        return False
+    import ctypes
+    return bool(ctypes.windll.user32.GetSystemMetrics(SM_SHUTTINGDOWN))
+
+
 _instance_lock = None
 
 

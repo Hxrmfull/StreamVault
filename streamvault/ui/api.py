@@ -18,7 +18,6 @@ import shutil
 import subprocess
 import threading
 import time
-import webbrowser
 
 from .. import __version__, i18n, sites, util
 from ..archive import downloads as dl
@@ -460,7 +459,7 @@ class Api:
         return path
 
     def open_file(self, path):
-        os.startfile(self._media(path))
+        util.open_outside(self._media(path))
 
     # ------------------------------------------------------------ просмотр с чатом
 
@@ -735,20 +734,20 @@ class Api:
     def show_in_folder(self, path):
         path = self._media(path)
         # explorer понимает выделение файла только в такой записи
-        subprocess.Popen('explorer /select,"%s"' % path)
+        util.spawn_outside('explorer /select,"%s"' % path)
 
     def open_folder(self, which):
         folders = self._folders()
         if which not in folders:
             raise ValueError(tr("нет такой папки: {name}", name=which))
         os.makedirs(folders[which], exist_ok=True)
-        os.startfile(folders[which])
+        util.open_outside(folders[which])
 
     def open_url(self, url):
         url = str(url)
         if not re.match(r"^https?://", url, re.I):
             raise ValueError(tr("открываются только ссылки http и https"))
-        webbrowser.open(url)
+        util.open_outside(url)
 
     # ------------------------------------------------------------ библиотека
 

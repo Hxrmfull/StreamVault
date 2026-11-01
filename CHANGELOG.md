@@ -47,6 +47,16 @@ versions follow [Semantic Versioning](https://semver.org/).
   too. Now a failure means trying again later, and what is awaited is kept
   in `beginning.json` and awaited again after a restart (up to 6 hours
   after the stream ended).
+- **When the program was ended in Task Manager,** streamlink kept recording
+  the stream on its own (without chat), and after a restart the program
+  started a second recording of the same stream; ffmpeg and yt-dlp kept
+  running too. Now everything the program started closes with it, and what
+  was recorded is picked up a couple of minutes after the next start
+  instead of ten.
+- **Shutting down or restarting Windows** had to wait for the program: the
+  window hid to the tray, and Windows killed it in the middle of a
+  recording. Now the program closes recordings and downloads right away,
+  and conversion finishes on the next start.
 - A channel's own recording settings could disappear from the window until
   a restart after any event of its recording, and the window would show
   the general values.

@@ -356,14 +356,17 @@ class AppUpdater(Installer):
         if snapshot["state"] != "done" or not staged or not os.path.exists(staged):
             return False
         if os.path.isfile(staged):
-            # установщик: через оболочку — так Windows сама спросит права администратора,
-            # если программу ставили для всех
-            os.startfile(staged, "open", SETUP_ARGUMENTS)
+            # установщик: через оболочку (start) — так Windows сама спросит права
+            # администратора, если программу ставили для всех. И вне задания Windows
+            # программы: иначе он закрылся бы вместе с ней, а она закрывается для него
+            util.spawn_outside(["cmd", "/c", "start", "", staged, *SETUP_ARGUMENTS.split()],
+                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
             logging.info(tr("обновление до {version}: программа закроется и запустится заново",
                             version=snapshot["version"]))
             return True
         helper = os.path.join(staged, util.CONSOLE_EXE)
-        subprocess.Popen([helper, util.APPLY_UPDATE, self._folder, str(os.getpid())], cwd=staged,
+        util.spawn_outside([helper, util.APPLY_UPDATE, self._folder, str(os.getpid())], cwd=staged,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, close_fds=True,
                          creationflags=util.subprocess_flags())
@@ -421,7 +424,7 @@ def apply_update(args, attempts=20, pause=1.5, relaunch=True):
         pass
     if relaunch:
         # обновилось или нет — программа запускается снова: новая или старая
-        subprocess.Popen([os.path.join(target, "StreamVault.exe")], cwd=target, close_fds=True,
+        util.spawn_outside([os.path.join(target, "StreamVault.exe")], cwd=target, close_fds=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL)
     return 0 if result["ok"] else 1

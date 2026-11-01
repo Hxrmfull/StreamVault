@@ -175,6 +175,8 @@ def main(argv=None):
 def claim_instance():
     """Вторая копия записывала бы те же каналы и затирала бы очередь загрузок."""
     if util.single_instance():
+        # streamlink и ffmpeg закрываются вместе с консольной записью, как бы её ни закрыли
+        util.bind_children()
         return True
     print(tr("ошибка: StreamVault уже запущен — окном или другой консольной командой. "
              "Закрой его или добавь каналы и ссылки в нём"), file=sys.stderr)

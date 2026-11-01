@@ -15,7 +15,6 @@ import os
 import shutil
 import socket
 import threading
-import webbrowser
 
 from .. import __version__, i18n, util
 from ..archive import ytdlp_update
@@ -73,6 +72,8 @@ def run(settings_path=DEFAULT_SETTINGS_PATH, browser=False, port=0, open_browser
             return 0
         util.notify(tr("StreamVault уже запущен — окном или консольной командой."))
         return 1
+    # streamlink, ffmpeg и yt-dlp закрываются вместе с программой, как бы её ни закрыли
+    util.bind_children()
     try:
         settings = Settings.load(settings_path)
     except SettingsError as error:
@@ -173,7 +174,13 @@ def run(settings_path=DEFAULT_SETTINGS_PATH, browser=False, port=0, open_browser
             _run_window(api, bus, live, downloads, settings, app_dir,
                         start_hidden and tray_available, tray_available)
     finally:
-        logging.info(tr("закрываю: останавливаю записи и загрузки, доделываю конвертацию"))
+        # Windows выключается: она ждёт программы лишь секунды. Записи и загрузки
+        # закрываются сразу, а конвертация доделается при следующем запуске
+        ending = util.session_ending()
+        if ending:
+            logging.info(tr("Windows завершает работу: закрываю записи, конвертация — при следующем запуске"))
+        else:
+            logging.info(tr("закрываю: останавливаю записи и загрузки, доделываю конвертацию"))
         installer.cancel()
         ytdlp_updater.cancel()
         twitchdownloader_installer.cancel()
@@ -182,7 +189,7 @@ def run(settings_path=DEFAULT_SETTINGS_PATH, browser=False, port=0, open_browser
         checker.stop()
         beginning.stop()
         downloads.shutdown()
-        left = live.shutdown(grace=0)
+        left = live.shutdown(grace=0, drain=not ending)
         chat_index.close()
         if left:
             logging.info(tr("необработанных записей: {count}, подхватятся при следующем "
@@ -270,6 +277,11 @@ def _run_window(api, bus, live, downloads, settings, app_dir, start_hidden, tray
         # Вызовы окна — из другого потока: этот держит окно и не дождался бы их.
         if quitting.is_set():
             return True
+        if util.session_ending():
+            # выключение или перезагрузка: спрятавшись в трей, окно держало бы
+            # Windows, пока та не закроет программу силой посреди записи
+            quitting.set()
+            return True
         if tray is not None and settings["close_to_tray"]:
             threading.Thread(target=hide_window, daemon=True).start()
             return False
@@ -316,16 +328,16 @@ def _run_in_browser(api, bus, live, downloads, port, open_browser, tray_availabl
     # адрес с токеном — только в консоль, не в лог-файл
     print("StreamVault открыт в браузере: %s" % server.url, flush=True)
     if open_browser:
-        webbrowser.open(server.url)
+        util.open_outside(server.url)
     # значок и здесь: открыть вкладку заново или выйти, не ища консоль
     tray = None
     if tray_available:
         from .tray import Tray
         tray = Tray(status=lambda: tray_status(live, downloads),
-                    on_open=lambda: webbrowser.open(server.url), on_quit=server.stop,
+                    on_open=lambda: util.open_outside(server.url), on_quit=server.stop,
                     on_check=live.check_now, on_folder=api.open_folder)
         tray.start()
-    util.ShowSignal().listen(lambda: webbrowser.open(server.url))
+    util.ShowSignal().listen(lambda: util.open_outside(server.url))
     try:
         server.wait()
     except KeyboardInterrupt:

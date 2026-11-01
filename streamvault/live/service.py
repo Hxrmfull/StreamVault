@@ -222,14 +222,16 @@ class LiveService:
         if watched:
             logging.info(tr("наблюдаю за каналами: {channels}", channels=", ".join(watched)))
 
-    def shutdown(self, grace=0):
+    def shutdown(self, grace=0, drain=True):
         """
         Останавливает запись и доводит очередь обработки. Возвращает число
         записей, оставшихся необработанными. Ctrl+C во время ожидания уходит
         наверх: консольный режим сам решает, ждать ли дальше.
 
         grace — сколько дать streamlink, чтобы он сам закрыл файл. В консоли
-        до него доходит тот же Ctrl+C, без консоли ждать нечего.
+        до него доходит тот же Ctrl+C, без консоли ждать нечего. drain=False —
+        не ждать конвертацию (Windows выключается): записи остаются в
+        in-progress и обработаются при следующем запуске.
         """
         with self._lock:
             if not self._started:
@@ -242,7 +244,7 @@ class LiveService:
             util.join_interruptibly(recorder, grace + 30)
         # только теперь очередь вправе считать, что заданий больше не будет
         self._processing.close_inputs()
-        util.join_interruptibly(self._processing, self._settings["drain_grace"] + 30)
+        util.join_interruptibly(self._processing, self._settings["drain_grace"] + 30 if drain else 1)
         # недоклеенное начало эфира склеится при следующем запуске
         self._joiner.stop()
         # недоделанный HTML чата подхватится при следующем запуске

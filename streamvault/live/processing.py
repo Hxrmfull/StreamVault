@@ -214,7 +214,10 @@ class ProcessingQueue(threading.Thread):
             if not draining and time.time() >= next_rescan:
                 next_rescan = time.time() + self._rescan_interval
                 try:
-                    self._rescan()
+                    if self._rescan():
+                        # запись, оборванную закрытием программы, при запуске не отличить
+                        # от пишущейся — досмотреть, как только она «остынет», а не через 10 минут
+                        next_rescan = min(next_rescan, time.time() + self._settle_seconds + 1)
                 except Exception:
                     # сбой досмотра не должен останавливать обработку очереди
                     logging.error(tr("досмотр папок не удался") + "\n"
@@ -340,6 +343,8 @@ class ProcessingQueue(threading.Thread):
         return targets
 
     def _rescan(self):
+        """Подхватывает необработанные .ts. True — какие-то отложены как ещё пишущиеся."""
+        postponed = False
         for recorded_dir, processed_dir in self._scan_targets():
             self._remove_stale_partials(processed_dir)
             try:
@@ -359,9 +364,11 @@ class ProcessingQueue(threading.Thread):
                     if path in self._active or path in self._known:
                         continue
                 if self._is_being_written(path):
+                    postponed = True
                     continue
                 logging.info(tr("найдена необработанная запись: {name}", name=name))
                 self.submit(path, os.path.join(processed_dir, name))
+        return postponed
 
     def _remove_stale_partials(self, processed_dir):
         """

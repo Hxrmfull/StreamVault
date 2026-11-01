@@ -460,6 +460,8 @@ STRINGS = {
     'платформа ответила непонятно': 'the platform gave an unexpected answer',
     '{channel}: убран из избранного': '{channel}: removed from favorites',
     'эта трансляция VK Видео уже закончилась': 'this VK Video stream has already ended',
+    'Windows завершает работу: закрываю записи, конвертация — при следующем запуске':
+        'Windows is shutting down: closing recordings, conversion will run on the next start',
     '{tag}: жду запись эфира на площадке, чтобы добрать его начало ({length})':
         '{tag}: waiting for the platform to publish the stream to fetch its beginning ({length})',
     '{tag}: запись эфира на площадке не проверить ({error}) — попробую позже':
