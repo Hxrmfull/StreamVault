@@ -126,6 +126,16 @@ export function progressText(job) {
   return parts.join(" · ") || t("начинаю…");
 }
 
+// начало эфира и его склейка с записью (live/joining.py): идёт, готово или почему нет
+export function joinText(job) {
+  if (job.joined) return t("склеено с записью");
+  const join = job.file && state.joins.get(job.file);
+  if (!join) return "";
+  if (join.state === "joining") return t("склеивается с записью: {percent}%", { percent: join.percent || 0 });
+  if (join.state === "done") return t("склеено с записью");
+  return t("не склеено с записью: {reason}", { reason: join.reason || "?" });
+}
+
 // размер скачанного — из последнего прогресса загрузки
 export function doneSize(job) {
   const progress = job.progress || {};
@@ -160,8 +170,8 @@ export function updateJobRow(row, job) {
       : job.chat_only ? t("скачиваю чат…") : t("склеиваю и перепаковываю…"),
     paused: t("на паузе") + (percent ? " · " + Math.floor(percent) + "%" : "")
             + " — " + t("продолжится с того же места"),
-    done: [t("Готово"), doneSize(job), job.chat_error ? t("чат: {error}", { error: job.chat_error }) : ""]
-          .filter(Boolean).join(" · "),
+    done: [t("Готово"), doneSize(job), joinText(job),
+           job.chat_error ? t("чат: {error}", { error: job.chat_error }) : ""].filter(Boolean).join(" · "),
     failed: t("ошибка: {error}", { error: job.error || t("неизвестная") }),
     cancelled: t("отменено"),
   }[job.state] || job.state;

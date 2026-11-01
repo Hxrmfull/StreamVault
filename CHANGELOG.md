@@ -5,6 +5,22 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- **Stream beginning join status** in Downloads: "joining to the recording:
+  N%", then "joined to the recording" or why not — with a notification.
+  A joined download opens the joined recording (also one joined by the
+  previous version).
+- **Speed and time left** for the VK and YouTube stream beginning download.
+
+### Fixed
+
+- The chat of a YouTube stream beginning without chat replay showed the
+  error "The downloaded file is empty"; now it says the video's chat has no
+  messages.
+
 ## 0.3.2 — 2026-11-01
 
 ### Fixed

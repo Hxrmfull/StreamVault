@@ -464,6 +464,8 @@ STRINGS = {
     'запись зашифрована': 'the recording is encrypted',
     'кусок записи не скачался: {error}': 'a recording segment did not download: {error}',
     'остановлено': 'stopped',
+    'начало эфира склеено с записью — загрузка теперь о ней: {name}':
+        'the stream beginning is joined to the recording — the download now points to it: {name}',
     'ffmpeg не собрал начало записи: {error}': 'ffmpeg could not assemble the recording beginning: {error}',
     'оглавление записи не уместилось в начало файла': 'the recording index does not fit at the start of the file',
     'площадка ответила {status}': 'the platform answered {status}',
@@ -623,27 +625,21 @@ STRINGS = {
         '{tag}: the stream dropped — waiting {minutes} min for it to come back',
     '{tag}: эфир вернулся': '{tag}: the stream is back',
     # склейка начала эфира с записью (live/joining.py)
-    'начало эфира не склеено с записью {name}: мало места на диске':
-        'the stream beginning was not joined to {name}: not enough disk space',
-    'начало эфира не склеено с записью {name}: не прочитать длительность':
-        "the stream beginning was not joined to {name}: couldn't read the duration",
-    'начало эфира не склеено с записью {name}: размер кадра разный ({head} и {main}) — части остались рядом':
-        'the stream beginning was not joined to {name}: different frame sizes ({head} and {main}) — the parts stay side by side',
-    'начало эфира не склеено с записью {name}: кодеки разные ({head} и {main}) — части остались рядом':
-        'the stream beginning was not joined to {name}: different codecs ({head} and {main}) — the parts stay side by side',
-    'начало эфира не склеено с записью {name}: стык не найден — части остались рядом':
-        'the stream beginning was not joined to {name}: the seam was not found — the parts stay side by side',
-    'начало эфира не склеилось с записью {name}: {error}':
-        'joining the stream beginning to {name} failed: {error}',
-    'начало эфира не склеилось с записью {name}: длина вышла {got} вместо {want}':
-        'joining the stream beginning to {name} failed: the length came out {got} instead of {want}',
+    'начало эфира не склеено с записью {name}: {reason}': 'the stream beginning was not joined to {name}: {reason}',
+    ' — части остались рядом': ' — the parts stay side by side',
+    'мало места на диске': 'not enough disk space',
+    'не прочитать длительность': "couldn't read the duration",
+    'размер кадра разный ({head} и {main})': 'different frame sizes ({head} and {main})',
+    'кодеки разные ({head} и {main})': 'different codecs ({head} and {main})',
+    'стык не найден': 'the seam was not found',
+    'длина вышла {got} вместо {want}': 'the length came out {got} instead of {want}',
+    'чат не склеился: {error}': 'the chat was not joined: {error}',
     'начало эфира склеено с записью: {name} — стык на {at}, вышло {length}':
         'stream beginning joined to the recording: {name} — seam at {at}, {length} in total',
     'склеиваю начало эфира с записью: {name}': 'joining the stream beginning to the recording: {name}',
     'склейка начала эфира: сбой': 'joining the stream beginning: failure',
     'стык начала и записи не найден (разница {score})':
         'the seam between the beginning and the recording was not found (difference {score})',
-    'чат не склеился: {name} — {error}': 'the chat was not joined: {name} — {error}',
     'как делить: off, size, duration или count': 'how to split: off, size, duration or count',
     # живая строка консоли (console.py)
     'чат {count}': 'chat {count}',

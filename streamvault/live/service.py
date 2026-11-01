@@ -163,6 +163,7 @@ class LiveService:
         # общая остановка: токен Twitch и очередь обработки
         self._stop = threading.Event()
         self._recorders = {}
+        self._joins = {}        # начало эфира -> последнее событие его склейки
         self._probes = None
         self._streamlink_probe = None
         self._public_profiles = PublicProfiles()
@@ -209,7 +210,7 @@ class LiveService:
             self._processing.start()
             # начало эфира, скачанное отдельно, — склеить с записью, когда обе части готовы
             self._joiner = Joiner(self._settings, self._ffmpeg.path, self._join_busy, self._chat_finisher,
-                                  threading.Event())
+                                  threading.Event(), on_change=self._join_changed)
             self._joiner.start()
             # записи старше срока — в корзину, раз в час
             self._retention = Retention(self._settings, stop_event=self._stop)
@@ -251,6 +252,21 @@ class LiveService:
         self._chat_finisher.stop()
         util.join_interruptibly(self._chat_finisher, 10)
         return self._processing.pending()
+
+    def _join_changed(self, event):
+        """Как идёт склейка начала эфира с записью — окну, а склеенное — загрузкам."""
+        with self._lock:
+            self._joins[event["head"]] = dict(event)
+            beginning = self._beginning
+        if event["state"] == "done" and beginning is not None:
+            beginning.joined(event["head"], event["main"])
+        if self._bus is not None:
+            self._bus.emit("joining", **event)
+
+    def join_status(self):
+        """Склейки начала эфира за этот запуск: [{"head", "main", "state", …}]."""
+        with self._lock:
+            return [dict(event) for event in self._joins.values()]
 
     def convert_recording(self, path, split=None):
         """

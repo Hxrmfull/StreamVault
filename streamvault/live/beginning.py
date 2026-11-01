@@ -77,6 +77,10 @@ class Beginning:
     def stop(self):
         self._stop.set()
 
+    def joined(self, head, main):
+        """Начало склеено с записью: его загрузка теперь — про склеенную запись."""
+        self._downloads.mark_joined(head, main)
+
     def busy(self, path):
         """Начало эфира path (файл «… - part00») ещё качается — с чатом или без."""
         stem = os.path.splitext(path)[0]

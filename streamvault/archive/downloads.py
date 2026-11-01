@@ -57,6 +57,26 @@ def _file_size(path):
         return None
 
 
+# Начало эфира кладётся рядом с записью под этим хвостом (live/joining.py).
+PART00 = " - part00"
+
+
+def _follow_join(job):
+    """
+    Начало эфира склеили с записью и удалили, пока загрузка этого не знала
+    (склейка в 0.3.2 и раньше): загрузка — про склеенную запись.
+    """
+    file = job.get("file") or ""
+    stem = os.path.splitext(file)[0]
+    if job.get("state") != DONE or job.get("joined") or not stem.endswith(PART00) or os.path.exists(file):
+        return
+    main = next((stem[:-len(PART00)] + extension for extension in (".mp4", ".ts")
+                 if os.path.isfile(stem[:-len(PART00)] + extension)), None)
+    if main:
+        job.update(file=main, joined=True, chat_files=chat.existing(main))
+        logging.info(tr("начало эфира склеено с записью — загрузка теперь о ней: {name}", name=os.path.basename(main)))
+
+
 # Платформы, где имя канала не различает регистр: папка xqc, а не xQc.
 _LOWERCASE_LABELS = ("twitch", "kick")
 
@@ -508,6 +528,22 @@ class DownloadManager:
                 return
         self._bus.emit("download", job=snapshot)
 
+    def mark_joined(self, head, main):
+        """
+        Начало эфира (head) склеено с записью (main) и удалено: загрузка
+        теперь показывает и открывает склеенную запись.
+        """
+        key = os.path.normcase(os.path.abspath(head))
+        with self._lock:
+            found = [job["id"] for job in self._jobs
+                     if job.get("file") and os.path.normcase(os.path.abspath(job["file"])) == key]
+            for job_id in found:
+                self._job(job_id).update(file=main, joined=True, chat_files=chat.existing(main))
+            if found:
+                self._save()
+        for job_id in found:
+            self._emit(job_id)
+
     def _update(self, job_id, **changes):
         with self._lock:
             job = self._job(job_id)
@@ -591,6 +627,7 @@ class DownloadManager:
             job.setdefault("chat_files", {})
             job.setdefault("chat_error", "")
             job.setdefault("chat_only", False)
+            _follow_join(job)
             self._jobs.append(job)
 
     def _save(self):
@@ -726,10 +763,20 @@ class DownloadManager:
             return False
         logging.info(tr("скачиваю: {name}", name=job["title"] or job["url"]))
 
+        # скорость — сглаженная за последние секунды, как у yt-dlp; сколько всего — по доле
+        meter = {"time": time.monotonic(), "bytes": 0, "speed": None}
+
         def progress(fraction, written):
+            now = time.monotonic()
+            if now - meter["time"] >= 1:
+                rate = (written - meter["bytes"]) / (now - meter["time"])
+                meter["speed"] = rate if meter["speed"] is None else meter["speed"] * 0.7 + rate * 0.3
+                meter.update(time=now, bytes=written)
+            speed, total = meter["speed"], (written / fraction if fraction else None)
             with self._lock:
-                self._job(job_id)["progress"] = {"percent": fraction * 100.0, "downloaded": written,
-                                                 "total": None, "speed": None, "eta": None}
+                self._job(job_id)["progress"] = {
+                    "percent": fraction * 100.0, "downloaded": written, "total": total, "speed": speed,
+                    "eta": (total - written) / speed if speed and total else None}
             self._emit(job_id, progress_only=True)
 
         stopped = lambda: bool(runtime["stop"])     # noqa: E731

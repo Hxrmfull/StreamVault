@@ -85,7 +85,7 @@ class Api:
     """Методы для окна. Ошибки для человека — ValueError с переведённым текстом."""
 
     METHODS = (
-        "init", "live_snapshot", "resolve", "profiles", "search_channels",
+        "init", "live_snapshot", "join_status", "resolve", "profiles", "search_channels",
         "add_channel", "remove_channel", "set_enabled", "set_quality", "check_now",
         "record_now", "stop_recording", "check_channel", "set_keep_days", "set_channel_options",
         "set_favorite", "vk_video_live", "disk_status",
@@ -209,6 +209,8 @@ class Api:
             "disk": self.disk_status(),
             "edits": self._editor.snapshot() if self._editor else [],
             "downloads": self._downloads.snapshot(),
+            # склейки начала эфира с записью за этот запуск — для строк загрузок
+            "joins": self._live.join_status() if hasattr(self._live, "join_status") else [],
             "settings": self.get_settings(),
             "logs": self._logs.lines() if self._logs else [],
             "problems": self._problems,
@@ -227,6 +229,9 @@ class Api:
 
     def downloads_snapshot(self):
         return self._downloads.snapshot()
+
+    def join_status(self):
+        return self._live.join_status()
 
     def resolve(self, text):
         """

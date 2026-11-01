@@ -148,11 +148,32 @@ def stream_kinds(ffmpeg, path):
     return [kind for kind, _ in streams(ffmpeg, path)]
 
 
-def _run(command):
-    result = subprocess.run(command, capture_output=True, timeout=6 * 3600, creationflags=util.subprocess_flags())
-    if result.returncode != 0:
-        lines = result.stderr.decode("utf-8", "replace").strip().splitlines()
-        raise OSError(lines[-1] if lines else "ffmpeg: %d" % result.returncode)
+def _run(command, progress=None, length=None):
+    """
+    ffmpeg; сбой — OSError с его последней строкой. progress(доля 0..1) — по
+    ходу работы: ffmpeg сообщает, до какой секунды дошёл (-progress), а
+    length — сколько секунд всего.
+    """
+    if not progress or not length:
+        result = subprocess.run(command, capture_output=True, timeout=6 * 3600,
+                                creationflags=util.subprocess_flags())
+        returncode, errors = result.returncode, result.stderr
+    else:
+        command = [command[0], "-progress", "pipe:1", "-nostats", *command[1:]]
+        with tempfile.TemporaryFile() as stderr:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=stderr,
+                                       creationflags=util.subprocess_flags())
+            with process.stdout:
+                for raw in process.stdout:
+                    key, _, value = raw.decode("ascii", "replace").strip().partition("=")
+                    if key == "out_time_us" and value.isdigit():
+                        progress(min(1.0, int(value) / 1e6 / length))
+            returncode = process.wait()
+            stderr.seek(0)
+            errors = stderr.read()
+    if returncode != 0:
+        lines = errors.decode("utf-8", "replace").strip().splitlines()
+        raise OSError(lines[-1] if lines else "ffmpeg: %d" % returncode)
 
 
 def _ffprobe(ffmpeg):
@@ -189,7 +210,7 @@ def decode_time(ffmpeg, path, at):
     return best[1] if best and abs(best[0] - at) < 0.02 else at
 
 
-def join_video(ffmpeg, head, cut, tail, output):
+def join_video(ffmpeg, head, cut, tail, output, progress=None, tail_length=None):
     """
     head до секунды cut, затем tail целиком — в output, без перекодирования.
 
@@ -204,11 +225,15 @@ def join_video(ffmpeg, head, cut, tail, output):
     trim = "outpoint %.6f\nduration %.6f\n" % (decode_time(ffmpeg, head, cut), cut)
     cut_head = output + ".head" + os.path.splitext(tail)[1]
     listings = []
+    # доля склейки: начало — его секунды, остальное — вся запись целиком
+    total = cut + (tail_length or 0)
+    first = (lambda share: progress(share * cut / total)) if progress and total else None
+    second = (lambda share: progress((cut + share * (total - cut)) / total)) if progress and total else None
     try:
         listings.append(_listing("%s\n%s" % (_concat_line(head), trim)))
-        _run(join_command(ffmpeg, listings[-1], cut_head, maps))
+        _run(join_command(ffmpeg, listings[-1], cut_head, maps), first, cut)
         listings.append(_listing("%s\n%s\n" % (_concat_line(cut_head), _concat_line(tail))))
-        _run(join_command(ffmpeg, listings[-1], output, maps))
+        _run(join_command(ffmpeg, listings[-1], output, maps), second, total)
         if not os.path.isfile(output):
             raise OSError("ffmpeg: нет файла")
     except BaseException:
@@ -302,7 +327,9 @@ class Joiner(threading.Thread):
     обрабатывается, её чат доделывается. ffmpeg() — путь к ffmpeg или None.
     """
 
-    def __init__(self, settings, ffmpeg, busy, chat_finisher=None, stop_event=None, interval=SCAN_INTERVAL):
+    def __init__(self, settings, ffmpeg, busy, chat_finisher=None, stop_event=None, interval=SCAN_INTERVAL,
+                 on_change=None):
+        """on_change(событие) — как идёт склейка: {"head", "main", "state": joining | done | failed, …}."""
         super().__init__(name="beginning-join", daemon=True)
         self._settings = settings
         self._ffmpeg = ffmpeg
@@ -311,6 +338,7 @@ class Joiner(threading.Thread):
         self._stop = stop_event or threading.Event()
         self._interval = interval
         self._failed = set()        # пары, которые не склеились: до перезапуска не трогаются
+        self._on_change = on_change
 
     def stop(self):
         self._stop.set()
@@ -351,6 +379,19 @@ class Joiner(threading.Thread):
             if not self.join(head, main):
                 self._failed.add((head, main))
 
+    def _report(self, head, main, state, **extra):
+        if self._on_change is not None:
+            self._on_change(dict(extra, head=head, main=main, state=state))
+
+    def _refuse(self, head, main, reason, kept=True, error=False):
+        """Пара не склеена: в журнал и окну — почему. kept — части остались рядом."""
+        message = tr("начало эфира не склеено с записью {name}: {reason}", name=os.path.basename(main), reason=reason)
+        if kept:
+            message += tr(" — части остались рядом")
+        (logging.error if error else logging.warning)(message)
+        self._report(head, main, "failed", reason=reason)
+        return False
+
     def join(self, head, main):
         """Склеивает пару; True — склеено, False — части остались как есть."""
         from ..editing import probe
@@ -361,53 +402,52 @@ class Joiner(threading.Thread):
         head_length, head_size = probe(ffmpeg, head)
         main_length, main_size = probe(ffmpeg, main)
         if not head_length or not main_length:
-            logging.warning(tr("начало эфира не склеено с записью {name}: не прочитать длительность", name=name))
-            return False
+            return self._refuse(head, main, tr("не прочитать длительность"), kept=False)
         if head_size != main_size:
-            logging.warning(tr("начало эфира не склеено с записью {name}: размер кадра разный ({head} и {main}) — "
-                               "части остались рядом", name=name, head="%dx%d" % head_size if head_size else "?",
-                               main="%dx%d" % main_size if main_size else "?"))
-            return False
+            return self._refuse(head, main, tr("размер кадра разный ({head} и {main})",
+                                               head="%dx%d" % head_size if head_size else "?",
+                                               main="%dx%d" % main_size if main_size else "?"))
         # без перекодирования склеивается только одно и то же: опубликованная
         # запись YouTube бывает в другом кодеке, чем эфир
         head_codecs, main_codecs = dict(streams(ffmpeg, head)), dict(streams(ffmpeg, main))
         if head_codecs != main_codecs:
-            logging.warning(tr("начало эфира не склеено с записью {name}: кодеки разные ({head} и {main}) — "
-                               "части остались рядом", name=name,
-                               head=", ".join(sorted(head_codecs.values())) or "?",
-                               main=", ".join(sorted(main_codecs.values())) or "?"))
-            return False
+            return self._refuse(head, main, tr("кодеки разные ({head} и {main})",
+                                               head=", ".join(sorted(head_codecs.values())) or "?",
+                                               main=", ".join(sorted(main_codecs.values())) or "?"))
         needed = os.path.getsize(head) + os.path.getsize(main)
         if shutil.disk_usage(os.path.dirname(main)).free < needed * 1.1:
-            logging.warning(tr("начало эфира не склеено с записью {name}: мало места на диске", name=name))
-            return False
+            return self._refuse(head, main, tr("мало места на диске"), kept=False)
         cut = find_seam(ffmpeg, head, main, max(0.0, head_length - OVERLAP))
         if cut is None:
-            logging.warning(tr("начало эфира не склеено с записью {name}: стык не найден — части остались рядом",
-                               name=name))
-            return False
+            return self._refuse(head, main, tr("стык не найден"))
         stem, extension = os.path.splitext(main)
         output = stem + JOINING + extension
         logging.info(tr("склеиваю начало эфира с записью: {name}", name=name))
+        self._report(head, main, "joining", percent=0)
+        last = [0]
+
+        def progress(share):
+            percent = int(share * 100)
+            if percent != last[0]:
+                last[0] = percent
+                self._report(head, main, "joining", percent=percent)
+
         try:
-            join_video(ffmpeg, head, cut, main, output)
+            join_video(ffmpeg, head, cut, main, output, progress, main_length)
         except (OSError, subprocess.TimeoutExpired) as error:
             util.remove_quietly(output)
-            logging.error(tr("начало эфира не склеилось с записью {name}: {error}", name=name, error=error))
-            return False
+            return self._refuse(head, main, str(error), kept=False, error=True)
         joined_length = probe(ffmpeg, output)[0]
         if not joined_length or abs(joined_length - (cut + main_length)) > 3:
             util.remove_quietly(output)
-            logging.error(tr("начало эфира не склеилось с записью {name}: длина вышла {got} вместо {want}",
-                             name=name, got=joined_length, want=round(cut + main_length)))
-            return False
+            return self._refuse(head, main, tr("длина вышла {got} вместо {want}", got=joined_length,
+                                               want=round(cut + main_length)), kept=False, error=True)
         head_chat, main_chat = archive_chat.chat_paths(head), archive_chat.chat_paths(main)
         try:
             count = join_chat(head_chat["json"], main_chat["json"], cut, joined_length, main_chat["json"] + ".joined")
         except (OSError, ValueError) as error:
             util.remove_quietly(output)
-            logging.error(tr("чат не склеился: {name} — {error}", name=name, error=error))
-            return False
+            return self._refuse(head, main, tr("чат не склеился: {error}", error=error), kept=False, error=True)
         os.replace(output, main)
         if count is not None:
             os.replace(main_chat["json"] + ".joined", main_chat["json"])
@@ -418,6 +458,7 @@ class Joiner(threading.Thread):
             util.remove_quietly(path)
         logging.info(tr("начало эфира склеено с записью: {name} — стык на {at}, вышло {length}",
                         name=name, at=clock(cut), length=clock(joined_length)))
+        self._report(head, main, "done", seam=cut, length=joined_length)
         if count is not None and self._chat is not None:
             self._chat.enqueue(main)
         return True

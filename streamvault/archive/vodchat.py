@@ -177,8 +177,9 @@ def _youtube(url, folder, section, duration, progress, stopped, on_process, env,
     if process.returncode != 0 or source is None:
         with open(log_path, encoding="utf-8", errors="replace") as log:
             output = log.read()
-        if source is None and process.returncode == 0 or "no subtitles" in output.lower():
-            # обычное видео или чат выключен: не ошибка, просто чата нет
+        if source is None and process.returncode == 0 or "no subtitles" in output.lower() \
+                or "downloaded file is empty" in output.lower():
+            # обычное видео, чат выключен или у записи эфира нет повтора чата: не ошибка, просто чата нет
             return []
         errors = [line[len("ERROR:"):].strip() for line in output.splitlines() if line.startswith("ERROR:")]
         raise chat.ChatError(errors[-1] if errors else tr("yt-dlp завершился с кодом {code}",

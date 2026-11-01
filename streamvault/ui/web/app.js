@@ -42,6 +42,11 @@ export function receive(batch) {
         state.edits.set(event.job.id, event.job);
         jobsChanged = true;
         break;
+      case "joining":
+        noticeJoin(event);
+        state.joins.set(event.head, event);
+        jobsChanged = true;
+        break;
       case "download_removed":
         state.jobs.delete(event.id);
         jobsChanged = true;
@@ -108,6 +113,19 @@ export function noticeEdit(job) {
     scheduleLibraryReload();
   } else if (job.state === "failed") {
     toast(t("Не получилось: {name} — {error}", { name: job.name, error: job.error }), "error");
+  }
+}
+
+// начало эфира склеено с записью или не склеилось — сказать; склеенное — в библиотеке
+export function noticeJoin(event) {
+  const before = state.joins.get(event.head);
+  if (before && before.state === event.state) return;
+  const name = event.main.split(/[\\/]/).pop();
+  if (event.state === "done") {
+    toast(t("Начало эфира склеено с записью: {name}", { name: name }), "ok", "#library");
+    scheduleLibraryReload();
+  } else if (event.state === "failed") {
+    toast(t("Начало эфира не склеено с записью: {reason}", { reason: event.reason }), "error");
   }
 }
 
@@ -389,6 +407,7 @@ export async function start() {
   }
   applyLive(data.live);
   state.jobs = new Map(data.downloads.jobs.map((job) => [job.id, job]));
+  state.joins = new Map((data.joins || []).map((event) => [event.head, event]));
   state.settings = data.settings;
   state.logs = data.logs || [];
   state.problems = data.problems || [];

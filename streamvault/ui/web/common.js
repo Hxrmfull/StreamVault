@@ -317,6 +317,7 @@ export const state = {
   channels: new Map(),
   processing: { pending: 0, current: null },
   jobs: new Map(),
+  joins: new Map(),          // склейка начала эфира с записью: путь начала → последнее событие
   logs: [],
   settings: {},
   profiles: new Map(),
