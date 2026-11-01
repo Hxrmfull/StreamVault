@@ -92,7 +92,9 @@ def live_preview(channel, meta):
     data = _streams.get(name.lower(), lambda: get_json("GET", STREAM.format(name=name)))
     if not isinstance(data, dict) or not data.get("isOnline"):
         return ""
-    return https(data.get("previewUrl"))
+    # previewUrl — обложка эфира, её загружает сам стример; не загрузил — пусто,
+    # и тогда вместо пустой рамки обложка канала (как на его странице на сайте)
+    return https(data.get("previewUrl")) or https(data.get("channelCoverImageUrl"))
 
 
 def _same_title(first, second):

@@ -458,6 +458,7 @@ STRINGS = {
     'нет связи ({error})': 'no connection ({error})',
     'платформа ответила {status}': 'the platform answered {status}',
     'платформа ответила непонятно': 'the platform gave an unexpected answer',
+    '{channel}: убран из избранного': '{channel}: removed from favorites',
     'эта трансляция VK Видео уже закончилась': 'this VK Video stream has already ended',
     'у трансляции VK Видео не видно автора': 'the VK Video stream does not show its author',
     'эфира «{author}» нет на VK Video Live — программа записывает эфиры оттуда':

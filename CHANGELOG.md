@@ -9,9 +9,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **Recording settings for a channel you don't follow:** its page has the
-  "Recording settings" button too. The settings are remembered and used
-  when you record it with the button or start following it.
+- **Recording works the same for every channel:** "Start recording",
+  "Autorecord" and "Recording settings" are on any channel's page, not only
+  on channels added to the list.
 - **A link to a live stream** (YouTube `watch?v=…`) opens the channel page
   with the stream and "Start recording" instead of offering a download.
 - **A link to a stream on regular VK Video** (`vkvideo.ru/live-…`,
@@ -23,9 +23,12 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- A channel recorded with the button but not followed is shown in its own
-  sidebar section, "Recording, not followed", instead of among followed
-  channels; it leaves the list when the recording ends.
+- **"Follow" is now "Add to favorites":** the button only adds the channel
+  to the left panel ("Favorites"). A channel outside favorites that is
+  recording or has autorecord is shown below, under "Not in favorites".
+  Removing a channel from favorites needs no confirmation any more: a
+  recording in progress goes on, autorecord and own settings stay. All
+  channels from the previous version are in favorites.
 
 ### Fixed
 
@@ -34,6 +37,13 @@ versions follow [Semantic Versioning](https://semver.org/).
   0:00 while the timeline showed the chosen spot (broken since 0.1.2).
   Now it starts exactly where you click, in a fraction of a second, on all
   platforms.
+- **No stream frame on VK Video Live:** when the streamer has not uploaded
+  a stream cover, the channel cover is shown instead of an empty frame —
+  VK Video Live shows that cover as the stream picture and gives no live
+  frame.
+- A channel's own recording settings could disappear from the window until
+  a restart after any event of its recording, and the window would show
+  the general values.
 
 ## 0.2.1 — 2026-11-01
 

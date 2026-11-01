@@ -34,7 +34,7 @@ from .storage import GB, DiskGuard, Retention
 # Сколько ждать, пока выключенный канал погасит свой streamlink,
 # прежде чем запустить его заново.
 RELAUNCH_WAIT = 15
-# свои настройки записи канала, которые бывают и у канала не из списка (черновик)
+# свои настройки записи канала: с ними канал хранится, даже если он не в избранном
 OWN_SETTINGS = ("quality", "keep_days", "options")
 
 
@@ -108,6 +108,21 @@ def migrate_folders(root_path):
             logging.info(tr("записи из папки {old} перенесены в {new}", old=old, new=new))
 
 
+class _ChannelBus:
+    """Шина для потока канала: его снимки дополняет служба (LiveService._enrich)."""
+
+    def __init__(self, service):
+        self._service = service
+
+    def emit(self, kind, **payload):
+        if kind == "channel" and isinstance(payload.get("channel"), dict):
+            payload["channel"] = self._service._enrich(payload["channel"])
+        self._service._bus.emit(kind, **payload)
+
+    def __getattr__(self, name):
+        return getattr(self._service._bus, name)
+
+
 class LiveService:
     """
     Все наблюдаемые каналы и общая очередь постобработки.
@@ -148,9 +163,6 @@ class LiveService:
         # общая остановка: токен Twitch и очередь обработки
         self._stop = threading.Event()
         self._recorders = {}
-        # свои настройки записи каналов не из списка: переходят в канал, когда его
-        # пишут кнопкой или начинают отслеживать, и возвращаются, когда запись кончилась
-        self._drafts = {}
         self._probes = None
         self._streamlink_probe = None
         self._public_profiles = PublicProfiles()
@@ -303,14 +315,14 @@ class LiveService:
         """Свой срок хранения записей канала, дней; None — как в общих настройках."""
         from ..platforms import keep_days_value
         with self._lock:
-            entry = self._holder(cid)
+            entry = self._entry_or_new(cid)
             value = keep_days_value(days)
             if value is None:
                 entry.pop("keep_days", None)
             else:
                 entry["keep_days"] = value
-            self._save()
-        self._emit_channel(cid)
+            removed = self._settle(entry)
+        self._announce(cid, removed)
 
     def set_options(self, cid, changes):
         """
@@ -319,7 +331,7 @@ class LiveService:
         Идущая запись их подхватывает со следующей части, конвертация — со следующей записи.
         """
         with self._lock:
-            entry = self._holder(cid)
+            entry = self._entry_or_new(cid)
             options = dict(entry.get("options") or {})
             for key, value in changes.items():
                 if value is None:
@@ -330,14 +342,8 @@ class LiveService:
                 entry["options"] = options
             else:
                 entry.pop("options", None)
-            self._save()
-        self._emit_channel(cid)
-
-    def channel_draft(self, cid):
-        """Свои настройки записи канала не из списка: {"quality", "keep_days", "options"}."""
-        with self._lock:
-            draft = copy.deepcopy(self._holder(cid))
-        return {key: draft.get(key) for key in OWN_SETTINGS} | {"options": draft.get("options") or {}}
+            removed = self._settle(entry)
+        self._announce(cid, removed)
 
     def is_running(self):
         return self._started and not self._stop.is_set()
@@ -350,10 +356,11 @@ class LiveService:
 
     def add_channel(self, text, quality=None, enabled=False, profile=None):
         """
-        Добавляет канал в отслеживаемые: "kick:xqc", ссылку или имя (без
-        префикса — Twitch). enabled — автозапись; profile — имя и аватарка
-        из выдачи поиска. Возвращает ключ канала. Негодная строка или дубль —
-        ValueError.
+        Добавляет канал в избранное (он виден в панели слева): "kick:xqc",
+        ссылку или имя (без префикса — Twitch). enabled — включить и
+        автозапись; profile — имя и аватарка из выдачи поиска. Канал, который
+        уже пишется, с автозаписью или своими настройками, остаётся каким был.
+        Возвращает ключ канала. Негодная строка или канал уже в избранном — ValueError.
         """
         platform, channel = parse_channel(text)
         if platform is None:
@@ -362,38 +369,49 @@ class LiveService:
         profile = clean_profile(profile)
 
         with self._lock:
-            existing = self._find(platform, channel)
-            if existing is not None and existing.get("temporary"):
-                # канал пишут по кнопке — теперь он отслеживается, запись не прерывается
-                existing.pop("temporary")
-                self._drafts.pop(cid, None)
-                existing["enabled"] = bool(enabled)
-                if quality:
-                    existing["quality"] = quality.strip()
-                if profile:
-                    existing["profile"] = profile
-                self._save()
-                recorder = self._recorders.get(cid)
-                if recorder is not None:
-                    recorder.make_permanent()
-                    recorder.set_autorecord(existing["enabled"])
-                    recorder.set_quality(self._quality_for(existing))
-            elif existing is not None:
+            entry = self._find(platform, channel)
+            if entry is not None and self._favorite(entry):
                 raise ValueError(tr("канал {channel} уже есть в списке", channel=cid))
-            else:
-                entry = {"platform": platform, "channel": channel, "enabled": bool(enabled)}
-                entry.update(self._drafts.pop(cid, {}))
-                if quality:
-                    entry["quality"] = quality.strip()
-                if profile:
-                    entry["profile"] = profile
+            if entry is None:
+                entry = {"platform": platform, "channel": channel, "enabled": False}
                 self._entries.append(entry)
-                self._save()
-                if self._started and self._watched(entry):
-                    self._launch(entry)
+            entry.pop("favorite", None)
+            recorder = self._recorders.get(cid)
+            alive = recorder is not None and recorder.is_alive()
+            if enabled and not entry["enabled"]:
+                entry["enabled"] = True
+                if alive:
+                    recorder.set_autorecord(True)
+            if quality:
+                entry["quality"] = quality.strip()
+                if alive:
+                    recorder.set_quality(self._quality_for(entry))
+            if profile:
+                entry["profile"] = profile
+            self._settle(entry)
         logging.info(tr("{channel}: добавлен", channel=cid))
         self._emit_channel(cid)
         return cid
+
+    def set_favorite(self, cid, favorite):
+        """
+        В избранном канал виден в панели слева — и только: запись, автозапись
+        и свои настройки от этого не зависят. Убранный из избранного канал без
+        автозаписи и своих настроек уходит из списка, а идущая запись дописывается.
+        """
+        if favorite:
+            with self._lock:
+                entry = next((entry for entry in self._entries if self._key(entry) == cid), None)
+                if entry is not None and self._favorite(entry):
+                    return
+            self.add_channel(cid)
+            return
+        with self._lock:
+            entry = self._entry(cid)
+            entry["favorite"] = False
+            removed = self._settle(entry)
+        logging.info(tr("{channel}: убран из избранного", channel=cid))
+        self._announce(cid, removed)
 
     def record_now(self, text):
         """
@@ -421,8 +439,8 @@ class LiveService:
         with self._lock:
             entry = self._find(platform, channel)
             if entry is None:
-                entry = {"platform": platform, "channel": channel, "enabled": False, "temporary": True}
-                entry.update(copy.deepcopy(self._drafts.get(cid, {})))
+                entry = {"platform": platform, "channel": channel, "enabled": False, "favorite": False,
+                         "temporary": True}
                 self._entries.append(entry)
             recorder = self._recorders.get(cid)
             if recorder is not None and recorder.is_alive():
@@ -487,11 +505,11 @@ class LiveService:
         """
         enabled = bool(enabled)
         with self._lock:
-            entry = self._entry(cid)
+            # автозапись бывает и у канала не из избранного: он заводится сам
+            entry = self._entry_or_new(cid) if enabled else self._entry(cid)
             if entry["enabled"] == enabled:
                 return
             entry["enabled"] = enabled
-            self._save()
             recorder = self._recorders.get(cid)
             if recorder is not None and recorder.is_alive():
                 recorder.set_autorecord(enabled)
@@ -500,25 +518,25 @@ class LiveService:
             elif recorder is not None:
                 # консольный режим: без автозаписи канал не наблюдается
                 recorder.stop(grace=0, final_state="paused")
+            removed = self._settle(entry)
         logging.info(tr("{channel}: автозапись включена", channel=cid) if enabled
                      else tr("{channel}: автозапись выключена", channel=cid))
-        self._emit_channel(cid)
+        self._announce(cid, removed)
 
     def set_quality(self, cid, quality=None):
         """Своё качество канала; None — как в общих настройках."""
         with self._lock:
-            entry = self._holder(cid)
+            entry = self._entry_or_new(cid)
             if quality:
                 entry["quality"] = quality.strip()
             else:
                 entry.pop("quality", None)
-            self._save()
             recorder = self._recorders.get(cid)
             effective = self._quality_for(entry)
-        if recorder is not None and recorder.is_alive():
+            removed = self._settle(entry)
+        if not removed and recorder is not None and recorder.is_alive():
             recorder.set_quality(effective)
-        else:
-            self._emit_channel(cid)
+        self._announce(cid, removed)
 
     def check_now(self, cid=None):
         """Проверить канал (или все каналы) сразу, не дожидаясь паузы."""
@@ -589,12 +607,9 @@ class LiveService:
 
     def _channel_snapshot(self, entry, recorder):
         if recorder is not None and (recorder.is_alive() or self._watched(entry)):
-            snapshot = recorder.snapshot()
-            snapshot["profile"] = entry.get("profile")
-            snapshot["keep_days"] = entry.get("keep_days")
-            snapshot["options"] = dict(entry.get("options") or {})
-            return snapshot
+            return self._enrich(recorder.snapshot(), entry)
         return {
+            "favorite": self._favorite(entry),
             "profile": entry.get("profile"),
             "keep_days": entry.get("keep_days"),
             "options": dict(entry.get("options") or {}),
@@ -637,10 +652,32 @@ class LiveService:
                 return entry
         return None
 
-    def _holder(self, cid):
+    def _enrich(self, snapshot, entry=None):
         """
-        Где хранить свои настройки записи канала: в канале из списка, а канал
-        не из списка — в черновике. Под self._lock.
+        К снимку потока канала — то, что знает только служба: избранное,
+        профиль, свои срок хранения и настройки. Окно заменяет канал снимком
+        целиком: без этого после любого события потока они бы пропадали.
+        """
+        if entry is None:
+            with self._lock:
+                entry = copy.deepcopy(next((entry for entry in self._entries
+                                            if self._key(entry) == snapshot.get("id")), None))
+        if entry is not None:
+            snapshot["favorite"] = self._favorite(entry)
+            snapshot["profile"] = entry.get("profile")
+            snapshot["keep_days"] = entry.get("keep_days")
+            snapshot["options"] = dict(entry.get("options") or {})
+        return snapshot
+
+    @staticmethod
+    def _favorite(entry):
+        """В избранном — виден в панели слева. Каналы из прежних версий — все в избранном."""
+        return entry.get("favorite", True) and not entry.get("temporary")
+
+    def _entry_or_new(self, cid):
+        """
+        Канал из списка, а нет его — новый, не в избранном: так автозапись и
+        свои настройки бывают у любого канала. Под self._lock; после правки — _settle.
         """
         entry = next((entry for entry in self._entries if self._key(entry) == cid), None)
         if entry is not None:
@@ -648,7 +685,46 @@ class LiveService:
         platform, channel = parse_channel(cid)
         if platform is None or channel_id(platform, channel) != cid:
             raise KeyError(tr("канала {channel} нет в списке", channel=cid))
-        return self._drafts.setdefault(cid, {})
+        entry = {"platform": platform, "channel": channel, "enabled": False, "favorite": False}
+        self._entries.append(entry)
+        return entry
+
+    def _settle(self, entry):
+        """
+        Под self._lock, после любой правки канала. Нужен канал — в избранном,
+        с автозаписью или своими настройками — он хранится и наблюдается. Не
+        нужен, но пишется — дописывает запись и уходит (temporary); не нужен
+        и не пишется — уходит сразу. Возвращает True, если ушёл.
+        """
+        cid = self._key(entry)
+        recorder = self._recorders.get(cid)
+        alive = recorder is not None and recorder.is_alive()
+        if entry.get("favorite", True) or entry["enabled"] or any(key in entry for key in OWN_SETTINGS):
+            if entry.pop("temporary", None) and alive:
+                recorder.make_permanent()
+            if self._started and not alive and self._watched(entry):
+                self._launch(entry)
+            self._save()
+            return False
+        if not entry.get("temporary") and alive and recorder.busy():
+            entry["temporary"] = True
+            recorder.make_temporary()
+        if entry.get("temporary"):
+            self._save()
+            return False
+        self._entries.remove(entry)
+        self._recorders.pop(cid, None)
+        if recorder is not None:
+            recorder.stop(grace=0, silent=True)
+        self._save()
+        return True
+
+    def _announce(self, cid, removed):
+        if removed:
+            if self._bus is not None:
+                self._bus.emit("channel_removed", id=cid)
+        else:
+            self._emit_channel(cid)
 
     def _entry(self, cid):
         for entry in self._entries:
@@ -713,7 +789,8 @@ class LiveService:
 
         recorder = ChannelRecorder(platform, channel, probe, self._quality_for(entry),
                                    refresh, self._settings["root_path"], self._processing,
-                                   fallback_probe=fallback, bus=self._bus,
+                                   fallback_probe=fallback,
+                                   bus=_ChannelBus(self) if self._bus is not None else None,
                                    live_chat=lambda: self._option(cid, "live_chat"),
                                    live_restart=lambda: self._option(cid, "record_from_start"),
                                    disk=self._disk,
@@ -740,7 +817,5 @@ class LiveService:
                 return
             self._entries.remove(entry)
             del self._recorders[recorder.id]
-            # изменённое во время записи не теряется: в следующий раз — так же
-            self._drafts[recorder.id] = {key: entry[key] for key in OWN_SETTINGS if key in entry}
         if self._bus is not None:
             self._bus.emit("channel_removed", id=recorder.id)

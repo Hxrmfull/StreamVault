@@ -18,15 +18,15 @@ export function openAddChannel() {
   const error = h("div", { class: "error-text" });
   const submit = button(t("Добавить"), { kind: "primary", type: "submit" });
   const form = h("form", null,
-    h("h2", { text: t("Добавить канал") }),
+    h("h2", { text: t("Добавить в избранное") }),
     h("div", { class: "field" }, h("label", null, t("Канал")), h("div", null, input), chosenLine,
       h("div", { class: "hint", text: t("Начни вводить имя — StreamVault найдёт каналы на Twitch, Kick, YouTube " +
                                         "и VK Video Live. Можно вставить и ссылку на канал.") })),
     h("div", { class: "field" }, h("label", null, t("Качество записи")), quality),
     h("div", { class: "field" },
       h("label", { class: "switch" }, autorecord, h("span", { class: "track" }), t("Автозапись")),
-      h("div", { class: "hint", text: t("Записывать каждый эфир. Выключено — канал только отслеживается, " +
-                                        "а эфир можно записать кнопкой на странице канала.") })),
+      h("div", { class: "hint", text: t("Записывать каждый эфир. Выключено — эфир можно записать " +
+                                        "кнопкой на странице канала.") })),
     error,
     h("div", { class: "actions" }, button(t("Отмена"), { onclick: () => modal.close() }), submit));
   form.addEventListener("submit", async (event) => {
@@ -123,7 +123,8 @@ export function attachChannelSearch(input, onPick) {
         h("span", { class: "search-row-name", text: item.name }),
         h("span", { class: "search-row-sub" },
           ...details.flatMap((part, index) => index ? [" · ", part] : [part]))),
-      tracked && !tracked.temporary ? h("span", { class: "badge", text: t("отслеживается") }) : null);
+      tracked && tracked.favorite !== false && !tracked.temporary
+        ? h("span", { class: "badge", text: t("в избранном") }) : null);
     row.addEventListener("mousedown", (event) => event.preventDefault());   // фокус остаётся в поле
     row.addEventListener("click", () => pick(item));
     return row;

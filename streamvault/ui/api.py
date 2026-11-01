@@ -89,7 +89,7 @@ class Api:
         "init", "live_snapshot", "resolve", "profiles", "search_channels",
         "add_channel", "remove_channel", "set_enabled", "set_quality", "check_now",
         "record_now", "stop_recording", "check_channel", "set_keep_days", "set_channel_options",
-        "channel_draft", "vk_video_live", "disk_status",
+        "set_favorite", "vk_video_live", "disk_status",
         "inspect", "list_channel", "download_all",
         "add_download", "pause_download", "resume_download", "cancel_download",
         "remove_download", "clear_finished", "downloads_snapshot",
@@ -310,6 +310,10 @@ class Api:
     def set_enabled(self, cid, enabled):
         self._live.set_enabled(str(cid), bool(enabled))
 
+    def set_favorite(self, cid, favorite):
+        """В избранном канал виден в панели слева; запись и автозапись от этого не зависят."""
+        self._live.set_favorite(str(cid), bool(favorite))
+
     def set_quality(self, cid, quality=None):
         self._live.set_quality(str(cid), quality or None)
 
@@ -347,10 +351,6 @@ class Api:
             return {"id": channel_id("vkvideolive", sites.vkvideolive.same_stream(self._downloads.inspect(video)))}
         except (sites.SiteError, ytdlp.YtdlpError) as error:
             raise ValueError(str(error))
-
-    def channel_draft(self, cid):
-        """Свои настройки записи канала не из списка — для окна его настроек."""
-        return self._live.channel_draft(str(cid))
 
     def disk_status(self):
         """Хватает ли места на диске с записями: уровень ok, low или critical."""

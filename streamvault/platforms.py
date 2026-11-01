@@ -284,6 +284,9 @@ def normalize_channels(raw, enabled=False):
             seen.add(key)
             entry = {"platform": platform, "channel": channel,
                      "enabled": bool(options.get("enabled", enabled))}
+            # не в избранном: хранится ради автозаписи или своих настроек
+            if options.get("favorite") is False:
+                entry["favorite"] = False
             if options.get("quality"):
                 entry["quality"] = str(options["quality"]).strip()
             keep_days = keep_days_value(options.get("keep_days"))

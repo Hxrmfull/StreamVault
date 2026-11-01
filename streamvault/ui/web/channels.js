@@ -10,16 +10,23 @@ import { navigate, recBadge, refreshView, render, routeHash, view } from "./app.
 import { openLive } from "./player.js";
 
 export function refreshSidebar() {
-  // канал, который пишется по кнопке без «Отслеживать», — отдельно: он уйдёт, когда запись кончится
+  // слева — избранное; ниже — не избранные каналы, которые пишутся или с автозаписью,
+  // чтобы до них было рукой подать. Канал только со своими настройками в панели не виден
   const all = sortedChannels();
-  const tracked = all.filter((channel) => !channel.temporary);
-  const temporary = all.filter((channel) => channel.temporary);
-  document.getElementById("sidebar-empty").hidden = tracked.length > 0;
-  document.getElementById("temporary-head").hidden = !temporary.length;
-  syncList(document.getElementById("channel-list"), tracked, (channel) => channel.id,
+  const favorites = all.filter(isFavorite);
+  const others = all.filter((channel) => !isFavorite(channel) && (channel.enabled || isRecording(channel)
+                                                                  || channel.temporary));
+  document.getElementById("sidebar-empty").hidden = favorites.length > 0;
+  document.getElementById("others-head").hidden = !others.length;
+  syncList(document.getElementById("channel-list"), favorites, (channel) => channel.id,
            createSidebarItem, updateSidebarItem);
-  syncList(document.getElementById("temporary-list"), temporary, (channel) => channel.id,
+  syncList(document.getElementById("others-list"), others, (channel) => channel.id,
            createSidebarItem, updateSidebarItem);
+}
+
+// в избранном — виден в панели слева; каналы прежних версий — все в избранном
+export function isFavorite(channel) {
+  return Boolean(channel) && channel.favorite !== false && !channel.temporary;
 }
 
 export function createSidebarItem() {
@@ -63,7 +70,7 @@ export function renderLive(main) {
   view.processing = h("div");
   view.liveCount = h("span", { class: "count" });
   view.liveGrid = h("div", { class: "grid" });
-  view.liveEmpty = h("div", { class: "muted", text: t("Сейчас никто из отслеживаемых каналов не в эфире.") });
+  view.liveEmpty = h("div", { class: "muted", text: t("Сейчас никто из твоих каналов не в эфире.") });
   view.offCount = h("span", { class: "count" });
   view.offRows = h("div", { class: "rows" });
   view.offSection = h("div", { class: "section-block" },
@@ -289,16 +296,16 @@ export function renderChannel(main, id) {
   showListing();
 }
 
-// отслеживается ли канал: none, temporary (пишется по кнопке) или tracked
+// что знает о канале программа: none — ничего (страница сама проверяет эфир),
+// listed — канал у неё есть, favorite — он ещё и в избранном
 export function trackKind(channel) {
-  return !channel ? "none" : channel.temporary ? "temporary" : "tracked";
+  return !channel ? "none" : isFavorite(channel) ? "favorite" : "listed";
 }
 
 export function buildChannelHeader() {
   const id = view.id;
   const channel = state.channels.get(id);
   view.tracked = trackKind(channel);
-  const tracked = view.tracked === "tracked" ? channel : null;
   view.avatar = h("span", { class: "avatar big" });
   view.title = h("span");
   view.stateLine = h("div", { class: "state-line" });
@@ -308,47 +315,41 @@ export function buildChannelHeader() {
   view.watchButton = button(t("Смотреть"), { icon: "play", title: t("Смотреть запись с чатом, пока она идёт"),
                                             onclick: () => openLive(id) });
   view.watchButton.hidden = true;
-  view.probed = null;       // разовая проверка канала не из списка
+  view.probed = null;       // разовая проверка канала, которого у программы нет
 
-  if (tracked) {
-    view.enabled = h("input", { type: "checkbox" });
-    view.enabled.addEventListener("change", () => {
-      bridge.call("set_enabled", id, view.enabled.checked).catch(failed);
+  // запись у всех каналов одна и та же; избранное — только место в панели слева
+  view.enabled = h("input", { type: "checkbox" });
+  view.enabled.addEventListener("change", () => {
+    bridge.call("set_enabled", id, view.enabled.checked).catch((error) => {
+      view.enabled.checked = !view.enabled.checked;
+      failed(error);
     });
-    controls.append(
-      view.recordButton, view.watchButton,
-      h("label", { class: "switch", title: t("Записывать каждый эфир") }, view.enabled,
-        h("span", { class: "track" }), t("Автозапись")),
-      button(t("Настройки записи"), { icon: "gear", title: t("Качество, чат, начало эфира, конвертация, " +
-                                     "деление на куски и срок хранения записей этого канала"),
-                                     onclick: () => openChannelOptions(id) }),
-      button(t("Проверить"), { icon: "refresh", title: t("Проверить, не в эфире ли канал, прямо сейчас"),
-                            onclick: () => bridge.call("check_now", id).catch(failed) }),
-      h("span", { class: "spacer" }),
-      button(t("Отслеживается"), { kind: "ghost", icon: "check", title: t("Перестать отслеживать"),
-                                   onclick: () => confirmRemoveChannel(id) }));
-  } else {
-    // «Отслеживать» — на том же месте, где у отслеживаемого канала «Отслеживается»
-    controls.append(
-      view.recordButton, view.watchButton,
-      button(t("Настройки записи"), { icon: "gear", title: t("Качество, чат, начало эфира, конвертация, " +
-                                     "деление на куски и срок хранения записей этого канала"),
-                                     onclick: () => openChannelOptions(id) }),
-      h("span", { class: "spacer" }),
-      button(t("Отслеживать"), {
-        kind: "primary", icon: "plus",
-        title: t("Добавить в список: StreamVault будет показывать, когда канал в эфире"),
-        onclick: () => bridge.call("add_channel", id, null, false, knownProfile(id))
-          .then(() => toast(t("Канал отслеживается. Чтобы записывать каждый эфир, включи «Автозапись»."), "ok"))
-          .catch(failed),
-      }));
-    if (!channel) probeUntracked(id);
-  }
+  });
+  const favorite = view.tracked === "favorite"
+    ? button(t("В избранном"), { kind: "ghost", icon: "star", title: t("Убрать из панели слева"),
+                                onclick: () => bridge.call("set_favorite", id, false)
+                                  .then(() => toast(t("Канал убран из избранного"), "ok")).catch(failed) })
+    : button(t("В избранное"), { kind: "primary", icon: "star-outline", title: t("Показывать канал в панели слева"),
+                                onclick: () => bridge.call("add_channel", id, null, false, knownProfile(id))
+                                  .then(() => toast(t("Канал в избранном — он в панели слева"), "ok")).catch(failed) });
+  controls.append(
+    view.recordButton, view.watchButton,
+    h("label", { class: "switch", title: t("Записывать каждый эфир") }, view.enabled,
+      h("span", { class: "track" }), t("Автозапись")),
+    button(t("Настройки записи"), { icon: "gear", title: t("Качество, чат, начало эфира, конвертация, " +
+                                   "деление на куски и срок хранения записей этого канала"),
+                                   onclick: () => openChannelOptions(id) }),
+    button(t("Проверить"), { icon: "refresh", title: t("Проверить, не в эфире ли канал, прямо сейчас"),
+                          onclick: () => (state.channels.get(id) ? bridge.call("check_now", id).catch(failed)
+                                                                  : probeUntracked(id)) }),
+    h("span", { class: "spacer" }),
+    favorite);
+  if (!channel) probeUntracked(id);
   const site = channelUrl(id);
   if (site) controls.append(iconButton("external", t("Открыть на сайте"),
                                        () => bridge.call("open_url", site).catch(failed)));
 
-  // кнопки — всегда строкой под именем: и у отслеживаемого канала, и у любого другого
+  // кнопки — всегда строкой под именем и одни и те же у любого канала
   view.header.replaceChildren(h("div", { class: "channel-header" },
     h("div", { class: "channel-top" },
       view.avatar,
@@ -364,16 +365,8 @@ export function buildChannelHeader() {
 // и смена общих настроек его тоже меняет
 
 export function openChannelOptions(id) {
-  const channel = state.channels.get(id);
-  if (channel) {
-    showChannelOptions(id, channel);
-    return;
-  }
-  // канал не из списка: его настройки запомнит программа и возьмёт, когда его запишут или добавят
-  bridge.call("channel_draft", id).then((draft) => showChannelOptions(id, draft)).catch(failed);
-}
-
-function showChannelOptions(id, channel) {
+  // канала у программы ещё нет — свои настройки его и заведут (не в избранном)
+  const channel = state.channels.get(id) || { options: {}, quality: null, keep_days: null };
   const options = channel.options || {};
   const general = state.settings;
   const yesNo = [[true, t("да")], [false, t("нет")]];
@@ -489,9 +482,8 @@ export function refreshChannelHeader() {
   const live = channel && isLive(channel);
   view.avatar.classList.toggle("live-ring", Boolean(live));
 
-  if (channel && view.tracked === "tracked") {
-    view.enabled.checked = channel.enabled !== false;
-  }
+  const listed = state.channels.get(id);
+  view.enabled.checked = Boolean(listed && listed.enabled);
   refreshRecordButton();
   const key = channel ? [channel.state, channel.message, channel.last_check,
                          (channel.stream || {}).viewers, channel.probe,
@@ -501,10 +493,10 @@ export function refreshChannelHeader() {
     view.stateLine.replaceChildren();
     view.stateLine.title = "";
     if (!channel || channel.state === "unknown") {
-      view.stateLine.append(t("Не отслеживается — можно смотреть и скачивать записи"));
+      view.stateLine.append(t("Не в избранном — можно записывать, смотреть и скачивать записи"));
     } else {
-      if (channel.temporary || channel === view.probed) {
-        view.stateLine.append(h("span", { class: "faint", text: t("не отслеживается ·") }));
+      if (!isFavorite(state.channels.get(id))) {
+        view.stateLine.append(h("span", { class: "faint", text: t("не в избранном ·") }));
       }
       const tone = stateTone(channel);
       view.stateLine.append(h("span", { class: "dot" + (live ? " live" : tone ? " " + tone : "") }),
@@ -624,13 +616,6 @@ export function showListing() {
   view.browser = createVideoBrowser(key, (start) =>
     bridge.call("list_channel", platform, channel, kind, start, PAGE, period));
   view.listing.replaceChildren(view.browser.el);
-}
-
-export function confirmRemoveChannel(id) {
-  confirmDialog(t("Перестать отслеживать {name}?", { name: channelName(id) }),
-    t("Идущая запись остановится. Уже записанное останется на диске."),
-    t("Перестать отслеживать"),
-    () => bridge.call("remove_channel", id).then(() => toast(t("Канал убран из списка"), "ok")).catch(failed));
 }
 
 /*

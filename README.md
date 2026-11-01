@@ -14,7 +14,7 @@
 <p align="center"><b>English</b> · <a href="README.ru.md">Русский</a></p>
 
 Records live streams and downloads VODs and clips from **Twitch**, **Kick**,
-**YouTube** and **VK Video Live**, chat included. Follow channels and see who
+**YouTube** and **VK Video Live**, chat included. Keep favorite channels and see who
 is live, record with one click or automatically, and watch recordings with
 the chat running alongside, all in a window that looks like a streaming site.
 

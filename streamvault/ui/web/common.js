@@ -95,6 +95,9 @@ export const ICONS = {
   chat: "M4 3h16a1 1 0 011 1v11a1 1 0 01-1 1H9.4L5 19.5V16H4a1 1 0 01-1-1V4a1 1 0 011-1zm1 2v9h2v1.4L8.6 14H19V5zm2 2h10v2H7zm0 3h7v2H7z",
   file: "M6 2h8l6 6v14H6zm7 1.5V9h5.5z",
   check: "M9 16.2l-4.2-4.2-1.4 1.4L9 19 21 7l-1.4-1.4z",
+  star: "M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z",
+  "star-outline": "M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24z"
+    + "M12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z",
   // стрелка выпадающего списка
   chevron: "M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z",
   record: "M12 5a7 7 0 100 14 7 7 0 000-14z",
@@ -539,7 +542,7 @@ export function rememberProfile(channel) {
   if (channel.profile && !state.profiles.has(channel.id)) state.profiles.set(channel.id, channel.profile);
 }
 
-// профиль для «Отслеживать», если канал знаком по выдаче поиска. Twitch
+// профиль для «В избранное», если канал знаком по выдаче поиска. Twitch
 // отдаёт свежие аватарки сам — сохранённая там только устарела бы
 export function knownProfile(id) {
   const profile = state.profiles.get(id);

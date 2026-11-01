@@ -255,9 +255,24 @@ class ChannelRecorder(threading.Thread):
         self._wake.set()
 
     def make_permanent(self):
-        """Канал, записанный кнопкой, стал отслеживаемым: поток не завершается."""
+        """Канал, записанный кнопкой, стал нужен (избранное, автозапись, настройки): поток не завершается."""
         self._once = False
         self._set(temporary=False)
+
+    def make_temporary(self):
+        """
+        Канал больше не нужен, но пишется: запись дописывается, как начатая
+        кнопкой, и поток завершается — канал уходит из списка.
+        """
+        if self.snapshot()["state"] == "recording":
+            self._manual = True
+        self._once = True
+        self._set(temporary=True)
+        self._wake.set()
+
+    def busy(self):
+        """Пишет эфир или вот-вот начнёт (нажали «Начать запись»)."""
+        return self._manual or self.snapshot()["state"] == "recording"
 
     def _wants_recording(self):
         return (self._autorecord or self._manual) and not self._skip
