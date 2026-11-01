@@ -375,7 +375,9 @@ export function setupChrome() {
       input.blur();
       navigate(target.kind === "channel" ? routeHash("channel", target.id) : routeHash("link", target.url));
     } catch (error) {
-      failed(error);
+      // не имя канала и не ссылка — это поиск: выдача, а не ошибка
+      if (results.search(text)) input.focus();
+      else failed(error);
     }
   });
   window.addEventListener("hashchange", render);

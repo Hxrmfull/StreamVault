@@ -149,7 +149,7 @@ export function fillLibraryChannels() {
   }
   const selected = view.channelSelect.value;
   view.channelSelect.replaceChildren(h("option", { value: "", text: t("Все каналы") }),
-    [...channels].sort((a, b) => a[1].localeCompare(b[1], "ru"))
+    ...[...channels].sort((a, b) => a[1].localeCompare(b[1], "ru"))
       .map(([id, label]) => h("option", { value: id, text: label })));
   view.channelSelect.value = channels.has(selected) ? selected : "";
 }

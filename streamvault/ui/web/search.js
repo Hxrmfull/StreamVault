@@ -218,5 +218,15 @@ export function attachChannelSearch(input, onPick) {
   input.addEventListener("blur", () => setTimeout(hide, 150));
   // перешли на другой экран («назад», ссылка в уведомлении) — выдача не должна висеть поверх
   window.addEventListener("hashchange", hide);
-  return { hide, clear: () => { generation++; hide(); panel.replaceChildren(); } };
+  return {
+    hide,
+    clear: () => { generation++; hide(); panel.replaceChildren(); },
+    // Enter на тексте, который каналом быть не может («lofi girl»), — показать, что нашлось
+    search: (text) => {
+      if (!searchable(text)) return false;
+      clearTimeout(timer);
+      run(text);
+      return true;
+    },
+  };
 }

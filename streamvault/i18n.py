@@ -433,7 +433,6 @@ STRINGS = {
     'обновления: выпусков на GitHub пока нет': 'updates: there are no releases on GitHub yet',
     'обновления: проверить не удалось — {error}': 'updates: could not check — {error}',
     'проверка обновлений упала': 'the update check crashed',
-    'в выпуске {version} нет файла {name}': 'release {version} has no {name}',
     'в чате эфира ни одного сообщения: {name}': 'no messages in the stream chat: {name}',
     'после обработки {name}: сбой': 'after processing {name}: crash',
     'сообщение|сообщения|сообщений': 'message|messages',
@@ -464,6 +463,8 @@ STRINGS = {
     'запись зашифрована': 'the recording is encrypted',
     'кусок записи не скачался: {error}': 'a recording segment did not download: {error}',
     'остановлено': 'stopped',
+    '«{name}» не похоже на имя канала {platform}': '"{name}" does not look like a {platform} channel name',
+    '{name}: {error} — качаю через ffmpeg': '{name}: {error} — downloading through ffmpeg',
     'начало эфира склеено с записью — загрузка теперь о ней: {name}':
         'the stream beginning is joined to the recording — the download now points to it: {name}',
     'ffmpeg не собрал начало записи: {error}': 'ffmpeg could not assemble the recording beginning: {error}',

@@ -787,6 +787,10 @@ class DownloadManager:
             else:
                 produced = dashsection.download([(item["url"], item.get("http_headers")) for item in chosen],
                                                 job["section"][1], job["target"], ffmpeg, progress, stopped=stopped)
+        except dashsection.NoIndex as error:
+            # оглавления нет — до скачивания дело не дошло: тот же отрезок обычным путём
+            logging.info(tr("{name}: {error} — качаю через ffmpeg", name=job["title"] or job["url"], error=error))
+            return False
         except (hlssection.HlsSectionError, dashsection.DashSectionError) as error:
             self._finish(job_id, runtime, None if runtime["stop"] else FAILED, error=str(error))
             return True

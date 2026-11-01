@@ -33,6 +33,10 @@ class DashSectionError(Exception):
     """Отрезок так не скачать — текст для человека."""
 
 
+class NoIndex(DashSectionError):
+    """У файла нет оглавления sidx: отрезок так не взять — качать обычным путём, через ffmpeg."""
+
+
 def section_end(data, length):
     """
     Начало mp4 (ftyp, moov, sidx) -> сколько байт с начала файла покрывают
@@ -45,10 +49,10 @@ def section_end(data, length):
             break
         if kind == b"sidx":
             if position + size > len(data):
-                raise DashSectionError(tr("оглавление записи не уместилось в начало файла"))
+                raise NoIndex(tr("оглавление записи не уместилось в начало файла"))
             return _walk_sidx(data[position + 8:position + size], position + size, length)
         position += size
-    raise DashSectionError(tr("у записи нет оглавления (sidx)"))
+    raise NoIndex(tr("у записи нет оглавления (sidx)"))
 
 
 def _walk_sidx(body, after, length):

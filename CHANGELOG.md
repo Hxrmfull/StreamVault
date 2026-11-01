@@ -5,6 +5,19 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- **The "Channel" filter in the library** was empty — it listed no
+  channels.
+- **Enter in the search box on plain text** ("lofi girl") opened the page
+  of a nonexistent Twitch channel, with auto-record and settings. A name
+  impossible on the platform is no longer taken for a channel, and Enter
+  shows the search results.
+- A YouTube stream beginning for a video without an index failed; it now
+  downloads the old way, through ffmpeg.
+
 ## 0.4.0 — 2026-11-01
 
 ### Added

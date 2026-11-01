@@ -167,12 +167,12 @@ def parse_channel(item, default_platform=DEFAULT_PLATFORM):
             for known in spec["hosts"]:
                 # сам домен либо любой его поддомен: m.twitch.tv, www.youtube.com
                 if host == known or host.endswith("." + known):
-                    return name, canonical_channel(name, item)
+                    return _checked(name, canonical_channel(name, item))
         return None, tr("не понимаю, какой платформе принадлежит ссылка: {link}", link=item)
 
     platform, separator, channel = item.partition(":")
     if not separator:
-        return default_platform, canonical_channel(default_platform, item)
+        return _checked(default_platform, canonical_channel(default_platform, item))
     platform = platform.strip().lower()
     channel = channel.strip()
     if platform not in PLATFORMS:
@@ -180,7 +180,28 @@ def parse_channel(item, default_platform=DEFAULT_PLATFORM):
                         platform=platform, text=item)
     if not channel:
         return None, tr("не указан канал в «{text}»", text=item)
-    return platform, canonical_channel(platform, channel)
+    return _checked(platform, canonical_channel(platform, channel))
+
+
+# Какими бывают имена каналов: иначе «lofi girl» из строки поиска открывался бы
+# как канал Twitch, которого не может быть, — с автозаписью и настройками
+_NAMES = {
+    "twitch": re.compile(r"[A-Za-z0-9_]{1,25}"),
+    "kick": re.compile(r"[A-Za-z0-9_-]{1,64}"),
+    # у YouTube в @имени бывают и не латинские буквы
+    "youtube": re.compile(r"[\w.\-]{1,100}"),
+    "vkvideolive": re.compile(r"[A-Za-z0-9_.-]{1,64}"),
+}
+_TITLES = {"twitch": "Twitch", "kick": "Kick", "youtube": "YouTube", "vkvideolive": "VK Video Live"}
+
+
+def _checked(platform, channel):
+    """(площадка, канал), если так канал может называться; ссылка проходит как есть."""
+    rule = _NAMES.get(platform)
+    if is_url(channel) or rule is None or rule.fullmatch(channel):
+        return platform, channel
+    return None, tr("«{name}» не похоже на имя канала {platform}", name=channel,
+                    platform=_TITLES.get(platform, platform))
 
 
 def clean_profile(profile):
