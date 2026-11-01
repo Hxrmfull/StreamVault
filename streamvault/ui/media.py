@@ -55,27 +55,124 @@ def parse_range(header, size):
     return start, end
 
 
+TS_PACKET = 188
+# Метки времени MPEG-TS идут по кругу через 2^33 тактов 90 кГц (≈26,5 ч).
+PTS_WRAP = 1 << 33
+# Сколько читать за раз, ища метку времени: в таком куске точно есть начало кадра или звука.
+PTS_WINDOW = 512 * 1024
+# Делить пополам, пока отрезок длиннее этого.
+SEEK_PRECISION = 64 * 1024
+# Ключевой кадр ищется не дальше этого назад: у YouTube он раз в 1 с, у Twitch и VK — в 2 с.
+KEYFRAME_BACK = 8 * 1024 * 1024
+
+
+def _pes(packet):
+    """Начало PES в пакете TS (с заголовком PES) или None."""
+    if packet[0] != 0x47 or not packet[1] & 0x40:
+        return None
+    control = (packet[3] >> 4) & 3
+    offset = 4 + (1 + packet[4] if control & 2 else 0)
+    if not control & 1 or offset + 14 > TS_PACKET:
+        return None
+    pes = packet[offset:]
+    return pes if pes[:3] == b"\x00\x00\x01" and pes[7] & 0x80 else None
+
+
+def _pts(pes):
+    p = pes[9:14]
+    return ((p[0] >> 1) & 7) << 30 | p[1] << 22 | (p[2] >> 1) << 15 | p[3] << 7 | p[4] >> 1
+
+
+def _has_sps(pes):
+    """Кадр H.264 с заголовком потока (SPS, NAL 7): с него декодер может начать."""
+    at = pes.find(b"\x00\x00\x01", 9)
+    while 0 <= at < len(pes) - 3:
+        if pes[at + 3] & 0x1F == 7:
+            return True
+        at = pes.find(b"\x00\x00\x01", at + 3)
+    return False
+
+
+def _first_pts(handle, position):
+    """(PTS первого PES от position, его байт) или (None, None)."""
+    handle.seek(position)
+    data = handle.read(PTS_WINDOW)
+    begin = next((i for i in range(min(len(data) - 2 * TS_PACKET, 2 * TS_PACKET))
+                  if data[i] == data[i + TS_PACKET] == data[i + 2 * TS_PACKET] == 0x47), None)
+    if begin is None:
+        return None, None
+    for i in range(begin, len(data) - TS_PACKET + 1, TS_PACKET):
+        pes = _pes(data[i:i + TS_PACKET])
+        if pes is not None:
+            return _pts(pes), position + i
+    return None, None
+
+
+def ts_seek_point(path, seconds):
+    """
+    Откуда читать .ts, чтобы попасть в seconds от начала записи: (байт, его
+    время). Байт — начало ключевого кадра с заголовком потока (SPS): с него
+    ffmpeg начинает сразу; время — не позже seconds. Место ищется делением
+    пополам по меткам времени — за миллисекунды и у многочасовой записи, —
+    кадр — назад от него. Не нашлось — (0, 0.0), с начала записи.
+    Якорь — именно SPS: таблица PAT у VK идёт 10 раз в секунду, а флага
+    ключевого кадра у YouTube нет вовсе.
+    """
+    size = os.path.getsize(path)
+    with open(path, "rb") as handle:
+        base, _ = _first_pts(handle, 0)
+        if base is None:
+            return 0, 0.0
+        low, high, at = 0, size, 0
+        while high - low > SEEK_PRECISION:
+            middle = (low + high) // 2 // TS_PACKET * TS_PACKET
+            pts, found = _first_pts(handle, middle)
+            if pts is not None and ((pts - base) % PTS_WRAP) / 90000 <= seconds:
+                low, at = middle, found
+            else:
+                high = middle
+        begin = max(0, at - KEYFRAME_BACK) // TS_PACKET * TS_PACKET
+        handle.seek(begin)
+        data = handle.read(at + TS_PACKET - begin)
+        last = (len(data) - TS_PACKET) // TS_PACKET * TS_PACKET
+        for i in range(last, -1, -TS_PACKET):
+            pes = _pes(data[i:i + TS_PACKET])
+            if pes is not None and 0xE0 <= pes[3] <= 0xEF and _has_sps(pes):
+                moment = ((_pts(pes) - base) % PTS_WRAP) / 90000
+                if moment <= seconds:
+                    return begin + i, moment
+    return 0, 0.0
+
+
 def remux_command(ffmpeg, path, start, follow=False):
     """
     ffmpeg: запись с места start (секунды) — фрагментами mp4 в stdout, без
     перекодирования. follow — запись ещё пишется: читать файл по мере роста.
     """
     command = [ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error"]
-    if start > 0:
-        command += ["-ss", "%.3f" % start]
+    trim = []
     if follow:
-        # -seekable 0: иначе ffmpeg прыгает в конец растущего файла (длительность,
-        # поиск start) и у конца ждёт, пока streamlink допишет следующий кусок, —
-        # у YouTube с кусками по 5 с первый кадр приходил через 10–15 с, и окно
-        # сдавалось раньше. Без прыжков start ищется чтением по порядку, а разбор
-        # потока хватает и секунды: в .ts эфира всегда H.264 и AAC.
-        command += ["-follow", "1", "-rw_timeout", str(FOLLOW_TIMEOUT), "-seekable", "0",
-                    "-analyzeduration", "1000000"]
+        # Растущий файл ffmpeg не перематывает сам: поиск места (-ss до -i) и оценка
+        # длительности лезут в конец файла и ждут там, пока streamlink допишет
+        # следующий кусок, — у YouTube первый кадр приходил через 10–15 с. А с
+        # -seekable 0 он молча игнорировал -ss, и любая перемотка начинала с начала
+        # записи. Поэтому место находит программа (ts_seek_point), ffmpeg
+        # перепрыгивает к нему, а остаток до start обрезает уже на выходе.
+        try:
+            offset, moment = ts_seek_point(path, start) if start > 0 else (0, 0.0)
+        except OSError:
+            offset, moment = 0, 0.0     # не прочитать — ffmpeg дойдёт до места сам, по порядку
+        command += ["-skip_initial_bytes", str(offset), "-follow", "1", "-rw_timeout", str(FOLLOW_TIMEOUT),
+                    "-skip_estimate_duration_from_pts", "1", "-analyzeduration", "1000000"]
+        if start - moment > 0.05:
+            trim = ["-ss", "%.3f" % (start - moment)]
+    elif start > 0:
+        command += ["-ss", "%.3f" % start]
     # звук в .ts — AAC в обёртке ADTS: mp4 её не принимает. delay_moov — заголовок
     # пишется после первых кадров, когда aac_adtstoasc уже знает настоящие параметры
     # звука: у YouTube в низком качестве это HE-AAC, и с заголовком наперёд окно
     # получало неверные параметры и останавливалось с ошибкой декодирования
-    return command + ["-i", path, "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-bsf:a", "aac_adtstoasc",
+    return command + ["-i", path, *trim, "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-bsf:a", "aac_adtstoasc",
                       "-sn", "-dn", "-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof+delay_moov",
                       "pipe:1"]
 

@@ -518,6 +518,8 @@
     "Выйти из StreamVault": "Quit StreamVault",
     "Отслеживаемые каналы": "Followed channels",
     "Каналов пока нет.": "No channels yet.",
+    "Запись без отслеживания": "Recording, not followed",
+    "Это идущий эфир — открыта страница канала": "This is a live stream — opened the channel page",
     "Меньше — предупреждение, меньше пятой части — запись останавливается. 0 — не следить.":
       "Below this — a warning; below a fifth of it — recording stops. 0 — don't watch.",
     "На диске с записями осталось {free} — запись остановлена, пока место не освободится.":

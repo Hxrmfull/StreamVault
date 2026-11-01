@@ -34,6 +34,8 @@ from .storage import GB, DiskGuard, Retention
 # Сколько ждать, пока выключенный канал погасит свой streamlink,
 # прежде чем запустить его заново.
 RELAUNCH_WAIT = 15
+# свои настройки записи канала, которые бывают и у канала не из списка (черновик)
+OWN_SETTINGS = ("quality", "keep_days", "options")
 
 
 def preflight(root_path):
@@ -146,6 +148,9 @@ class LiveService:
         # общая остановка: токен Twitch и очередь обработки
         self._stop = threading.Event()
         self._recorders = {}
+        # свои настройки записи каналов не из списка: переходят в канал, когда его
+        # пишут кнопкой или начинают отслеживать, и возвращаются, когда запись кончилась
+        self._drafts = {}
         self._probes = None
         self._streamlink_probe = None
         self._public_profiles = PublicProfiles()
@@ -298,7 +303,7 @@ class LiveService:
         """Свой срок хранения записей канала, дней; None — как в общих настройках."""
         from ..platforms import keep_days_value
         with self._lock:
-            entry = self._entry(cid)
+            entry = self._holder(cid)
             value = keep_days_value(days)
             if value is None:
                 entry.pop("keep_days", None)
@@ -314,7 +319,7 @@ class LiveService:
         Идущая запись их подхватывает со следующей части, конвертация — со следующей записи.
         """
         with self._lock:
-            entry = self._entry(cid)
+            entry = self._holder(cid)
             options = dict(entry.get("options") or {})
             for key, value in changes.items():
                 if value is None:
@@ -327,6 +332,12 @@ class LiveService:
                 entry.pop("options", None)
             self._save()
         self._emit_channel(cid)
+
+    def channel_draft(self, cid):
+        """Свои настройки записи канала не из списка: {"quality", "keep_days", "options"}."""
+        with self._lock:
+            draft = copy.deepcopy(self._holder(cid))
+        return {key: draft.get(key) for key in OWN_SETTINGS} | {"options": draft.get("options") or {}}
 
     def is_running(self):
         return self._started and not self._stop.is_set()
@@ -355,6 +366,7 @@ class LiveService:
             if existing is not None and existing.get("temporary"):
                 # канал пишут по кнопке — теперь он отслеживается, запись не прерывается
                 existing.pop("temporary")
+                self._drafts.pop(cid, None)
                 existing["enabled"] = bool(enabled)
                 if quality:
                     existing["quality"] = quality.strip()
@@ -370,6 +382,7 @@ class LiveService:
                 raise ValueError(tr("канал {channel} уже есть в списке", channel=cid))
             else:
                 entry = {"platform": platform, "channel": channel, "enabled": bool(enabled)}
+                entry.update(self._drafts.pop(cid, {}))
                 if quality:
                     entry["quality"] = quality.strip()
                 if profile:
@@ -409,6 +422,7 @@ class LiveService:
             entry = self._find(platform, channel)
             if entry is None:
                 entry = {"platform": platform, "channel": channel, "enabled": False, "temporary": True}
+                entry.update(copy.deepcopy(self._drafts.get(cid, {})))
                 self._entries.append(entry)
             recorder = self._recorders.get(cid)
             if recorder is not None and recorder.is_alive():
@@ -493,7 +507,7 @@ class LiveService:
     def set_quality(self, cid, quality=None):
         """Своё качество канала; None — как в общих настройках."""
         with self._lock:
-            entry = self._entry(cid)
+            entry = self._holder(cid)
             if quality:
                 entry["quality"] = quality.strip()
             else:
@@ -623,6 +637,19 @@ class LiveService:
                 return entry
         return None
 
+    def _holder(self, cid):
+        """
+        Где хранить свои настройки записи канала: в канале из списка, а канал
+        не из списка — в черновике. Под self._lock.
+        """
+        entry = next((entry for entry in self._entries if self._key(entry) == cid), None)
+        if entry is not None:
+            return entry
+        platform, channel = parse_channel(cid)
+        if platform is None or channel_id(platform, channel) != cid:
+            raise KeyError(tr("канала {channel} нет в списке", channel=cid))
+        return self._drafts.setdefault(cid, {})
+
     def _entry(self, cid):
         for entry in self._entries:
             if self._key(entry) == cid:
@@ -713,5 +740,7 @@ class LiveService:
                 return
             self._entries.remove(entry)
             del self._recorders[recorder.id]
+            # изменённое во время записи не теряется: в следующий раз — так же
+            self._drafts[recorder.id] = {key: entry[key] for key in OWN_SETTINGS if key in entry}
         if self._bus is not None:
             self._bus.emit("channel_removed", id=recorder.id)

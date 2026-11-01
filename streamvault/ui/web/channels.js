@@ -10,10 +10,16 @@ import { navigate, recBadge, refreshView, render, routeHash, view } from "./app.
 import { openLive } from "./player.js";
 
 export function refreshSidebar() {
-  const list = document.getElementById("channel-list");
-  const channels = sortedChannels();
-  document.getElementById("sidebar-empty").hidden = channels.length > 0;
-  syncList(list, channels, (channel) => channel.id, createSidebarItem, updateSidebarItem);
+  // канал, который пишется по кнопке без «Отслеживать», — отдельно: он уйдёт, когда запись кончится
+  const all = sortedChannels();
+  const tracked = all.filter((channel) => !channel.temporary);
+  const temporary = all.filter((channel) => channel.temporary);
+  document.getElementById("sidebar-empty").hidden = tracked.length > 0;
+  document.getElementById("temporary-head").hidden = !temporary.length;
+  syncList(document.getElementById("channel-list"), tracked, (channel) => channel.id,
+           createSidebarItem, updateSidebarItem);
+  syncList(document.getElementById("temporary-list"), temporary, (channel) => channel.id,
+           createSidebarItem, updateSidebarItem);
 }
 
 export function createSidebarItem() {
@@ -325,6 +331,9 @@ export function buildChannelHeader() {
     // «Отслеживать» — на том же месте, где у отслеживаемого канала «Отслеживается»
     controls.append(
       view.recordButton, view.watchButton,
+      button(t("Настройки записи"), { icon: "gear", title: t("Качество, чат, начало эфира, конвертация, " +
+                                     "деление на куски и срок хранения записей этого канала"),
+                                     onclick: () => openChannelOptions(id) }),
       h("span", { class: "spacer" }),
       button(t("Отслеживать"), {
         kind: "primary", icon: "plus",
@@ -356,7 +365,15 @@ export function buildChannelHeader() {
 
 export function openChannelOptions(id) {
   const channel = state.channels.get(id);
-  if (!channel) return;
+  if (channel) {
+    showChannelOptions(id, channel);
+    return;
+  }
+  // канал не из списка: его настройки запомнит программа и возьмёт, когда его запишут или добавят
+  bridge.call("channel_draft", id).then((draft) => showChannelOptions(id, draft)).catch(failed);
+}
+
+function showChannelOptions(id, channel) {
   const options = channel.options || {};
   const general = state.settings;
   const yesNo = [[true, t("да")], [false, t("нет")]];
@@ -914,6 +931,13 @@ export async function renderLink(main, url) {
   }
   if (view !== shown) return;
   main.lastChild.remove();
+  if (result.type === "video" && result.is_live && result.folder) {
+    // ссылка на идущий эфир (YouTube watch?v=…) — это не запись для скачивания:
+    // страница канала с эфиром, «Начать запись» и настройками записи
+    toast(t("Это идущий эфир — открыта страница канала"), "ok");
+    location.replace(routeHash("channel", result.platform + ":" + result.folder));
+    return;
+  }
   if (result.type === "video") {
     main.append(videoDetail(result, null));
     view.refresh = null;

@@ -88,7 +88,8 @@ class Api:
     METHODS = (
         "init", "live_snapshot", "resolve", "profiles", "search_channels",
         "add_channel", "remove_channel", "set_enabled", "set_quality", "check_now",
-        "record_now", "stop_recording", "check_channel", "set_keep_days", "set_channel_options", "disk_status",
+        "record_now", "stop_recording", "check_channel", "set_keep_days", "set_channel_options",
+        "channel_draft", "disk_status",
         "inspect", "list_channel", "download_all",
         "add_download", "pause_download", "resume_download", "cancel_download",
         "remove_download", "clear_finished", "downloads_snapshot",
@@ -333,6 +334,10 @@ class Api:
         clean = {key: None if value is None else channel_option_value(key, value)
                  for key, value in changes.items()}
         self._live.set_options(str(cid), clean)
+
+    def channel_draft(self, cid):
+        """Свои настройки записи канала не из списка — для окна его настроек."""
+        return self._live.channel_draft(str(cid))
 
     def disk_status(self):
         """Хватает ли места на диске с записями: уровень ok, low или critical."""

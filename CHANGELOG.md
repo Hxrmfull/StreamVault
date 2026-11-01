@@ -5,6 +5,30 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- **Recording settings for a channel you don't follow:** its page has the
+  "Recording settings" button too. The settings are remembered and used
+  when you record it with the button or start following it.
+- **A link to a live stream** (YouTube `watch?v=…`) opens the channel page
+  with the stream and "Start recording" instead of offering a download.
+
+### Changed
+
+- A channel recorded with the button but not followed is shown in its own
+  sidebar section, "Recording, not followed", instead of among followed
+  channels; it leaves the list when the recording ends.
+
+### Fixed
+
+- **Watching a recording that is still being written** always played from
+  its beginning: opening it and every click on the timeline started at
+  0:00 while the timeline showed the chosen spot (broken since 0.1.2).
+  Now it starts exactly where you click, in a fraction of a second, on all
+  platforms.
+
 ## 0.2.1 — 2026-11-01
 
 ### Fixed
