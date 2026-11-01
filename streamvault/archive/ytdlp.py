@@ -31,6 +31,9 @@ INSPECT_TIMEOUT = 120
 # Приставка качества: сначала те же кодеки, что у записи эфира (format_args).
 H264 = "h264:"
 
+# ffmpeg переподключается к тому же месту, если площадка оборвала соединение.
+FFMPEG_RECONNECT = "-reconnect 1 -reconnect_streamed 1 -reconnect_on_network_error 1 -reconnect_delay_max 10"
+
 # Вкладки страницы канала (ссылки на списки записей) — в модулях площадок:
 # sites.listings(). В клипах Twitch {period} — за какой срок брать самые
 # просматриваемые.
@@ -369,7 +372,10 @@ def download_command(url, base, quality, section, fragments, ffmpeg_path, extra_
             "-o", base.replace("%", "%%") + ".%(ext)s",
             *format_args(quality)]
     if section:
-        args += ["--download-sections", "*%s-%s" % (section[0], section[1])]
+        # отрезок качает ffmpeg, а YouTube рвёт долгие соединения (WSAECONNRESET, код
+        # 4294957242): без переподключения загрузка падала через полминуты
+        args += ["--download-sections", "*%s-%s" % (section[0], section[1]),
+                 "--downloader-args", "ffmpeg_i:" + FFMPEG_RECONNECT]
     # папка, а не сам ffmpeg.exe: в ней yt-dlp найдёт и ffprobe
     if ffmpeg_path:
         args += ["--ffmpeg-location", ffmpeg_path]

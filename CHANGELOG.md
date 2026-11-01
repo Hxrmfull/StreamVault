@@ -5,6 +5,19 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- **The VK Video Live stream beginning did not download** ("ffmpeg exited
+  with code 4294967291"): ffmpeg did not trust the certificate of VK's
+  recording servers, whose root is missing from the Windows store until a
+  browser fetches it. The program now downloads the VK beginning itself,
+  with the same certificate checks as yt-dlp and streamlink.
+- **The YouTube stream beginning failed after half a minute** ("ffmpeg
+  exited with code 4294957242"): YouTube dropped the connection and the
+  download gave up. ffmpeg now reconnects at the same position.
+
 ## 0.3.0 — 2026-11-01
 
 ### Added

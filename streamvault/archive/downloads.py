@@ -28,7 +28,7 @@ from ..twitchdownloader import own_dir_for as twitchdownloader_dir
 from ..i18n import tr
 from ..platforms import channel_label
 from ..util import MAX_PATH_LEN, sanitize_filename
-from . import chat, vodchat, ytdlp, ytdlp_update
+from . import chat, hlssection, vodchat, ytdlp, ytdlp_update
 
 # Состояния загрузки.
 QUEUED = "queued"            # ждёт свободного места
@@ -96,6 +96,10 @@ def build_download_base(directory, label, title, moment, video_id, suffix=""):
     if tail:
         name = "%s %s" % (name, tail)
     return os.path.join(directory, name)
+
+
+# Отрезок с начала записи этих площадок качается без ffmpeg (archive/hlssection.py)
+HLS_SECTION_PLATFORMS = ("vkvideolive",)
 
 
 class DownloadManager:
@@ -672,6 +676,11 @@ class DownloadManager:
             job["target"] = target
         os.makedirs(os.path.dirname(job["target"]), exist_ok=True)
 
+        if job["platform"] in HLS_SECTION_PLATFORMS and job["section"] and not job["section"][0]:
+            done = self._hls_section(job_id, runtime, job)
+            if done:
+                return None
+
         auth_args, cookies = self._auth_args()
         command = ytdlp.download_command(
             job["url"], job["target"], job["quality"], job["section"],
@@ -692,6 +701,40 @@ class DownloadManager:
             error = (tail[-1] if tail else "") or tr("yt-dlp завершился с кодом {code}",
                                                     code=returncode)
         return self._finish(job_id, runtime, FAILED, error=error)
+
+    def _hls_section(self, job_id, runtime, job):
+        """
+        Отрезок с начала записи VK — своими запросами, без ffmpeg
+        (archive/hlssection.py: ffmpeg не доверяет сертификату CDN VK).
+        Возвращает True, если загрузка этим и кончилась; False — запись не
+        HLS одним потоком, качать как обычно.
+        """
+        try:
+            info = self.ytdlp_json(["-J", "--no-warnings", "--color", "never",
+                                    *ytdlp.format_args(job["quality"]), "--", job["url"]])
+        except ytdlp.YtdlpError as error:
+            self._finish(job_id, runtime, FAILED, error=str(error))
+            return True
+        chosen = (info or {}).get("requested_formats") or [info or {}]
+        if len(chosen) != 1 or not str(chosen[0].get("protocol") or "").startswith("m3u8") \
+                or not chosen[0].get("url"):
+            return False
+        logging.info(tr("скачиваю: {name}", name=job["title"] or job["url"]))
+
+        def progress(fraction, written):
+            with self._lock:
+                self._job(job_id)["progress"] = {"percent": fraction * 100.0, "downloaded": written,
+                                                 "total": None, "speed": None, "eta": None}
+            self._emit(job_id, progress_only=True)
+
+        try:
+            produced = hlssection.download(chosen[0]["url"], chosen[0].get("http_headers"), job["section"][1],
+                                           job["target"], progress, stopped=lambda: bool(runtime["stop"]))
+        except hlssection.HlsSectionError as error:
+            self._finish(job_id, runtime, None if runtime["stop"] else FAILED, error=str(error))
+            return True
+        self._finish_with_chat(job_id, runtime, produced)
+        return True
 
     def _finish_with_chat(self, job_id, runtime, produced):
         """Видео скачано; если просили — ещё чат. Чат не удался — видео всё равно готово."""
