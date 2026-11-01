@@ -464,6 +464,7 @@ STRINGS = {
     'запись зашифрована': 'the recording is encrypted',
     'кусок записи не скачался: {error}': 'a recording segment did not download: {error}',
     'остановлено': 'stopped',
+    'убран файл прерванной склейки: {name}': 'removed a file of an interrupted join: {name}',
     'плейлист записи не скачался: {error}': 'the recording playlist did not download: {error}',
     'это список качеств, а не плейлист записи': 'this is a list of qualities, not the recording playlist',
     'Windows завершает работу: закрываю записи, конвертация — при следующем запуске':

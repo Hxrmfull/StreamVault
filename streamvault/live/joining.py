@@ -21,6 +21,7 @@
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -33,6 +34,10 @@ from ..settings import channel_setting
 from .beginning import OVERLAP, clock
 
 PART00 = " - part00"
+# Склейка пишется сюда и лишь потом заменяет запись.
+JOINING = ".joining"
+# Её файлы, оставшиеся от прерванной склейки: «….joining.ts» и «….joining.ts.head.ts».
+LEFTOVER = re.compile(r"\.joining\.(ts|mp4)(\.head\.(ts|mp4))?$", re.IGNORECASE)
 SCAN_INTERVAL = 60          # как часто искать готовые пары, секунды
 # Стык ищется в последних SEARCH_BEFORE секундах начала перед тем местом, где
 # по оценке начинается запись (начало скачано на OVERLAP секунд дальше).
@@ -311,11 +316,25 @@ class Joiner(threading.Thread):
         self._stop.set()
 
     def run(self):
+        self.remove_leftovers()
         while not self._stop.wait(self._interval):
             try:
                 self.scan()
             except Exception:
                 logging.exception(tr("склейка начала эфира: сбой"))
+
+    def remove_leftovers(self):
+        """
+        Склейку оборвало закрытие программы — её файлы «… .joining.ts» и
+        «… .joining.ts.head.ts» (гигабайты) остались. При запуске склейка
+        ещё не идёт: их можно убрать, части целы и склеятся заново.
+        """
+        for folder, _, names in os.walk(os.path.join(self._settings["root_path"], util.FINISHED_DIR)):
+            for name in names:
+                if LEFTOVER.search(name):
+                    path = os.path.join(folder, name)
+                    util.remove_quietly(path)
+                    logging.info(tr("убран файл прерванной склейки: {name}", name=name))
 
     def enabled(self, path):
         platform, label = util.recording_channel(self._settings["root_path"], path)
@@ -368,7 +387,7 @@ class Joiner(threading.Thread):
                                name=name))
             return False
         stem, extension = os.path.splitext(main)
-        output = stem + ".joining" + extension
+        output = stem + JOINING + extension
         logging.info(tr("склеиваю начало эфира с записью: {name}", name=name))
         try:
             join_video(ffmpeg, head, cut, main, output)

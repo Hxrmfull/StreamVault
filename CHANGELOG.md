@@ -5,6 +5,15 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- **Closing the program in the middle of joining the stream beginning**
+  left its temporary files ("….joining.ts", gigabytes) next to the
+  recording, and they showed up in the library. They are now hidden from
+  the library and removed at start, and the join starts over.
+
 ## 0.3.1 — 2026-11-01
 
 ### Fixed
