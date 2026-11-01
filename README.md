@@ -49,16 +49,20 @@ themselves from the app.
 
 ## Features
 
-- **Channels:** search all four platforms at once by name, or paste a link.
-  The sidebar shows who is live, with avatars, viewers and stream previews.
+- **Channels:** search all four platforms at once by name, or paste a link —
+  to a channel or to a live stream (YouTube `watch?v=…`, VK Video
+  `vkvideo.ru/live-…`), which opens the channel with that stream. The
+  sidebar shows your favorites and, above them, channels being recorded now,
+  with avatars, viewers and stream previews.
 - **Recording:** a "Start recording" button or auto-record for every stream
-  (off by default). Each channel has its own recording settings: quality,
-  chat, recording from the start, MP4 conversion, splitting and how long to
-  keep recordings.
+  (off by default) — for any channel, in favorites or not. Each channel has
+  its own recording settings: quality, chat, recording from the start, MP4
+  conversion, splitting and how long to keep recordings.
 - **From the very start:** if recording begins mid-stream, the part before it
   is downloaded from the platform's own archive and joined with the recording
-  into one file, frame-exact and without re-encoding (or kept as a separate
-  first part, if you switch joining off).
+  into one file together with the chat, frame-exact and without re-encoding
+  (or kept as a separate first part, if you switch joining off). Download
+  and join progress show in Downloads. Works on all four platforms.
 - **Chat:** live chat of all four platforms is saved next to the recording;
   VOD and clip chat downloads as HTML, JSON or a rendered chat video.
 - **Downloads:** VODs, highlights and clips from a link or a channel tab,
@@ -67,9 +71,13 @@ themselves from the app.
 - **Library and player:** everything recorded and downloaded, with
   thumbnails, filters and disk usage. Watch in the window with synced chat,
   keyboard shortcuts and speed control, even while it is still recording;
-  cut a clip or burn the chat video into the picture.
+  cut a clip or burn the chat video into the picture. A recording left as
+  `.ts` converts to MP4 with a button — whole, or split by size, duration or
+  into equal parts.
 - **Safety:** stops recording before the disk fills up, can move old
-  recordings to the Recycle Bin, and checks recordings for gaps.
+  recordings to the Recycle Bin, and checks recordings for gaps. However the
+  program is closed — from Task Manager or by shutting Windows down — what
+  was recorded is kept and processed on the next start.
 - **In the background:** closing the window keeps it in the tray, with
   notifications and an optional start with Windows.
 
