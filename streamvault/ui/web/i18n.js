@@ -529,8 +529,8 @@
     "Оставлять свободным на диске, ГБ": "Keep free on the disk, GB",
     "Сколько дней хранить записи канала: старые уходят в корзину вместе с чатом":
       "How many days to keep this channel's recordings: older ones go to the Recycle Bin with their chat",
-    "Старше — в корзину вместе с чатом, раз в час. 0 — хранить всегда. У канала может быть свой срок.":
-      "Older ones go to the Recycle Bin with their chat, once an hour. 0 — keep forever. A channel can have its own period.",
+    "Старше — в корзину вместе с чатом, раз в час; вырезанные клипы остаются. 0 — хранить всегда. У канала может быть свой срок.":
+      "Older ones go to the Recycle Bin with their chat, once an hour; clips you cut stay. 0 — keep forever. A channel can have its own period.",
     "Хранить записи, дней": "Keep recordings, days",
     "хранить {keep}": "keep {keep}",
     "хранить всегда": "keep forever",

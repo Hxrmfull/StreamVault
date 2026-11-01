@@ -2,6 +2,7 @@
 """Значок в трее: программа работает в фоне, пока окно закрыто."""
 
 import logging
+import os
 import threading
 
 import pystray
@@ -201,6 +202,13 @@ class TrayNotifier:
                                free=human_size(event["free"])))
             if self._enabled():
                 self._tray.notify(tr("Мало места на диске с записями"), message)
+        elif event["type"] == "joining" and event.get("state") in ("done", "failed"):
+            # склейка идёт минутами — окно к её концу обычно свёрнуто
+            name = os.path.basename(event.get("main") or "")
+            if event["state"] == "done":
+                self._show(tr("Начало эфира склеено с записью"), name)
+            else:
+                self._show(tr("Начало эфира не склеено с записью"), name + " — " + (event.get("reason") or ""))
         elif event["type"] == "download":
             job = event["job"]
             before = self._jobs.get(job["id"])

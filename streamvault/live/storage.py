@@ -120,12 +120,18 @@ def recording_moment(path):
 
 
 def expired_recordings(settings, now=None):
-    """Записи эфиров старше срока своего канала: [(путь, дней хранить)]."""
-    from ..library import walk_media
+    """
+    Записи эфиров старше срока своего канала: [(путь, дней хранить)]. Клип и
+    видео с чатом поверх, сделанные в проигрывателе («[clip …]», «[chat]»), — не
+    запись эфира: их сохранили нарочно, и срок записей их не касается.
+    """
+    from ..library import EDIT_MARK, walk_media
     now = now if now is not None else time.time()
     finished = os.path.join(settings["root_path"], util.FINISHED_DIR)
     found = []
     for platform, label, path in walk_media(finished):
+        if EDIT_MARK.search(os.path.splitext(os.path.basename(path))[0]):
+            continue
         days = channel_days(settings, platform, label)
         if not days:
             continue

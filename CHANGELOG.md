@@ -9,6 +9,12 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Recording retention also removed clips you cut** and videos with the
+  chat burned in, together with the recording they came from. They are now
+  left alone: they were kept on purpose.
+- The tray icon tells you when the stream beginning is joined to the
+  recording, or why not: the join takes minutes and the window is usually
+  hidden by then.
 - **Downloading a section of a video** (and the Twitch and Kick stream
   beginning) showed only "downloaded N MB": ffmpeg reported no progress.
   Now it shows the percent of the section, speed and time left.

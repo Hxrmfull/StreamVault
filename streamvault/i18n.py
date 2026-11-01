@@ -463,6 +463,8 @@ STRINGS = {
     'запись зашифрована': 'the recording is encrypted',
     'кусок записи не скачался: {error}': 'a recording segment did not download: {error}',
     'остановлено': 'stopped',
+    'Начало эфира склеено с записью': 'Stream beginning joined to the recording',
+    'Начало эфира не склеено с записью': 'Stream beginning not joined to the recording',
     '«{name}» не похоже на имя канала {platform}': '"{name}" does not look like a {platform} channel name',
     '{name}: {error} — качаю через ffmpeg': '{name}: {error} — downloading through ffmpeg',
     'начало эфира склеено с записью — загрузка теперь о ней: {name}':
