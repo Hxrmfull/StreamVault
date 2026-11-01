@@ -3,6 +3,9 @@ settings.json
 settings.json.tmp
 downloads.json
 downloads.json.tmp
+# начала эфиров, которые ждут запись на площадке
+beginning.json
+beginning.json.tmp
 logs/
 # данные окна программы: что открыто, настройки отображения
 webview/

@@ -124,7 +124,7 @@ def run(settings_path=DEFAULT_SETTINGS_PATH, browser=False, port=0, open_browser
     downloads = DownloadManager(settings, bus=bus, ffmpeg=ffmpeg, ytdlp_copy=ytdlp_copy,
                                 twitchdownloader=twitchdownloader)
     # запись, начатая посреди эфира, добирает его начало через очередь загрузок
-    beginning = Beginning(downloads)
+    beginning = Beginning(downloads, store=os.path.join(app_dir, "beginning.json"))
     live.set_beginning(beginning)
     problems = []
     for problem in live.preflight() + downloads.preflight():

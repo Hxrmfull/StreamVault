@@ -24,8 +24,8 @@ versions follow [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - **"Follow" is now "Add to favorites":** the button only adds the channel
-  to the left panel ("Favorites"). A channel outside favorites that is
-  recording or has autorecord is shown below, under "Not in favorites".
+  to the left panel ("Favorites"). Above it, "Recording now" lists every
+  channel being recorded, in favorites or not.
   Removing a channel from favorites needs no confirmation any more: a
   recording in progress goes on, autorecord and own settings stay. All
   channels from the previous version are in favorites.
@@ -41,6 +41,12 @@ versions follow [Semantic Versioning](https://semver.org/).
   a stream cover, the channel cover is shown instead of an empty frame —
   VK Video Live shows that cover as the stream picture and gives no live
   frame.
+- **The stream beginning on YouTube and VK could be lost:** if the platform
+  did not answer in time, waiting for its recording stopped for good, and
+  closing the program before the platform published the recording ended it
+  too. Now a failure means trying again later, and what is awaited is kept
+  in `beginning.json` and awaited again after a restart (up to 6 hours
+  after the stream ended).
 - A channel's own recording settings could disappear from the window until
   a restart after any event of its recording, and the window would show
   the general values.

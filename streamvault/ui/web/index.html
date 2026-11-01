@@ -34,6 +34,10 @@
 </header>
 <div class="layout">
   <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head" id="recording-head" hidden>
+      <span data-i18n="Идёт запись">Идёт запись</span>
+    </div>
+    <ul class="channel-list" id="recording-list"></ul>
     <div class="sidebar-head">
       <span data-i18n="Избранное">Избранное</span>
       <button class="icon-button small" id="add-channel-button" data-i18n-title="Добавить канал" title="Добавить канал"></button>
@@ -43,10 +47,6 @@
       <span data-i18n="Каналов пока нет.">Каналов пока нет.</span>
       <button class="link-button" id="sidebar-add" data-i18n="Добавить канал">Добавить канал</button>
     </div>
-    <div class="sidebar-head" id="others-head" hidden>
-      <span data-i18n="Не в избранном">Не в избранном</span>
-    </div>
-    <ul class="channel-list" id="others-list"></ul>
   </aside>
   <main class="main" id="main"></main>
 </div>

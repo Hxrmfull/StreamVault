@@ -460,6 +460,12 @@ STRINGS = {
     'платформа ответила непонятно': 'the platform gave an unexpected answer',
     '{channel}: убран из избранного': '{channel}: removed from favorites',
     'эта трансляция VK Видео уже закончилась': 'this VK Video stream has already ended',
+    '{tag}: жду запись эфира на площадке, чтобы добрать его начало ({length})':
+        '{tag}: waiting for the platform to publish the stream to fetch its beginning ({length})',
+    '{tag}: запись эфира на площадке не проверить ({error}) — попробую позже':
+        '{tag}: could not check the stream recording on the platform ({error}) — will try later',
+    'не сохранить, чего ждёт запись с начала эфира: {error}':
+        'could not save what the stream-beginning download is waiting for: {error}',
     'у трансляции VK Видео не видно автора': 'the VK Video stream does not show its author',
     'эфира «{author}» нет на VK Video Live — программа записывает эфиры оттуда':
         '"{author}" is not live on VK Video Live — that is where the program records from',

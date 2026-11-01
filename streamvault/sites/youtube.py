@@ -38,6 +38,8 @@ UNSUPPORTED = {
 
 # Сколько ждать yt-dlp со сведениями о канале: обычно около 2 с.
 PROFILE_TIMEOUT = 30
+# Сведения о только что кончившемся эфире yt-dlp собирает дольше: 30 с не хватало.
+ARCHIVE_TIMEOUT = 120
 
 
 def youtube_results(entries, limit=5):
@@ -132,7 +134,7 @@ def archive_for(channel, started, meta=None, tools=None):
     if tools is None or not video_id:
         return None, tr("не известен номер трансляции")
     url = WATCH.format(id=video_id)
-    data = tools.ytdlp_json(["-J", "--no-warnings", "--color", "never", "--", url], PROFILE_TIMEOUT)
+    data = tools.ytdlp_json(["-J", "--no-warnings", "--color", "never", "--", url], ARCHIVE_TIMEOUT)
     status = (data or {}).get("live_status") if isinstance(data, dict) else None
     if status == "was_live":
         return url, ""

@@ -10,17 +10,16 @@ import { navigate, recBadge, refreshView, render, routeHash, view } from "./app.
 import { openLive } from "./player.js";
 
 export function refreshSidebar() {
-  // слева — избранное; ниже — не избранные каналы, которые пишутся или с автозаписью,
-  // чтобы до них было рукой подать. Канал только со своими настройками в панели не виден
+  // сверху — все каналы, которые пишутся сейчас (из избранного и нет), под ними —
+  // остальное избранное. Канал не из избранного виден в панели, только пока пишется
   const all = sortedChannels();
-  const favorites = all.filter(isFavorite);
-  const others = all.filter((channel) => !isFavorite(channel) && (channel.enabled || isRecording(channel)
-                                                                  || channel.temporary));
-  document.getElementById("sidebar-empty").hidden = favorites.length > 0;
-  document.getElementById("others-head").hidden = !others.length;
-  syncList(document.getElementById("channel-list"), favorites, (channel) => channel.id,
+  const recording = all.filter((channel) => isRecording(channel) || recordStarting(channel.id, channel));
+  const favorites = all.filter((channel) => isFavorite(channel) && !recording.includes(channel));
+  document.getElementById("sidebar-empty").hidden = favorites.length > 0 || recording.some(isFavorite);
+  document.getElementById("recording-head").hidden = !recording.length;
+  syncList(document.getElementById("recording-list"), recording, (channel) => channel.id,
            createSidebarItem, updateSidebarItem);
-  syncList(document.getElementById("others-list"), others, (channel) => channel.id,
+  syncList(document.getElementById("channel-list"), favorites, (channel) => channel.id,
            createSidebarItem, updateSidebarItem);
 }
 

@@ -506,7 +506,7 @@
     "Избранное": "Favorites",
     "Канал в избранном — он в панели слева": "The channel is in favorites — it is in the left panel",
     "Канал убран из избранного": "Removed from favorites",
-    "Не в избранном": "Not in favorites",
+    "Идёт запись": "Recording now",
     "Не в избранном — можно записывать, смотреть и скачивать записи": "Not in favorites — you can record it, watch and download its videos",
     "Показывать канал в панели слева": "Show the channel in the left panel",
     "Сейчас никто из твоих каналов не в эфире.": "None of your channels is live right now.",
