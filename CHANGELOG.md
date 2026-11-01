@@ -9,6 +9,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Downloading a section of a video** (and the Twitch and Kick stream
+  beginning) showed only "downloaded N MB": ffmpeg reported no progress.
+  Now it shows the percent of the section, speed and time left.
 - **The "Channel" filter in the library** was empty — it listed no
   channels.
 - **Enter in the search box on plain text** ("lofi girl") opened the page

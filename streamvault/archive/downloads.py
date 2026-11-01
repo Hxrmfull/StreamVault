@@ -908,13 +908,44 @@ class DownloadManager:
             util.kill_process_tree(process)
 
         produced, error, tail = "", "", []
+        # отрезок качает ffmpeg: yt-dlp о ходе молчит, зато ffmpeg пишет, докуда дошёл
+        # (-progress) — доля по длине отрезка, скорость и сколько осталось считаем сами
+        meter = {"time": time.monotonic(), "bytes": 0, "speed": None, "began": time.monotonic(),
+                 "position": 0.0, "size": 0}
+        section = self.job(job_id)["section"]
+        length = (section[1] - section[0]) if section else None
         with process.stdout:
             for raw in process.stdout:
                 line = raw.decode("utf-8", "replace").rstrip()
                 kind, data = ytdlp.parse_progress(line)
                 if kind == "progress":
+                    progress = ytdlp.progress_of(data)
+                    if progress["speed"] is None and progress["downloaded"]:
+                        now = time.monotonic()
+                        if now - meter["time"] >= 1 and progress["downloaded"] >= meter["bytes"]:
+                            rate = (progress["downloaded"] - meter["bytes"]) / (now - meter["time"])
+                            meter["speed"] = rate if meter["speed"] is None else meter["speed"] * 0.7 + rate * 0.3
+                            meter.update(time=now, bytes=progress["downloaded"])
+                        progress["speed"] = meter["speed"]
                     with self._lock:
-                        self._job(job_id)["progress"] = ytdlp.progress_of(data)
+                        self._job(job_id)["progress"] = progress
+                    self._emit(job_id, progress_only=True)
+                elif kind == "ffmpeg" and length:
+                    meter["position"] = data.get("time", meter["position"])
+                    meter["size"] = data.get("size", meter["size"])
+                    now = time.monotonic()
+                    if now - meter["time"] >= 1 and meter["size"] >= meter["bytes"]:
+                        rate = (meter["size"] - meter["bytes"]) / (now - meter["time"])
+                        meter["speed"] = rate if meter["speed"] is None else meter["speed"] * 0.7 + rate * 0.3
+                        meter.update(time=now, bytes=meter["size"])
+                    share = min(0.999, max(0.0, meter["position"] / length))
+                    spent = now - meter["began"]
+                    with self._lock:
+                        self._job(job_id)["progress"] = {
+                            "percent": share * 100.0, "downloaded": meter["size"] or None,
+                            "total": meter["size"] / share if share > 0.02 and meter["size"] else None,
+                            "speed": meter["speed"],
+                            "eta": spent * (1 - share) / share if share > 0.02 else None}
                     self._emit(job_id, progress_only=True)
                 elif kind == "postprocess":
                     if data.get("status") == "started" and ytdlp.is_heavy_postprocessor(data):

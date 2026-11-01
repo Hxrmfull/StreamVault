@@ -374,8 +374,10 @@ def download_command(url, base, quality, section, fragments, ffmpeg_path, extra_
     if section:
         # отрезок качает ffmpeg, а YouTube рвёт долгие соединения (WSAECONNRESET, код
         # 4294957242): без переподключения загрузка падала через полминуты
+        # ffmpeg и о ходе молчит — -progress пишет в общий вывод, докуда он дошёл
         args += ["--download-sections", "*%s-%s" % (section[0], section[1]),
-                 "--downloader-args", "ffmpeg_i:" + FFMPEG_RECONNECT]
+                 "--downloader-args", "ffmpeg_i:" + FFMPEG_RECONNECT,
+                 "--downloader-args", "ffmpeg_o:-progress pipe:1 -stats_period 1"]
     # папка, а не сам ffmpeg.exe: в ней yt-dlp найдёт и ffprobe
     if ffmpeg_path:
         args += ["--ffmpeg-location", ffmpeg_path]
@@ -387,8 +389,15 @@ def download_command(url, base, quality, section, fragments, ffmpeg_path, extra_
 def parse_progress(line):
     """
     Строка вывода загрузки -> (вид, данные). Виды: progress, postprocess,
-    file, error, other.
+    file, error, ffmpeg (ход ffmpeg, качающего отрезок: {"time": с} или
+    {"size": байт}), other.
     """
+    key, separator, value = line.partition("=")
+    if separator and value.isdigit():
+        if key == "out_time_us":
+            return "ffmpeg", {"time": int(value) / 1e6}
+        if key == "total_size":
+            return "ffmpeg", {"size": int(value)}
     for mark, kind in ((PROGRESS_MARK, "progress"), (POSTPROCESS_MARK, "postprocess")):
         if line.startswith(mark):
             try:
