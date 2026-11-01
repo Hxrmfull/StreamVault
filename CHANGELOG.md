@@ -5,6 +5,15 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- **Frame previews on the player's timeline** were up to half the step
+  ahead of the spot under the mouse: on a two-hour stream, 6–8 seconds
+  later than where a click would land. Each preview now shows exactly its
+  moment.
+
 ## 0.2.0 — 2026-11-01
 
 ### Added

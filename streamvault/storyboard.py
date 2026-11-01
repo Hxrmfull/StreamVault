@@ -39,9 +39,13 @@ def interval_for(duration):
 
 
 def storyboard_command(ffmpeg, path, interval, pattern):
+    # Плитка k — первый ключевой кадр не раньше k·interval: проигрыватель показывает её
+    # на отрезке [k·interval, (k+1)·interval). Фильтр fps брал последний кадр своего
+    # отрезка ±interval/2, и плитка опережала место под мышью на 6–8 секунд.
     return [ffmpeg, "-hide_banner", "-nostdin", "-v", "error", "-skip_frame", "nokey", "-i", path,
-            "-an", "-sn", "-dn", "-vf", "fps=1/%d,scale=%d:-2,tile=%dx%d" % (interval, TILE_WIDTH, COLUMNS, ROWS),
-            "-q:v", "6", pattern]
+            "-an", "-sn", "-dn", "-vf", "select=gte(t\\,selected_n*%d),scale=%d:-2,tile=%dx%d"
+            % (interval, TILE_WIDTH, COLUMNS, ROWS),
+            "-fps_mode", "passthrough", "-q:v", "6", pattern]
 
 
 class Storyboards:
