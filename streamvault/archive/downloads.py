@@ -28,7 +28,7 @@ from ..twitchdownloader import own_dir_for as twitchdownloader_dir
 from ..i18n import tr
 from ..platforms import channel_label
 from ..util import MAX_PATH_LEN, sanitize_filename
-from . import chat, hlssection, vodchat, ytdlp, ytdlp_update
+from . import chat, dashsection, hlssection, vodchat, ytdlp, ytdlp_update
 
 # Состояния загрузки.
 QUEUED = "queued"            # ждёт свободного места
@@ -98,8 +98,10 @@ def build_download_base(directory, label, title, moment, video_id, suffix=""):
     return os.path.join(directory, name)
 
 
-# Отрезок с начала записи этих площадок качается без ffmpeg (archive/hlssection.py)
-HLS_SECTION_PLATFORMS = ("vkvideolive",)
+# Отрезок с начала записи этих площадок качается своими запросами, а не ffmpeg:
+# VK — ffmpeg не доверяет сертификату CDN (archive/hlssection.py), YouTube — рвёт
+# долгие соединения ffmpeg (archive/dashsection.py)
+OWN_SECTION_PLATFORMS = ("vkvideolive", "youtube")
 
 
 class DownloadManager:
@@ -676,8 +678,8 @@ class DownloadManager:
             job["target"] = target
         os.makedirs(os.path.dirname(job["target"]), exist_ok=True)
 
-        if job["platform"] in HLS_SECTION_PLATFORMS and job["section"] and not job["section"][0]:
-            done = self._hls_section(job_id, runtime, job)
+        if job["platform"] in OWN_SECTION_PLATFORMS and job["section"] and not job["section"][0]:
+            done = self._own_section(job_id, runtime, job)
             if done:
                 return None
 
@@ -702,12 +704,11 @@ class DownloadManager:
                                                     code=returncode)
         return self._finish(job_id, runtime, FAILED, error=error)
 
-    def _hls_section(self, job_id, runtime, job):
+    def _own_section(self, job_id, runtime, job):
         """
-        Отрезок с начала записи VK — своими запросами, без ffmpeg
-        (archive/hlssection.py: ffmpeg не доверяет сертификату CDN VK).
-        Возвращает True, если загрузка этим и кончилась; False — запись не
-        HLS одним потоком, качать как обычно.
+        Отрезок с начала записи — своими запросами: HLS одним потоком (VK)
+        или видео и звук mp4 с оглавлением (YouTube). Возвращает True, если
+        загрузка этим и кончилась; False — формат не тот, качать как обычно.
         """
         try:
             info = self.ytdlp_json(["-J", "--no-warnings", "--color", "never",
@@ -716,8 +717,12 @@ class DownloadManager:
             self._finish(job_id, runtime, FAILED, error=str(error))
             return True
         chosen = (info or {}).get("requested_formats") or [info or {}]
-        if len(chosen) != 1 or not str(chosen[0].get("protocol") or "").startswith("m3u8") \
-                or not chosen[0].get("url"):
+        protocols = [str(item.get("protocol") or "") for item in chosen]
+        hls = len(chosen) == 1 and protocols[0].startswith("m3u8")
+        dash = all(protocol == "https" for protocol in protocols) \
+            and all(item.get("ext") in ("mp4", "m4a") for item in chosen)
+        ffmpeg = self._ffmpeg.path()
+        if not all(item.get("url") for item in chosen) or not (hls or (dash and ffmpeg)):
             return False
         logging.info(tr("скачиваю: {name}", name=job["title"] or job["url"]))
 
@@ -727,10 +732,15 @@ class DownloadManager:
                                                  "total": None, "speed": None, "eta": None}
             self._emit(job_id, progress_only=True)
 
+        stopped = lambda: bool(runtime["stop"])     # noqa: E731
         try:
-            produced = hlssection.download(chosen[0]["url"], chosen[0].get("http_headers"), job["section"][1],
-                                           job["target"], progress, stopped=lambda: bool(runtime["stop"]))
-        except hlssection.HlsSectionError as error:
+            if hls:
+                produced = hlssection.download(chosen[0]["url"], chosen[0].get("http_headers"), job["section"][1],
+                                               job["target"], progress, stopped=stopped)
+            else:
+                produced = dashsection.download([(item["url"], item.get("http_headers")) for item in chosen],
+                                                job["section"][1], job["target"], ffmpeg, progress, stopped=stopped)
+        except (hlssection.HlsSectionError, dashsection.DashSectionError) as error:
             self._finish(job_id, runtime, None if runtime["stop"] else FAILED, error=str(error))
             return True
         self._finish_with_chat(job_id, runtime, produced)

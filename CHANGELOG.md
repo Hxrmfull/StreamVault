@@ -9,6 +9,14 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The YouTube stream beginning still failed** ("ffmpeg exited with code
+  4294957242"): the ffmpeg reconnect from 0.3.1 did not help, YouTube kept
+  dropping the connection. The program now downloads the YouTube beginning
+  itself: exactly the needed bytes by the file's index, in 10 MB parts, a
+  drop is retried from the same position; ffmpeg only puts video and audio
+  together, without the network. Verified: the published recording's
+  beginning joins with the stream recording (seam found, length as on
+  YouTube).
 - **Closing the program in the middle of joining the stream beginning**
   left its temporary files ("….joining.ts", gigabytes) next to the
   recording, and they showed up in the library. They are now hidden from
