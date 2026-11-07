@@ -12,51 +12,86 @@ from ..i18n import tr
 from ..live.storage import human_size
 
 
-ACCENT, DOOR, DIAL, FRAME, LIGHT, RED = "#9147ff", "#0e0e10", "#bf94ff", "#55446f", "#efeff1", "#eb0400"
+# Цвета логотипа (logo.svg): серебро — градиент по диагонали, фон — почти чёрный.
+SILVER = ((0.0, (0xFF, 0xFF, 0xFF)), (0.25, (0xA7, 0xB0, 0xBD)), (0.5, (0xF0, 0xF3, 0xF7)),
+          (0.75, (0x7D, 0x87, 0x96)), (1.0, (0xDC, 0xE1, 0xE8)))
+BACK_TOP, BACK_BOTTOM = (0x1C, 0x1C, 0x1E), (0x05, 0x05, 0x06)
+HUB, LIGHT, RED = "#0a0a0b", "#ffffff", "#eb0400"
 # рисуется крупнее и уменьшается: у мелких значков (16 px) сглаженные края
 SUPERSAMPLE = 8
+# Логотип нарисован в квадрате 200×200; штурвал в нём увеличен в 1,15 раза от центра.
+WHEEL_SCALE = 1.15
+SPOKES = ((115.59, 109, 146.77, 127), (100, 118, 100, 154), (84.41, 109, 53.23, 127),
+          (84.41, 91, 53.23, 73), (100, 82, 100, 46), (115.59, 91, 146.77, 73))
+KNOBS = ((153.69, 131), (100, 162), (46.31, 131), (46.31, 69), (100, 38), (153.69, 69))
+
+
+def _mix(stops, t):
+    for (left, a), (right, b) in zip(stops, stops[1:]):
+        if t <= right:
+            share = (t - left) / (right - left)
+            return tuple(round(x + (y - x) * share) for x, y in zip(a, b))
+    return stops[-1][1]
+
+
+def _diagonal(size, stops, start, end):
+    """Градиент по диагонали: start..end — доли стороны, где он начинается и кончается."""
+    step = 64
+    small = Image.new("RGB", (step, step))
+    small.putdata([_mix(stops, min(1.0, max(0.0, ((x + y) / 2 / (step - 1) - start) / (end - start))))
+                   for y in range(step) for x in range(step)])
+    return small.resize((size, size), Image.BICUBIC)
 
 
 def draw_icon(recording=False, size=64, dot=None):
     """
-    Значок программы, нарисованный кодом, — тот же, что logo.svg: дверь сейфа
-    на петлях, на ней кодовый замок с плеем. Красная точка записи в углу —
-    у значка exe и логотипа всегда (dot=True), а в трее только во время
-    записи: видно, не открывая окно.
+    Значок программы, нарисованный кодом, — тот же, что logo.svg: серебряный
+    штурвал с плеем в середине на чёрном. Красная точка в углу — в трее во
+    время записи: видно, не открывая окно. dot — нарисовать её в любом случае.
     """
     dot = recording if dot is None else dot
     big = size * SUPERSAMPLE
+    u = big / 200
+
+    def at(value):
+        """Координата штурвала в логотипе -> пиксель большого значка."""
+        return (100 + (value - 100) * WHEEL_SCALE) * u
+
+    def disc(draw, cx, cy, r, **style):
+        draw.ellipse([at(cx) - r * WHEEL_SCALE * u, at(cy) - r * WHEEL_SCALE * u,
+                      at(cx) + r * WHEEL_SCALE * u, at(cy) + r * WHEEL_SCALE * u], **style)
+
     image = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    shape = Image.new("L", (big, big), 0)
+    ImageDraw.Draw(shape).rounded_rectangle([0, 0, big - 1, big - 1], radius=46 * u, fill=255)
+    back = _diagonal(big, ((0.0, BACK_TOP), (1.0, BACK_BOTTOM)), 0.0, 1.0)
+    image.paste(back, (0, 0), shape)
+
+    # всё серебряное — одной маской, потом заливка градиентом
+    silver = Image.new("L", (big, big), 0)
+    pen = ImageDraw.Draw(silver)
+    width = 8 * WHEEL_SCALE * u
+    for x1, y1, x2, y2 in SPOKES:
+        pen.line([(at(x1), at(y1)), (at(x2), at(y2))], fill=255, width=max(1, round(width)))
+        for x, y in ((x1, y1), (x2, y2)):                       # круглые концы спиц
+            disc(pen, x, y, 4, fill=255)
+    for x, y in KNOBS:
+        disc(pen, x, y, 8, fill=255)
+    disc(pen, 100, 100, 44 + 5, outline=255, width=max(1, round(10 * WHEEL_SCALE * u)))   # обод
+    disc(pen, 100, 100, 27, fill=255)                           # ступица
+    # градиент логотипа — от (36, 36) до (164, 164) в координатах штурвала
+    start, end = at(36) / big, at(164) / big
+    image.paste(_diagonal(big, SILVER, start, end), (0, 0), silver)
+
     draw = ImageDraw.Draw(image)
-    u = big / 32
-
-    def box(x1, y1, x2, y2):
-        return [x1 * u, y1 * u, x2 * u, y2 * u]
-
-    def ring(cx, cy, r, width, color):
-        half = width / 2
-        draw.ellipse(box(cx - r - half, cy - r - half, cx + r + half, cy + r + half), outline=color,
-                     width=max(1, round(width * u)))
-
-    draw.rounded_rectangle(box(2, 2, 30, 30), radius=7 * u, fill=ACCENT)
-    for top in (8.4, 19.2):                                        # петли двери
-        draw.rounded_rectangle(box(2.6, top, 5.6, top + 4.4), radius=1.2 * u, fill=DOOR)
-    draw.rounded_rectangle(box(6, 5, 27, 27), radius=4.5 * u, fill=DOOR)
-    draw.rounded_rectangle(box(7.3, 6.3, 25.7, 25.7), radius=3.6 * u, outline=FRAME,
-                           width=max(1, round(0.8 * u)))
-    # шкала кодового замка: 12 рисок, как штрихи stroke-dasharray в logo.svg
-    cx, cy, r, width = 16.5, 16.2, 6.6, 1.6
-    half = width / 2
-    for tick in range(12):
-        start = tick * 30
-        draw.arc(box(cx - r - half, cy - r - half, cx + r + half, cy + r + half), start, start + 7.8,
-                 fill=DIAL, width=max(1, round(width * u)))
-    ring(cx, cy, 4.5, 1.1, DIAL)
-    draw.polygon([(16.5 * u, 9.1 * u), (15.3 * u, 7.3 * u), (17.7 * u, 7.3 * u)], fill=LIGHT)   # указатель
-    draw.polygon([(15.3 * u, 14.2 * u), (15.3 * u, 18.2 * u), (18.5 * u, 16.2 * u)], fill=LIGHT)  # плей
+    disc(draw, 100, 100, 21, fill=HUB)
+    draw.polygon([(at(92), at(87)), (at(92), at(113)), (at(114), at(100))], fill=LIGHT)   # плей
     if dot:
-        draw.ellipse(box(26.6 - 4.4, 5.4 - 4.4, 26.6 + 4.4, 5.4 + 4.4), fill=DOOR)
-        draw.ellipse(box(26.6 - 3.0, 5.4 - 3.0, 26.6 + 3.0, 5.4 + 3.0), fill=RED)
+        # точка записи — в правом верхнем углу, с чёрной обводкой
+        draw.ellipse([(26.6 - 4.4) * big / 32, (5.4 - 4.4) * big / 32, (26.6 + 4.4) * big / 32,
+                      (5.4 + 4.4) * big / 32], fill=HUB)
+        draw.ellipse([(26.6 - 3.0) * big / 32, (5.4 - 3.0) * big / 32, (26.6 + 3.0) * big / 32,
+                      (5.4 + 3.0) * big / 32], fill=RED)
     return image.resize((size, size), Image.LANCZOS)
 
 

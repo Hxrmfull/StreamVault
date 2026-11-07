@@ -7,6 +7,12 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+### Changed
+
+- **New icon:** a silver wheel with a play button on black — in the window,
+  the tray, the program and installer icons. The red recording dot is shown
+  in the tray only while recording.
+
 ### Fixed
 
 - The search box at the top had a border and rounded corners on its right
