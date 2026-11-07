@@ -96,6 +96,7 @@ class Api:
         "remove_download", "clear_finished", "downloads_snapshot",
         "open_file", "show_in_folder", "open_folder", "open_url", "watch", "chat_replay",
         "chat_search", "save_position", "cut_clip", "overlay_chat", "split_recording", "cancel_edit",
+        "remove_edit", "clear_edits",
         "watch_live", "live_status", "chat_activity", "storyboard", "check_recording",
         "search_chats", "broadcast_summary",
         "library", "library_preview", "delete_file",
@@ -734,6 +735,21 @@ class Api:
 
     def cancel_edit(self, job_id):
         self._need_editor().cancel(str(job_id))
+
+    def remove_edit(self, job_id):
+        """Убрать законченную строку «Редактирования»: правку или конвертацию; файлы остаются."""
+        job_id = str(job_id)
+        remove = getattr(self._live, "remove_conversion", None)
+        if remove is not None and remove(job_id):
+            return
+        self._need_editor().remove(job_id)
+
+    def clear_edits(self):
+        """Убрать из «Редактирования» всё законченное."""
+        if self._editor is not None:
+            self._editor.clear_finished()
+        if hasattr(self._live, "clear_conversions"):
+            self._live.clear_conversions()
 
     def chat_search(self, chat_id, text):
         """Сообщения открытого чата, где есть text: для перехода к ним."""

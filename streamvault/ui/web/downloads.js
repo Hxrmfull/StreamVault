@@ -37,6 +37,8 @@ export function renderDownloads(main) {
   // клипы и видео с чатом поверх: их ход — здесь же, над загрузками
   view.edits = h("div", { class: "jobs" });
   view.editsBox = h("div", { class: "edits" }, view.edits);
+  view.editsEmpty = h("div", { class: "empty" }, h("strong", { text: t("Список пуст") }),
+    t("Клипы, деление на части и конвертация из библиотеки появятся здесь."));
   // идущие записи эфиров: сколько записано, скорость, часть, чат
   view.records = h("div", { class: "jobs" });
   view.recordsBox = h("div", { class: "edits" }, view.records);
@@ -52,8 +54,8 @@ export function renderDownloads(main) {
       // убирает только строки списка — файлы остаются; корзина тут пугала бы
       view.clearFinished = button(t("Очистить список"), {
         icon: "close", title: t("Убрать завершённые загрузки из списка; файлы останутся на диске"),
-        onclick: () => bridge.call("clear_finished").catch(failed) })),
-    view.tabs, view.recordsBox, view.recordsEmpty, view.editsBox, view.empty, view.jobs);
+        onclick: () => bridge.call(view.downloadsTab === "edits" ? "clear_edits" : "clear_finished").catch(failed) })),
+    view.tabs, view.recordsBox, view.recordsEmpty, view.editsBox, view.editsEmpty, view.empty, view.jobs);
   view.refresh = refreshDownloads;
   refreshDownloads();
 }
@@ -76,11 +78,15 @@ export function refreshDownloads() {
   view.recordsBox.hidden = tab !== "records";
   view.recordsEmpty.hidden = tab !== "records" || records.length > 0;
   view.editsBox.hidden = tab !== "edits";
+  view.editsEmpty.hidden = tab !== "edits" || edits.length > 0;
   view.jobs.hidden = tab !== "downloads";
   view.empty.hidden = tab !== "downloads" || jobs.length > 0;
   syncList(view.edits, edits, (job) => job.id, createJobRow, updateEditRow);
   syncList(view.records, records, (channel) => channel.id, createJobRow, updateRecordRow);
-  view.clearFinished.hidden = tab !== "downloads" || !jobs.some((job) => ["done", "cancelled", "failed"].includes(job.state));
+  const finished = (list) => list.some((job) => ["done", "cancelled", "failed"].includes(job.state));
+  view.clearFinished.hidden = tab === "records" || !finished(tab === "edits" ? edits : jobs);
+  view.clearFinished.title = tab === "edits" ? t("Убрать законченное из списка; файлы останутся на диске")
+    : t("Убрать завершённые загрузки из списка; файлы останутся на диске");
   syncList(view.jobs, jobs, (job) => job.id, createJobRow, updateJobRow);
 }
 
@@ -250,6 +256,10 @@ export function updateEditRow(row, job) {
   if (job.state === "done" && job.target) {
     actions.push(iconButton("play", t("Открыть"), call("open_file", job.target)),
                  iconButton("folder", t("Показать в папке"), call("show_in_folder", job.target)));
+  }
+  // законченную строку — убрать: иначе отменённая так и висит
+  if (["done", "failed", "cancelled"].includes(job.state)) {
+    actions.push(iconButton("close", t("Убрать из списка; файл останется"), call("remove_edit", job.id)));
   }
   row._actions.replaceChildren(...actions);
 }

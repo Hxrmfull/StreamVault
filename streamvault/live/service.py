@@ -9,6 +9,7 @@
 
 import copy
 import functools
+import itertools
 import logging
 import os
 import shutil
@@ -186,6 +187,8 @@ class LiveService:
         self._joiner = None
         # ручные конвертации из библиотеки за этот запуск: путь .ts -> строка «Редактирования»
         self._conversions = {}
+        # номера строк: после «Убрать из списка» прежний номер не должен достаться новой
+        self._conversion_numbers = itertools.count(1)
         self._started = False
 
     # ------------------------------------------------------------ запуск и остановка
@@ -299,7 +302,7 @@ class LiveService:
         if piece_mark(os.path.splitext(os.path.basename(path))[0]) or is_whole(path):
             split = ("off", 0, 0, 0)
         # строка в «Редактировании»: конвертация идёт в очереди обработки, и без строки её не видно
-        job = {"id": "convert-%d" % (len(self._conversions) + 1), "kind": "convert", "source": path,
+        job = {"id": "convert-%d" % next(self._conversion_numbers), "kind": "convert", "source": path,
                "name": os.path.basename(path), "target": "", "pieces": [], "state": "queued",
                "format": fmt or self._recording_setting(path, "convert_format") or "mp4",
                "created": time.time(), "started": None, "progress": 0, "error": ""}
@@ -317,6 +320,29 @@ class LiveService:
         """Ручные конвертации за этот запуск — строками «Редактирования»."""
         with self._lock:
             return [dict(job) for job in self._conversions.values()]
+
+    def remove_conversion(self, job_id, finished_only=False):
+        """
+        Убрать строку конвертации из «Редактирования» (файлы остаются). True — была
+        такая. Идущую не убрать: её не отменить, а без строки её снова не видно.
+        """
+        with self._lock:
+            path = next((path for path, job in self._conversions.items() if job["id"] == job_id), None)
+            if path is None:
+                return False
+            if self._conversions[path]["state"] in ("queued", "running"):
+                if finished_only:
+                    return True
+                raise ValueError(tr("конвертация ещё идёт: {name}", name=self._conversions[path]["name"]))
+            del self._conversions[path]
+        if self._bus is not None:
+            self._bus.emit("edit_removed", id=job_id)
+        return True
+
+    def clear_conversions(self):
+        """Убрать из «Редактирования» законченные конвертации."""
+        for job in self.conversions():
+            self.remove_conversion(job["id"], finished_only=True)
 
     def _emit_conversion(self, job):
         if self._bus is not None:

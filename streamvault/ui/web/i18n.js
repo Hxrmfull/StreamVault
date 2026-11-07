@@ -210,6 +210,11 @@
     "Очистить список": "Clear list",
     "Убрать завершённые загрузки из списка; файлы останутся на диске":
       "Remove finished downloads from the list; the files stay on disk",
+    "Убрать законченное из списка; файлы останутся на диске":
+      "Remove finished items from the list; the files stay on disk",
+    "Список пуст": "The list is empty",
+    "Клипы, деление на части и конвертация из библиотеки появятся здесь.":
+      "Clips, splitting into pieces and conversions from the library appear here.",
     "отрезок {start}–{end}": "section {start}–{end}",
     "{done} из {total}": "{done} of {total}",
     "скачано {size}": "{size} downloaded",

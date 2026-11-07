@@ -208,6 +208,8 @@ STRINGS = {
     'проигрыватель StreamVault': 'the StreamVault player',
     'Медиаплеер': 'Media Player',
     'эта запись уже конвертируется: {name}': 'this recording is already being converted: {name}',
+    'конвертация ещё идёт: {name}': 'the conversion is still running: {name}',
+    'сначала отмени: {name}': 'cancel it first: {name}',
     'не сконвертировалось, запись осталась в .ts — подробности в «Журнале»':
         'not converted, the recording stayed in .ts — details are in the "Log"',
     'запись открыта в {programs} — закрой её и попробуй снова':

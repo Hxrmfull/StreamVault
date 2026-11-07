@@ -49,6 +49,10 @@ export function receive(batch) {
         // ход склейки — и на карточке эфира в библиотеке
         if (state.route.name === "library") showLibrary();
         break;
+      case "edit_removed":
+        state.edits.delete(event.id);
+        jobsChanged = true;
+        break;
       case "download_removed":
         state.jobs.delete(event.id);
         jobsChanged = true;

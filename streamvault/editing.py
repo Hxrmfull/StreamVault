@@ -236,6 +236,25 @@ class Editor(threading.Thread):
             util.kill_process_tree(process)
         self._emit(job)
 
+    def remove(self, job_id):
+        """Убрать законченную строку (готово, отменено, ошибка) из списка; файлы остаются."""
+        with self._lock:
+            job = self._job(job_id)
+            if job["state"] in (QUEUED, RUNNING):
+                raise ValueError(tr("сначала отмени: {name}", name=job["name"]))
+            self._jobs.remove(job)
+        if self._bus is not None:
+            self._bus.emit("edit_removed", id=job_id)
+
+    def clear_finished(self):
+        """Убрать из списка всё законченное."""
+        with self._lock:
+            gone = [job["id"] for job in self._jobs if job["state"] not in (QUEUED, RUNNING)]
+            self._jobs = [job for job in self._jobs if job["id"] not in gone]
+        if self._bus is not None:
+            for job_id in gone:
+                self._bus.emit("edit_removed", id=job_id)
+
     def snapshot(self):
         with self._lock:
             jobs = [copy.deepcopy(job) for job in self._jobs]

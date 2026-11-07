@@ -11,6 +11,8 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 - The page title row (Library, Downloads, Log) is even: the note "6 files · 12 GB"
   sits on the title's line, and the buttons are centred on it.
+- A cancelled, failed or finished row in "Editing" can be removed: a cross
+  on the row and "Clear list" for the whole tab (the files stay).
 
 ## 0.9.0 — 2026-11-07
 
