@@ -20,6 +20,8 @@ from ..util import PARTIAL_SUFFIX, remove_quietly, unique_path
 
 GB = 1000 ** 3            # как его показывают Windows и сайты: 2 ГБ — два миллиарда байт
 # Кусок короче этого не отрезается: хвост в полминуты прилипает к предыдущему.
+# Через сколько секунд снова пробовать свою запись, которую кто-то держит открытой.
+BUSY_RETRY = 5
 MIN_PIECE = 60
 MAX_PIECES = 100
 
@@ -256,8 +258,13 @@ class ProcessingQueue(threading.Thread):
                 if draining:
                     self._dropped += 1
                     continue
-                self._queue.put((time.time() + self._settle_seconds, next(self._counter),
-                                 attempt, recorded, processed))
+                # свою запись программа закрыла сама: мешает лишь тот, кто её сейчас
+                # читает (проигрыватель, антивирус, превью Проводника), — спросить скоро.
+                # Чужой файл — ждать, пока он «остынет»
+                with self._lock:
+                    trusted = recorded in self._trusted
+                wait = BUSY_RETRY if trusted else self._settle_seconds
+                self._queue.put((time.time() + wait, next(self._counter), attempt, recorded, processed))
             elif attempt < self._max_attempts:
                 logging.warning(tr("повтор обработки {name} (попытка {attempt} из {total}) "
                                    "через {seconds} с", name=os.path.basename(recorded),

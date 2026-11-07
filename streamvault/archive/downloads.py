@@ -59,6 +59,9 @@ def _file_size(path):
 
 # Начало эфира кладётся рядом с записью под этим хвостом (live/joining.py).
 PART00 = " - part00"
+# Начало эфира не скачалось — через сколько секунд пробовать снова: сбои там
+# обычно временные (YouTube оборвал соединение, площадка ответила 5xx)
+BEGINNING_RETRIES = (60, 180, 300)
 
 
 def _follow_join(job):
@@ -553,8 +556,9 @@ class DownloadManager:
         self._emit(job_id)
 
     def _requeue(self, job):
-        # target остаётся: yt-dlp продолжит недокачанное с того же места
-        job.update(state=QUEUED, error="", progress=None, finished=None)
+        # target остаётся: yt-dlp продолжит недокачанное с того же места.
+        # «Повторить» руками — сразу и с новым запасом автоповторов
+        job.update(state=QUEUED, error="", progress=None, finished=None, retry_at=None, auto_retries=0)
         self._save()
         self._wakeup.notify_all()
 
@@ -649,8 +653,9 @@ class DownloadManager:
         with self._lock:
             while not self._stopping:
                 limit = max(1, self._settings["max_downloads"])
+                now = time.time()
                 waiting = [job for job in self._jobs if job["state"] == QUEUED
-                           and job["id"] not in self._running]
+                           and job["id"] not in self._running and (job.get("retry_at") or 0) <= now]
                 if waiting and len(self._running) < limit:
                     job = waiting[0]
                     runtime = {"process": None, "stop": None}
@@ -978,6 +983,15 @@ class DownloadManager:
                     state = QUEUED     # продолжится со следующего запуска
                 else:
                     state = PAUSED
+            retry = None
+            if state == FAILED and job.get("fixed_target") and not runtime.get("remove"):
+                # начало эфира — само ещё раз, а не ждать, пока нажмут «Повторить»
+                retries = job.get("auto_retries") or 0
+                if retries < len(BEGINNING_RETRIES):
+                    retry = BEGINNING_RETRIES[retries]
+                    state = QUEUED
+                    changes = dict(changes, auto_retries=retries + 1, retry_at=time.time() + retry,
+                                   progress=None)
             if state in (DONE, FAILED, CANCELLED):
                 changes.setdefault("finished", time.time())
             if state == DONE:
@@ -990,6 +1004,11 @@ class DownloadManager:
         elif state == FAILED:
             logging.error(tr("не скачалось: {name} — {error}",
                              name=job["title"] or job["url"], error=job["error"]))
+        elif retry is not None:
+            logging.warning(tr("не скачалось: {name} — {error}; попробую снова через {seconds} с "
+                               "(повтор {number} из {total})", name=job["title"] or job["url"],
+                               error=job["error"], seconds=retry, number=job["auto_retries"],
+                               total=len(BEGINNING_RETRIES)))
         self._emit(job_id)
 
     def _choose_target(self, job):

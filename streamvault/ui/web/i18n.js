@@ -507,6 +507,7 @@
     "Канал в избранном — он в панели слева": "The channel is in favorites — it is in the left panel",
     "Канал убран из избранного": "Removed from favorites",
     "Идёт запись": "Recording now",
+    "повтор в {time}: {error}": "retry at {time}: {error}",
     "Начало эфира склеено с записью: {name}": "Stream beginning joined to the recording: {name}",
     "Начало эфира не склеено с записью: {reason}": "Stream beginning not joined to the recording: {reason}",
     "склеено с записью": "joined to the recording",

@@ -5,6 +5,19 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- **A stream beginning that failed to download is retried by itself**:
+  after 1, 3 and 5 minutes. The row in "Downloads" shows when the next try
+  is and why the last one failed. "Retry" still starts it right away.
+
+### Fixed
+
+- After "Stop recording" processing could wait two minutes if the file was
+  briefly open in a player or the antivirus. Now it tries again in seconds.
+
 ## 0.4.1 — 2026-11-01
 
 ### Fixed

@@ -162,7 +162,11 @@ export function updateJobRow(row, job) {
   row._progress.hidden = job.state === "cancelled" || job.state === "done";
 
   const statusText = {
-    queued: t("в очереди"),
+    // начало эфира не скачалось — программа повторит сама
+    queued: job.retry_at && job.retry_at * 1000 > Date.now()
+      ? t("повтор в {time}: {error}", { time: new Date(job.retry_at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                                       error: job.error || "?" })
+      : t("в очереди"),
     downloading: progressText(job),
     processing: chatProgress
       ? t(CHAT_STAGES[chatProgress.stage] || CHAT_STAGES.download) + (chatProgress.percent !== null && chatProgress.percent !== undefined
