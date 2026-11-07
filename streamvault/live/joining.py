@@ -191,7 +191,12 @@ def _concat_line(path):
 CONTAINERS = {".ts": "mpegts", ".mkv": "matroska", ".m4a": "ipod"}
 
 
-def join_command(ffmpeg, listing, output, maps=("0:v:0?", "0:a:0?")):
+def join_command(ffmpeg, listing, output, maps=("0:v:0?", "0:a:0?"), timescale=None):
+    """
+    timescale — шкала времени видео записи (делений в секунду): у начала из
+    HLS она 90 000, у mp4 записи — своя, и concat без перекодирования их не
+    согласует — кадры начала и записи перемешивались («60 кадров в секунду»).
+    """
     container = CONTAINERS.get(os.path.splitext(output)[1].lower(), "mp4")
     command = [ffmpeg, "-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
                "-i", listing]
@@ -200,7 +205,17 @@ def join_command(ffmpeg, listing, output, maps=("0:v:0?", "0:a:0?")):
     command += ["-c", "copy"]
     if container in ("mp4", "ipod"):
         command += ["-movflags", "+faststart"]
+        if timescale:
+            command += ["-video_track_timescale", str(timescale)]
     return command + ["-f", container, output]
+
+
+def video_timescale(ffmpeg, path):
+    """Шкала времени видео файла («15360 tbn» в выводе ffmpeg) или None."""
+    result = subprocess.run([ffmpeg, "-hide_banner", "-nostdin", "-i", path], capture_output=True, timeout=120,
+                            creationflags=util.subprocess_flags())
+    match = re.search(r"Video: .*? (\d+)(k?) tbn", result.stderr.decode("utf-8", "replace"))
+    return int(match.group(1)) * (1000 if match.group(2) else 1) if match else None
 
 
 def streams(ffmpeg, path):
@@ -300,6 +315,7 @@ def join_video(ffmpeg, head, cut, tail, output, progress=None, tail_length=None)
     """
     order = stream_kinds(ffmpeg, tail) or ["video", "audio"]
     maps = ["0:%s:0" % kind[0] for kind in order]
+    timescale = video_timescale(ffmpeg, tail) if "video" in order else None
     # у записи только со звуком кадров нет: режется ровно по стыку
     outpoint = decode_time(ffmpeg, head, cut) if "video" in order else cut
     trim = "outpoint %.6f\nduration %.6f\n" % (outpoint, cut)
@@ -311,9 +327,9 @@ def join_video(ffmpeg, head, cut, tail, output, progress=None, tail_length=None)
     second = (lambda share: progress((cut + share * (total - cut)) / total)) if progress and total else None
     try:
         listings.append(_listing("%s\n%s" % (_concat_line(head), trim)))
-        _run(join_command(ffmpeg, listings[-1], cut_head, maps), first, cut)
+        _run(join_command(ffmpeg, listings[-1], cut_head, maps, timescale), first, cut)
         listings.append(_listing("%s\n%s\n" % (_concat_line(cut_head), _concat_line(tail))))
-        _run(join_command(ffmpeg, listings[-1], output, maps), second, total)
+        _run(join_command(ffmpeg, listings[-1], output, maps, timescale), second, total)
         if not os.path.isfile(output):
             raise OSError("ffmpeg: нет файла")
     except BaseException:

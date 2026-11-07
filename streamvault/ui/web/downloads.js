@@ -188,7 +188,7 @@ export function updateJobRow(row, job) {
     // начало эфира не скачалось — программа повторит сама
     queued: job.retry_at && job.retry_at * 1000 > Date.now()
       ? t("повтор в {time}: {error}", { time: new Date(job.retry_at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-                                       error: job.error || "?" })
+                                       error: job.reason || job.error || "?" })
       : t("в очереди"),
     downloading: progressText(job),
     processing: chatProgress
@@ -199,10 +199,13 @@ export function updateJobRow(row, job) {
             + " — " + t("продолжится с того же места"),
     done: [t("Готово"), doneSize(job), joinText(job),
            job.chat_error ? t("чат: {error}", { error: job.chat_error }) : ""].filter(Boolean).join(" · "),
-    failed: t("ошибка: {error}", { error: job.error || t("неизвестная") }),
+    // начало эфира: почему не взять — коротко; текст ошибки — в журнале
+    failed: job.reason ? t("начало эфира не скачать: {reason}", { reason: job.reason })
+                       : t("ошибка: {error}", { error: job.error || t("неизвестная") }),
     cancelled: t("отменено"),
   }[job.state] || job.state;
   setText(row._status, statusText);
+  row._status.title = job.reason && job.error ? job.error : "";
   row._status.title = job.state === "done" && job.file ? job.file : "";
   row._status.className = "job-status" + (job.state === "failed" ? " error" : job.state === "done" ? " ok-text" : "");
 

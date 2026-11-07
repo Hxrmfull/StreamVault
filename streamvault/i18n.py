@@ -187,6 +187,16 @@ STRINGS = {
         'Twitch token: unreadable answer, retrying in {delay} s',
     'конвертирую в {format}: {name}': 'converting to {format}: {name}',
     'готово: {name}': 'done: {name}',
+    'начало записи осталось со своим временем: {error}': 'the recording beginning kept its own timestamps: {error}',
+    'запись эфира доступна только подписчикам канала': "the stream's recording is for channel subscribers only",
+    'запись эфира доступна только спонсорам канала': "the stream's recording is for channel members only",
+    'запись эфира закрыта': "the stream's recording is private",
+    'запись эфира недоступна в твоей стране': "the stream's recording is not available in your country",
+    'запись эфира доступна только после входа на площадку':
+        "the stream's recording is available only after signing in to the platform",
+    'площадка не ответила или оборвалась связь': 'the platform did not answer or the connection dropped',
+    'записи эфира на площадке пока нет': "the platform has no recording of the stream yet",
+    'не скачалось — подробности в журнале': 'not downloaded — details are in the log',
     'проигрыватель StreamVault': 'the StreamVault player',
     'запись открыта в {programs} — закрой её и попробуй снова':
         'the recording is open in {programs} — close it and try again',

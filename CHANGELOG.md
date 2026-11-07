@@ -15,6 +15,18 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The Twitch and Kick stream beginning downloaded slowly** — tens to
+  hundreds of KB/s: ffmpeg fetched the recording one piece at a time. Now
+  the program downloads it itself, several pieces at once (as many as
+  "Parallel recording pieces" in the settings): on the same recording,
+  about 14 MB/s instead of 30–250 KB/s. This applies to VK as well.
+- **Joining the stream beginning with the recording** could add a frame at
+  the seam, and with an MP4 recording mix up the frames of the beginning
+  and the recording: the time scales of the two did not match. Now the
+  join is frame-exact.
+- The stream beginning row shows a short reason instead of the yt-dlp
+  error ("the stream's recording is for channel subscribers only"); the
+  error text is in the log. Such lasting reasons are no longer retried.
 - The search box at the top had a border and rounded corners on its right
   side, so the search button stuck to it from the outside. The box and the
   button are one control again and light up together on hover and focus.

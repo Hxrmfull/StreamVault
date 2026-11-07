@@ -121,10 +121,42 @@ def build_download_base(directory, label, title, moment, video_id, suffix=""):
     return os.path.join(directory, name)
 
 
-# Отрезок с начала записи этих площадок качается своими запросами, а не ffmpeg:
-# VK — ffmpeg не доверяет сертификату CDN (archive/hlssection.py), YouTube — рвёт
-# долгие соединения ffmpeg (archive/dashsection.py)
-OWN_SECTION_PLATFORMS = ("vkvideolive", "youtube")
+# Отрезок с начала записи качается своими запросами, а не ffmpeg — у всех площадок:
+# ffmpeg качает HLS по куску и у записи идущего эфира Twitch и Kick шёл в десятки раз
+# медленнее CDN (archive/hlssection.py); VK — ffmpeg ещё и не доверяет сертификату
+# CDN; YouTube — рвёт долгие соединения ffmpeg (archive/dashsection.py)
+OWN_SECTION_PLATFORMS = ("twitch", "kick", "vkvideolive", "youtube")
+
+
+def beginning_reason(error):
+    """
+    Почему не скачалось начало эфира — коротко, для строки в «Загрузках»
+    (подробности — в журнале), и стоит ли пробовать снова: доступ только
+    подписчикам или закрытую запись повторы не изменят.
+    """
+    text = str(error or "").lower()
+    lasting = (
+        (("subscriber-only", "subscribers only", "only available to subscribers", "sub-only"),
+         tr("запись эфира доступна только подписчикам канала")),
+        (("members-only", "members only", "join this channel"), tr("запись эфира доступна только спонсорам канала")),
+        (("private video", "video is private", "is private"), tr("запись эфира закрыта")),
+        (("available in your country", "geo restrict", "geo-restrict", "geoblocked"),
+         tr("запись эфира недоступна в твоей стране")),
+        (("confirm your age", "age-restricted", "age restricted", "login required", "requires authentication",
+          "sign in to"), tr("запись эфира доступна только после входа на площадку")),
+    )
+    for words, reason in lasting:
+        if any(word in text for word in words):
+            return reason, False
+    passing = (
+        (("timed out", "timeout", "connection", "wsae", "reset", "4294957242", "http error 5", "temporarily"),
+         tr("площадка не ответила или оборвалась связь")),
+        (("404", "not found", "does not exist", "unavailable"), tr("записи эфира на площадке пока нет")),
+    )
+    for words, reason in passing:
+        if any(word in text for word in words):
+            return reason, True
+    return tr("не скачалось — подробности в журнале"), True
 
 
 class DownloadManager:
@@ -558,7 +590,7 @@ class DownloadManager:
     def _requeue(self, job):
         # target остаётся: yt-dlp продолжит недокачанное с того же места.
         # «Повторить» руками — сразу и с новым запасом автоповторов
-        job.update(state=QUEUED, error="", progress=None, finished=None, retry_at=None, auto_retries=0)
+        job.update(state=QUEUED, error="", reason="", progress=None, finished=None, retry_at=None, auto_retries=0)
         self._save()
         self._wakeup.notify_all()
 
@@ -788,10 +820,17 @@ class DownloadManager:
         try:
             if hls:
                 produced = hlssection.download(chosen[0]["url"], chosen[0].get("http_headers"), job["section"][1],
-                                               job["target"], progress, stopped=stopped)
+                                               job["target"], progress, stopped=stopped,
+                                               workers=self._settings["download_fragments"])
+                if ffmpeg:
+                    produced = hlssection.from_zero(ffmpeg, produced)
             else:
                 produced = dashsection.download([(item["url"], item.get("http_headers")) for item in chosen],
                                                 job["section"][1], job["target"], ffmpeg, progress, stopped=stopped)
+        except hlssection.PlaylistError as error:
+            # плейлист не взять своими запросами — до кусков не дошло: тот же отрезок через ffmpeg
+            logging.info(tr("{name}: {error} — качаю через ffmpeg", name=job["title"] or job["url"], error=error))
+            return False
         except dashsection.NoIndex as error:
             # оглавления нет — до скачивания дело не дошло: тот же отрезок обычным путём
             logging.info(tr("{name}: {error} — качаю через ffmpeg", name=job["title"] or job["url"], error=error))
@@ -985,9 +1024,12 @@ class DownloadManager:
                     state = PAUSED
             retry = None
             if state == FAILED and job.get("fixed_target") and not runtime.get("remove"):
-                # начало эфира — само ещё раз, а не ждать, пока нажмут «Повторить»
+                # начало эфира — само ещё раз, а не ждать, пока нажмут «Повторить»;
+                # в строке — короткая причина, текст ошибки — в журнале
+                reason, passing = beginning_reason(changes.get("error") or job.get("error"))
+                changes = dict(changes, reason=reason)
                 retries = job.get("auto_retries") or 0
-                if retries < len(BEGINNING_RETRIES):
+                if passing and retries < len(BEGINNING_RETRIES):
                     retry = BEGINNING_RETRIES[retries]
                     state = QUEUED
                     changes = dict(changes, auto_retries=retries + 1, retry_at=time.time() + retry,

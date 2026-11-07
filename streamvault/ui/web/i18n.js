@@ -593,6 +593,7 @@
     "Вырезаю клип — он ляжет рядом с записью": "Cutting the clip — it will be saved next to the recording",
     "Готово · чат: {count}": "Done · chat: {count}",
     "Готово · частей: {count}": "Done · pieces: {count}",
+    "начало эфира не скачать: {reason}": "cannot download the stream beginning: {reason}",
     "деление на части": "splitting into pieces",
     "Разделить": "Split",
     "Разделить на части": "Split into pieces",
