@@ -7,6 +7,13 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+### Added
+
+- **Back to defaults:** "Default recording settings" in the Live recording
+  section of the settings (everything there except the folder), and "Same as
+  general settings" in a channel's recording settings. Both only fill in the
+  fields: nothing changes until "Save".
+
 ### Fixed
 
 - **A recording that is still being written could not be watched in the

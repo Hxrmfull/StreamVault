@@ -9,6 +9,7 @@
 """
 
 import collections
+import copy
 import logging
 import os
 import re
@@ -30,6 +31,7 @@ from ..positions import Positions
 from ..i18n import tr
 from ..platforms import PLATFORMS, channel_id, channel_option_value, is_url, parse_channel, vk_video_url
 from ..search import ChannelSearch, SearchError
+from ..settings import DEFAULTS
 from .media import MediaServer
 
 # Что окно может открыть проигрывателем.
@@ -64,6 +66,13 @@ LIMITS = {"max_downloads": (1, 10), "download_fragments": (1, 16),
           "probe_timeout": (30, 900), "min_free_gb": (0, 1000), "keep_days": (0, 3650),
           "split_minutes": (5, 1440), "split_count": (2, 100),
           "chat_width": (200, 1920), "chat_height": (200, 4320), "chat_font_size": (8, 72)}
+
+# Раздел «Запись эфиров» и свои настройки записи канала: кнопка «По умолчанию»
+# ставит эти значения. Папки для записей нет: её сброс увёл бы записи в другое место.
+RECORDING_DEFAULT_KEYS = ("quality", "convert_recordings", "convert_format", "mp4_faststart",
+                          "split_mode", "split_size_gb", "split_minutes", "split_count",
+                          "record_from_start", "join_beginning", "min_free_gb", "keep_days",
+                          "refresh", "probe_timeout")
 
 LOG_LEVELS = ("debug", "info", "warning", "error")
 # Как делить запись на куски при конвертации (live/processing.py: split_points).
@@ -227,6 +236,8 @@ class Api:
             # новые версии yt-dlp и TwitchDownloader: {название: версия}
             "component_updates": self._components.snapshot() if self._components else {},
             "last_update": self._last_update,
+            # для кнопок «По умолчанию» в настройках записи (общих и у канала)
+            "recording_defaults": {key: copy.deepcopy(DEFAULTS[key]) for key in RECORDING_DEFAULT_KEYS},
             "can_choose_folder": self._window is not None,
             "window": self._window is not None,
             "tray": self._tray,

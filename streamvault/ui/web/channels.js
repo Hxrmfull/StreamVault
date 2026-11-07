@@ -3,7 +3,7 @@
  * канала, списки записей и клипов, одно видео и запись по ссылке.
  */
 
-import { CHAT_MODES, CONVERT_FORMATS, DOWNLOAD_QUALITIES, SPLIT_MODES, KIND_LABELS, PAGE, PERIOD_LABELS, bridge, button, channelName, channelUrl, chatSelect, chatSupported, confirmDialog, displayTitle, ensureProfiles, entryChannelName, failed, fillAvatar, fmt, h, icon, iconButton, isLive, isRecording, isUrl, recordStarting, keepDaysSelect, knownProfile, liveQualityLabel, liveQualitySelect, liveThumb, openModal, platformName, qualitySelect, setSrc, setText, siteInfo, sortedChannels, splitId, state, stateText, stateTone, syncList, t, toast } from "./common.js";
+import { CHAT_MODES, CONVERT_FORMATS, DOWNLOAD_QUALITIES, SPLIT_MODES, KIND_LABELS, PAGE, PERIOD_LABELS, bridge, button, channelName, channelUrl, chatSelect, chatSupported, confirmDialog, displayTitle, ensureProfiles, entryChannelName, failed, fillAvatar, fmt, h, icon, iconButton, isLive, isRecording, isUrl, recordStarting, keepDaysSelect, setLiveQuality, knownProfile, liveQualityLabel, liveQualitySelect, liveThumb, openModal, platformName, qualitySelect, setSrc, setText, siteInfo, sortedChannels, splitId, state, stateText, stateTone, syncList, t, toast } from "./common.js";
 import { twitchdownloaderBlock } from "./settings.js";
 import { openAddChannel } from "./search.js";
 import { navigate, recBadge, refreshView, render, routeHash, view } from "./app.js";
@@ -460,6 +460,24 @@ export function openChannelOptions(id) {
         failed(error);
       });
   } });
+  // «Как в общих»: всё встаёт на общие настройки; сохранится «Сохранить» — и у канала
+  // не останется своих, смена общих настроек его тоже будет менять
+  const asGeneral = button(t("Как в общих настройках"), { icon: "refresh",
+    title: t("Поставить везде то, что в общих настройках: своих у канала не останется"),
+    onclick: () => {
+      for (const [key, select] of Object.entries(fields)) {
+        const value = JSON.stringify(general[key]);
+        if (![...select.options].some((option) => option.value === value)) {
+          select.append(h("option", { value: value, text: String(general[key]) }));
+        }
+        select.value = value;
+      }
+      for (const [key, input] of Object.entries(numbers)) input.value = String(general[key]);
+      setLiveQuality(quality, general.quality);
+      keep.value = String(general.keep_days || 0);
+      showNumbers();
+      toast(t("Поставлено как в общих настройках — нажми «Сохранить», чтобы так и осталось"), "ok");
+    } });
   modal.body.append(
     h("h2", { text: t("Настройки записи канала") }),
     h("div", { class: "muted field-gap", text: t("Сразу выбрано то, что стоит в общих настройках; изменённое здесь действует только для этого канала. Идущая запись подхватит изменения со следующей части, конвертация — со следующей записи.") }),
@@ -473,7 +491,8 @@ export function openChannelOptions(id) {
     field(t("Делить запись на части"), fields.split_mode),
     numberFields.size, numberFields.duration, numberFields.count,
     field(t("Хранить записи"), keep),
-    h("div", { class: "actions" }, button(t("Отмена"), { onclick: () => modal.close() }), save));
+    h("div", { class: "actions" }, asGeneral, h("span", { class: "spacer" }),
+      button(t("Отмена"), { onclick: () => modal.close() }), save));
 }
 
 // канал не из списка: в эфире ли он — чтобы «Начать запись» не нажимали вслепую

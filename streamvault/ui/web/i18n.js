@@ -213,6 +213,16 @@
     "Убрать законченное из списка; файлы останутся на диске":
       "Remove finished items from the list; the files stay on disk",
     "Список пуст": "The list is empty",
+    "Настройки записи по умолчанию": "Default recording settings",
+    "Всё в этом разделе, кроме папки для записей. Свои настройки каналов не меняются.":
+      "Everything in this section except the recordings folder. Channels' own settings stay as they are.",
+    "Поставлены настройки записи по умолчанию — нажми «Сохранить», чтобы они остались":
+      "Default recording settings are set — press \"Save\" to keep them",
+    "Как в общих настройках": "Same as general settings",
+    "Поставить везде то, что в общих настройках: своих у канала не останется":
+      "Set everything to the general settings: the channel keeps none of its own",
+    "Поставлено как в общих настройках — нажми «Сохранить», чтобы так и осталось":
+      "Set as in the general settings — press \"Save\" to keep it",
     "Клипы, деление на части и конвертация из библиотеки появятся здесь.":
       "Clips, splitting into pieces and conversions from the library appear here.",
     "отрезок {start}–{end}": "section {start}–{end}",

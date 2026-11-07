@@ -646,6 +646,29 @@ export function openSettings() {
   fields.split_mode.addEventListener("change", showSplit);
   showSplit();
 
+  // «По умолчанию» в разделе записи: поля встают на значения по умолчанию, а
+  // сохраняется, как всё, кнопкой «Сохранить» (передумал — «Отмена»). Папка не трогается
+  const recordingDefaults = () => {
+    const defaults = state.info.recording_defaults || {};
+    for (const [key, value] of Object.entries(defaults)) {
+      const input = fields[key];
+      if (key === "refresh") {
+        for (const [platform, seconds] of Object.entries(value)) if (refresh[platform]) refresh[platform].value = seconds;
+      } else if (!input) {
+        continue;
+      } else if (input.type === "checkbox") {
+        input.checked = Boolean(value);
+      } else {
+        input.value = String(value);
+      }
+      if (input) input.dispatchEvent(new Event("change"));
+    }
+    toast(t("Поставлены настройки записи по умолчанию — нажми «Сохранить», чтобы они остались"), "ok");
+  };
+  const resetRecording = h("div", { class: "field" },
+    button(t("Настройки записи по умолчанию"), { icon: "refresh", onclick: recordingDefaults }),
+    h("div", { class: "hint", text: t("Всё в этом разделе, кроме папки для записей. Свои настройки каналов не меняются.") }));
+
   const subhead = (title) => h("h3", { class: "subhead", text: title });
   // разделы: слева список, справа содержимое; порядок — от частого к редкому
   const sections = [
@@ -681,7 +704,8 @@ export function openSettings() {
              { number: true })),
       subhead(t("Как часто проверять каналы, секунды")),
       h("div", { class: "four" }, refreshFields),
-      text("probe_timeout", t("Сколько ждать ответа streamlink, секунды"), null, { number: true })]],
+      text("probe_timeout", t("Сколько ждать ответа streamlink, секунды"), null, { number: true }),
+      resetRecording]],
     [t("Скачивание записей и клипов"), [
       text("downloads_path", t("Папка для загрузок"), t("Оставь пустым, чтобы качать в папку по умолчанию."),
            { folder: true, placeholder: settings.downloads_dir || t("downloads в папке записей") }),
