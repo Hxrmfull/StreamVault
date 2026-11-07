@@ -311,13 +311,18 @@ export function createLibraryCard() {
     event.stopPropagation();
     openConvert(card);
   });
+  // на куски того же формата — в любой момент, хоть .ts, хоть mp4
+  card._split = iconButton("scissors", t("Разделить на куски"), (event) => {
+    event.stopPropagation();
+    openSplit(card._item);
+  });
   card._summary = iconButton("stats", t("Сводка эфира"), (event) => {
     event.stopPropagation();
     openSummary(card._item);
   });
   // действия — на кадре при наведении: название получает всю ширину карточки
   const actions = h("div", { class: "card-actions overlay corner top-right" }, card._watch, card._summary, card._convert,
-    card._chatOpen, card._chatVideo, card._overlay,
+    card._split, card._chatOpen, card._chatVideo, card._overlay,
     iconButton("folder", t("Показать в папке"), (event) => {
       event.stopPropagation();
       bridge.call("show_in_folder", card._item.path).catch(failed);
@@ -338,23 +343,21 @@ export function createLibraryCard() {
   return card;
 }
 
-// «Конвертировать в mp4»: сначала окно — делить ли и как; сразу стоит то, что у канала
-function openConvert(card) {
-  const parts = partsOf(card._item).filter((part) => /\.ts$/i.test(part.path));
-  if (!parts.length) return;
-  const item = card._item;
+// как делить: режим и его число; сразу стоит то, что у канала. withOff — можно «не делить»
+function splitControls(item, withOff) {
   const channel = [...state.channels.values()].find((entry) => entry.platform === item.platform
     && String(entry.label || "").toLowerCase() === String(item.channel || "").toLowerCase());
   const options = (channel && channel.options) || {};
   const setting = (key) => (key in options ? options[key] : state.settings[key]);
-  const mode = h("select", null, SPLIT_MODES.map(([value, label]) => h("option", { value: value, text: t(label) })));
-  mode.value = setting("split_mode") || "off";
-  if (!mode.value) mode.value = "off";
-  const number = (key, step) => h("input", { type: "number", min: step === "0.1" ? "0.1" : "1", step: step || "1",
-                                             value: String(setting(key)) });
-  const numbers = { size: number("split_size_gb", "0.1"), duration: number("split_minutes"),
-                    count: number("split_count") };
-  const field = (label, control) => h("div", { class: "field" }, h("label", { text: label }), control);
+  const modes = SPLIT_MODES.filter(([value]) => withOff || value !== "off");
+  const mode = h("select", null, modes.map(([value, label]) => h("option", { value: value, text: t(label) })));
+  const chosen = setting("split_mode");
+  mode.value = modes.some(([value]) => value === chosen) ? chosen : modes[0][0];
+  // пределы — как у настроек канала (platforms.CHANNEL_NUMBERS)
+  const number = (key, min, step) => h("input", { type: "number", min: min, step: step || "1",
+                                                  value: String(setting(key)) });
+  const numbers = { size: number("split_size_gb", "0.1", "0.1"), duration: number("split_minutes", "5"),
+                    count: number("split_count", "2") };
   const numberFields = {
     size: field(t("Кусок не больше, ГБ"), numbers.size),
     duration: field(t("Кусок длиной, минут"), numbers.duration),
@@ -365,10 +368,64 @@ function openConvert(card) {
   };
   mode.addEventListener("change", showNumbers);
   showNumbers();
+  return {
+    fields: [field(t("Делить на куски"), mode), numberFields.size, numberFields.duration, numberFields.count],
+    value: () => ({ mode: mode.value, size_gb: Number(numbers.size.value.replace(",", ".")),
+                    minutes: Number(numbers.duration.value), count: Number(numbers.count.value) }),
+  };
+}
+
+function field(label, control) {
+  return h("div", { class: "field" }, h("label", { text: label }), control);
+}
+
+// что можно разделить: не клип, не видео с чатом поверх и не кусок уже поделённого
+function splittable(item) {
+  return item.edit ? [] : partsOf(item).filter((part) => !part.piece);
+}
+
+// «Разделить»: каждая целая часть — на куски того же формата, целая — в корзину
+function openSplit(item) {
+  const parts = splittable(item);
+  if (!parts.length) return;
+  const controls = splitControls(item, false);
+  const modal = openModal();
+  const start = button(t("Разделить"), { kind: "primary", onclick: async () => {
+    start.disabled = true;
+    let started = 0;
+    for (const part of parts) {
+      try {
+        await bridge.call("split_recording", part.path, controls.value());
+        started++;
+      } catch (error) {
+        failed(error);
+      }
+    }
+    modal.close();
+    if (started) toast(t("Делю на куски — ход виден в «Загрузках»"), "ok", "#downloads");
+  } });
+  const skipped = partsOf(item).length - parts.length;
+  modal.body.append(
+    h("h2", { text: t("Разделить на куски") }),
+    h("div", { class: "muted field-gap", text: (parts.length > 1
+      ? t("Частей эфира: {count}. Каждая поделится так, как выбрано.", { count: parts.length }) + " " : "")
+      + t("Без перекодирования, по ключевым кадрам: куски выходят примерно такими. Формат тот же, у каждого куска свой чат. Целая запись уйдёт в корзину.")
+      + (skipped ? " " + t("Уже поделённые куски ({count}) не трогаются.", { count: skipped }) : "") }),
+    ...controls.fields,
+    h("div", { class: "actions" }, button(t("Отмена"), { onclick: () => modal.close() }), start));
+}
+
+// «Конвертировать в mp4»: сначала окно — делить ли и как; сразу стоит то, что у канала
+function openConvert(card) {
+  const parts = partsOf(card._item).filter((part) => /\.ts$/i.test(part.path));
+  if (!parts.length) return;
+  const item = card._item;
+  const controls = splitControls(item, true);
+  // кусок поделённой записи ещё раз не делится — только конвертируется
+  const pieces = parts.every((part) => part.piece);
   const modal = openModal();
   const start = button(t("Конвертировать"), { kind: "primary", onclick: () => {
-    const split = { mode: mode.value, size_gb: Number(numbers.size.value.replace(",", ".")),
-                    minutes: Number(numbers.duration.value), count: Number(numbers.count.value) };
+    const split = controls.value();
     start.disabled = true;
     card._convert.disabled = true;
     Promise.all(parts.map((part) => {
@@ -389,11 +446,12 @@ function openConvert(card) {
   } });
   modal.body.append(
     h("h2", { text: t("Конвертировать в mp4") }),
-    h("div", { class: "muted field-gap", text: parts.length > 1
+    h("div", { class: "muted field-gap", text: pieces
+      ? t("Куски станут mp4 без перекодирования, каждый со своим чатом. Файлы .ts после этого удалятся.")
+      : parts.length > 1
       ? t("Частей эфира в .ts: {count}. Каждая станет mp4 и поделится так, как выбрано; чат — вместе с ней.", { count: parts.length })
       : t("Запись станет mp4 без перекодирования и поделится так, как выбрано; у каждого куска свой чат. Файл .ts после этого удалится.") }),
-    field(t("Делить на куски"), mode),
-    numberFields.size, numberFields.duration, numberFields.count,
+    ...(pieces ? [] : controls.fields),
     h("div", { class: "actions" }, button(t("Отмена"), { onclick: () => modal.close() }), start));
 }
 
@@ -412,6 +470,11 @@ export function updateLibraryCard(card, item) {
   card._convert.hidden = !(item.kind === "record" && ts.length);
   card._ts.hidden = !ts.length;
   card._convert.disabled = ts.length > 0 && ts.every((part) => state.converting.has(part.path));
+  // целую часть можно поделить, пока она не делится прямо сейчас
+  const whole = splittable(item);
+  card._split.hidden = !whole.length;
+  card._split.disabled = whole.every((part) => [...state.edits.values()].some((job) =>
+    job.kind === "split" && job.source === part.path && ["queued", "running"].includes(job.state)));
   card._parts.hidden = parts.length < 2;
   const gaps = parts.map((part) => part.gaps).filter(Boolean);
   const gapCount = gaps.reduce((sum, part) => sum + part.count, 0);

@@ -279,7 +279,31 @@ class LiveService:
             raise ValueError(tr("конвертация недоступна: запись эфиров не запущена"))
         if not path.lower().endswith(".ts"):
             raise ValueError(tr("в mp4 конвертируются только записи .ts"))
+        from ..library import piece_mark
+        # кусок поделённой записи ещё раз не делится: имя «piece 1 of 3 - piece 1 of 2»
+        # библиотека не разберёт
+        if piece_mark(os.path.splitext(os.path.basename(path))[0]):
+            split = ("off", 0, 0, 0)
         processing.submit(path, path, trusted=True, convert=True, split=split)
+
+    def beginning_waits(self, path):
+        """
+        Рядом с записью лежит её начало (part00) и склейка включена: запись
+        нельзя делить, пока они не склеены, — склейка ищет запись по имени.
+        """
+        from ..settings import channel_setting
+        from .joining import PART00, VIDEO_EXTENSIONS
+        base = os.path.splitext(path)[0]
+        if not any(os.path.isfile(base + PART00 + ext) for ext in VIDEO_EXTENSIONS):
+            return False
+        platform, label = util.recording_channel(self._settings["root_path"], path)
+        return bool(platform) and bool(channel_setting(self._settings, "join_beginning", platform, label))
+
+    def chat_busy(self, path):
+        """Чат записи ещё доделывается (HTML, видео чата)."""
+        with self._lock:
+            finisher = self._chat_finisher
+        return finisher is not None and finisher.busy(path)
 
     def _join_busy(self, path):
         """

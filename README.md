@@ -73,7 +73,8 @@ themselves from the app.
   keyboard shortcuts and speed control, even while it is still recording;
   cut a clip or burn the chat video into the picture. A recording left as
   `.ts` converts to MP4 with a button — whole, or split by size, duration or
-  into equal parts.
+  into equal parts. Any finished recording or download can be split into
+  pieces of the same format at any time.
 - **Safety:** stops recording before the disk fills up, can move old
   recordings to the Recycle Bin, and checks recordings for gaps. However the
   program is closed — from Task Manager or by shutting Windows down — what

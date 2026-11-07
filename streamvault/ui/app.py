@@ -144,11 +144,12 @@ def run(settings_path=DEFAULT_SETTINGS_PATH, browser=False, port=0, open_browser
     if not tray_available:
         logging.warning(tr("pystray не установлен — значка в трее не будет: "
                            "python -m pip install pystray"))
-    # клипы и видео с чатом поверх — по одной правке за раз, в своём потоке
-    editor = Editor(ffmpeg.path, bus)
-    editor.start()
     # пропуски в записях: очередь обработки ищет их сама, окно — по просьбе
     integrity = IntegrityStore.at(integrity_path(settings))
+    # клипы, видео с чатом поверх и деление на куски — по одной правке за раз, в своём
+    # потоке. HTML и видео чата кусков записи эфира доделывает очередь чатов
+    editor = Editor(ffmpeg.path, bus, integrity=integrity, after_split=lambda pieces: live.rescan_chats())
+    editor.start()
     checker = IntegrityChecker(ffmpeg.path, integrity, bus)
     checker.start()
     library = Library(settings, downloads, os.path.join(app_dir, "cache"), ffmpeg, integrity=integrity)

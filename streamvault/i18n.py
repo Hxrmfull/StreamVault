@@ -187,6 +187,24 @@ STRINGS = {
         'Twitch token: unreadable answer, retrying in {delay} s',
     'конвертирую в mp4: {name}': 'converting to mp4: {name}',
     'готово: {name}': 'done: {name}',
+    'делить нечего: запись не больше одного куска (или короче {minutes} мин)':
+        'nothing to split: the recording fits in one piece (or is shorter than {minutes} min)',
+    'это уже кусок поделённой записи: {name}': 'this is already a piece of a split recording: {name}',
+    'после деления {name}: сбой': 'after splitting {name}: failure',
+    'как делить: size, duration или count': 'how to split: size, duration or count',
+    'такой формат не делится: {name}': 'this format cannot be split: {name}',
+    'чат записи ещё доделывается — попробуй через минуту':
+        "the recording's chat is still being finished — try again in a minute",
+    'делю на куски ({count}): {name}': 'splitting into pieces ({count}): {name}',
+    'эта запись уже делится: {name}': 'this recording is already being split: {name}',
+    'начало эфира ещё не склеено с этой записью — подожди склейки или выключи её у канала':
+        "the stream beginning is not joined with this recording yet — wait for the join or turn it off for the channel",
+    'запись открыта в другой программе (или в проигрывателе окна) — закрой её и попробуй снова':
+        'the recording is open in another program (or in the window player) — close it and try again',
+    'не понял, какой длины запись: {name}': 'could not tell how long the recording is: {name}',
+    'не поделилось: в записи слишком мало ключевых кадров': 'not split: the recording has too few keyframes',
+    'клип и видео с чатом поверх не делятся': 'clips and videos with chat on top are not split',
+    'файла уже нет: {name}': 'the file is gone: {name}',
     'найдена необработанная запись: {name}': 'found an unprocessed recording: {name}',
     'файл исчез, пропускаю: {path}': 'the file is gone, skipping: {path}',
     'пустая запись, удаляю: {name}': 'empty recording, deleting: {name}',

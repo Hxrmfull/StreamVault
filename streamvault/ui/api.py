@@ -24,7 +24,7 @@ from ..archive import downloads as dl
 from ..archive import chat, ytdlp
 from ..chatreplay import ChatReplay, LiveChatReplay
 from ..ffmpeg import read_version
-from ..library import broadcast_parts, probe_duration
+from ..library import broadcast_parts, piece_parts, probe_duration
 from ..live.livechat import jsonl_path, video_backlog
 from ..positions import Positions
 from ..i18n import tr
@@ -93,7 +93,7 @@ class Api:
         "add_download", "pause_download", "resume_download", "cancel_download",
         "remove_download", "clear_finished", "downloads_snapshot",
         "open_file", "show_in_folder", "open_folder", "open_url", "watch", "chat_replay",
-        "chat_search", "save_position", "cut_clip", "overlay_chat", "cancel_edit",
+        "chat_search", "save_position", "cut_clip", "overlay_chat", "split_recording", "cancel_edit",
         "watch_live", "live_status", "chat_activity", "storyboard", "check_recording",
         "search_chats", "broadcast_summary",
         "library", "library_preview", "delete_file",
@@ -658,16 +658,14 @@ class Api:
         return chat_id, replay
 
     def _parts(self, path):
-        """Части эфира записи; у скачанного частей не бывает."""
+        """Части эфира записи; у скачанного — куски, если его поделили."""
         recordings = os.path.abspath(os.path.join(self._settings["root_path"], util.FINISHED_DIR))
         try:
             inside = os.path.commonpath([path, recordings]) == recordings
         except ValueError:
             inside = False
-        if not inside:
-            return [{"part": 1, "path": path, "name": os.path.basename(path)}]
-        return [{"part": number, "path": part, "name": os.path.basename(part)}
-                for number, part in broadcast_parts(path)]
+        parts = broadcast_parts(path) if inside else piece_parts(path)
+        return [{"part": number, "path": part, "name": os.path.basename(part)} for number, part in parts]
 
     def save_position(self, path, seconds, duration=None):
         """Где остановился просмотр: окно сообщает его по ходу и при закрытии."""
@@ -693,6 +691,28 @@ class Api:
     def overlay_chat(self, path, side="right"):
         """Видео чата поверх записи — новым файлом рядом. Возвращает id правки."""
         return self._need_editor().overlay(self._media(path), str(side))
+
+    def split_recording(self, path, split):
+        """
+        Готовую запись или видео — на куски того же формата (кнопка
+        «Разделить» в библиотеке). split — {mode, size_gb, minutes, count}.
+        Возвращает id правки.
+        """
+        path = self._media(path)
+        if not isinstance(split, dict) or split.get("mode") not in ("size", "duration", "count"):
+            raise ValueError(tr("как делить: size, duration или count"))
+        waits = getattr(self._live, "beginning_waits", None)
+        if waits is not None and waits(path):
+            raise ValueError(tr("начало эфира ещё не склеено с этой записью — подожди склейки "
+                                "или выключи её у канала"))
+        busy = getattr(self._live, "chat_busy", None)
+        if busy is not None and busy(path):
+            raise ValueError(tr("чат записи ещё доделывается — попробуй через минуту"))
+        return self._need_editor().split(
+            path, split["mode"],
+            channel_option_value("split_size_gb", split.get("size_gb", self._settings["split_size_gb"])),
+            channel_option_value("split_minutes", split.get("minutes", self._settings["split_minutes"])),
+            channel_option_value("split_count", split.get("count", self._settings["split_count"])))
 
     def cancel_edit(self, job_id):
         self._need_editor().cancel(str(job_id))

@@ -12,6 +12,11 @@ versions follow [Semantic Versioning](https://semver.org/).
 - **A stream beginning that failed to download is retried by itself**:
   after 1, 3 and 5 minutes. The row in "Downloads" shows when the next try
   is and why the last one failed. "Retry" still starts it right away.
+- **"Split into pieces" in the library** for any finished recording or
+  download, in `.ts`, MP4 or another format: by size, by duration or into
+  equal parts, without re-encoding. The pieces keep the format, each gets
+  its own chat, and they play one after another as one card; the whole file
+  goes to the Recycle Bin. Pieces of a split download now also form one card.
 
 ### Fixed
 
@@ -24,6 +29,9 @@ versions follow [Semantic Versioning](https://semver.org/).
   spaces) opened a different folder.
 - Downloading the YouTube and VK stream beginning pauses briefly between
   attempts after a dropped connection instead of retrying at once.
+- Converting a `.ts` piece of an already split recording no longer splits it
+  again, and the piece length fields in the dialog no longer accept values
+  the program rejects.
 
 ## 0.4.1 — 2026-11-01
 

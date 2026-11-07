@@ -49,6 +49,13 @@ PREVIEW_WORKERS = 2
 # Метка правки в имени файла (editing.py): клип отрезка или видео с чатом
 # поверх. «(2)» — если такое имя уже было.
 EDIT_MARK = re.compile(r" \[(?:clip (\d\d)h(\d\d)m(\d\d)s-(\d\d)h(\d\d)m(\d\d)s|chat)\](?: \(\d+\))?$")
+# Кусок поделённой записи: при конвертации или кнопкой «Разделить» (editing.py).
+PIECE_MARK = re.compile(r" - piece (\d+) of (\d+)(?: \(\d+\))?$")
+
+
+def piece_mark(stem):
+    """Метка куска в имени файла (match: номер, сколько всего) или None."""
+    return PIECE_MARK.search(stem)
 
 
 def edit_kind(stem):
@@ -94,9 +101,12 @@ def broadcast_parts(path):
     """
     folder = os.path.dirname(path)
     stem = os.path.splitext(os.path.basename(path))[0]
-    key = None if EDIT_MARK.search(stem) else broadcast_key(stem)
-    if key is None:
+    if EDIT_MARK.search(stem):
         return [(1, path)]
+    key = broadcast_key(stem)
+    if key is None:
+        # имя не по образцу программы, но запись поделена — её куски подряд
+        return piece_parts(path)
     parts = {}
     try:
         names = os.listdir(folder)
@@ -119,6 +129,40 @@ def broadcast_parts(path):
     if not parts:
         return [(1, path)]
     return [(number, parts[order]) for number, order in enumerate(sorted(parts), 1)]
+
+
+def piece_parts(path):
+    """
+    Куски поделённого видео по порядку: [(номер, путь)] — для скачанного и
+    файлов с именем не по образцу записей. Не кусок — список из него самого.
+    """
+    folder = os.path.dirname(path)
+    stem = os.path.splitext(os.path.basename(path))[0]
+    mark = PIECE_MARK.search(stem)
+    if not mark or EDIT_MARK.search(stem):
+        return [(1, path)]
+    base = stem[:mark.start()].lower()
+    pieces = {}
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return [(1, path)]
+    for name in names:
+        other, extension = os.path.splitext(name)
+        if extension.lower() not in MEDIA_EXTENSIONS or _UNFINISHED.search(name) \
+                or name.lower().endswith(chat.SUFFIXES["video"]):
+            continue
+        found = PIECE_MARK.search(other)
+        if not found or other[:found.start()].lower() != base:
+            continue
+        number = int(found.group(1))
+        candidate = os.path.join(folder, name)
+        # кусок уже сконвертирован, а .ts ещё лежит — смотреть mp4
+        if number not in pieces or candidate.lower().endswith(".mp4"):
+            pieces[number] = candidate
+    if not pieces:
+        return [(1, path)]
+    return [(index, pieces[number]) for index, number in enumerate(sorted(pieces), 1)]
 
 
 def parse_download_name(stem):
@@ -275,26 +319,34 @@ class Library:
         edit = edit_kind(stem)
         item["edit"] = edit or ""
         source_stem = EDIT_MARK.sub("", stem)
+        # кусок поделённого видео: сведения — как у целого, карточка — общая
+        piece = None if edit else PIECE_MARK.search(stem)
+        whole_stem = stem[:piece.start()] if piece else source_stem
         if kind == "record":
             item.update(parse_recording_name(source_stem))
             # части одного эфира окно показывает одной карточкой; правка — не часть
             key = None if edit else broadcast_key(stem)
             item["broadcast"] = "|".join((os.path.dirname(path),) + key) if key else ""
         else:
-            job = jobs.get(os.path.normcase(os.path.abspath(path)))
+            whole = os.path.join(os.path.dirname(path), whole_stem + os.path.splitext(path)[1])
+            job = jobs.get(os.path.normcase(os.path.abspath(whole)))
             if job:
                 item.update(title=job.get("title") or "", channel=job.get("channel") or label,
                             thumbnail=job.get("thumbnail") or "", url=job.get("url") or "",
                             timestamp=job.get("timestamp"), video_kind=job.get("kind") or "")
-                if job.get("duration") and not job.get("section"):
+                # длительность из очереди — у целого видео, а не у куска
+                if job.get("duration") and not job.get("section") and not piece:
                     item["duration"] = item["duration"] or job["duration"]
             else:
-                parsed = parse_download_name(source_stem)
+                parsed = parse_download_name(whole_stem)
                 parsed.pop("video_id", None)
                 item.update(parsed)
+        if piece and not item["broadcast"]:
+            item["piece"] = int(piece.group(1))
+            item["broadcast"] = "|".join((os.path.dirname(path), "pieces", whole_stem.lower()))
         if edit == "clip":
             item["video_kind"] = "clip"
-        item["title"] = item["title"] or stem
+        item["title"] = item["title"] or whole_stem
         item["timestamp"] = item["timestamp"] or stat.st_mtime
         return item
 

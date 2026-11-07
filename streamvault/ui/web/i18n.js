@@ -576,6 +576,19 @@
       "The chat video is laid over the recording — as a new file next to it; the recording itself is not changed. The whole video is re-encoded: an hour of recording takes from a few minutes to half an hour, depending on the computer.",
     "Вырезаю клип — он ляжет рядом с записью": "Cutting the clip — it will be saved next to the recording",
     "Готово · чат: {count}": "Done · chat: {count}",
+    "Готово · кусков: {count}": "Done · pieces: {count}",
+    "деление на куски": "splitting into pieces",
+    "делю · {percent}%": "splitting · {percent}%",
+    "Разделить": "Split",
+    "Разделить на куски": "Split into pieces",
+    "Делю на куски — ход виден в «Загрузках»": "Splitting into pieces — progress is in Downloads",
+    "Частей эфира: {count}. Каждая поделится так, как выбрано.":
+      "Stream parts: {count}. Each is split as chosen.",
+    "Без перекодирования, по ключевым кадрам: куски выходят примерно такими. Формат тот же, у каждого куска свой чат. Целая запись уйдёт в корзину.":
+      "Without re-encoding, at keyframes: the pieces come out about this size. Same format, each piece gets its own chat. The whole recording goes to the Recycle Bin.",
+    "Уже поделённые куски ({count}) не трогаются.": "Pieces that are already split ({count}) are left as they are.",
+    "Куски станут mp4 без перекодирования, каждый со своим чатом. Файлы .ts после этого удалятся.":
+      "The pieces become mp4 without re-encoding, each with its own chat. The .ts files are deleted afterwards.",
     "Готово: {name}": "Done: {name}",
     "Конец": "End",
     "Конец клипа должен быть позже начала": "The clip end must be after its start",

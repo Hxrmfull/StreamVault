@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Правка записей в окне программы: вырезать клип и наложить видео чата.
+Правка записей в окне программы: вырезать клип, наложить видео чата и
+поделить запись на куски.
 
 - Клип: ffmpeg режет без перекодирования (-c copy) — за секунды, но только
   по ключевым кадрам: начало клипа уходит к ближайшему ключевому кадру
@@ -9,6 +10,11 @@
 - Видео с чатом поверх: готовое видео чата (.chat.mp4, его рисует
   TwitchDownloader) накладывается на запись справа или слева. Это
   перекодирование всего видео — долго, поэтому с прогрессом и отменой.
+- Деление на куски: готовая запись любого формата — на куски того же
+  формата, без перекодирования, по ключевым кадрам, как при конвертации
+  (live/processing.py: split_points). У каждого куска свой чат. Целая
+  запись и её чат уходят в корзину: куски — те же кадры, а целая рядом с
+  ними играла бы в библиотеке вперемешку с ними.
 
 Результат ложится рядом с записью, с меткой в имени — «[clip 01h02m03s-01h05m00s]»
 или «[chat]»: по ней библиотека отличает его от частей эфира и от скачанного
@@ -30,8 +36,12 @@ from .archive import chat
 from .i18n import tr
 
 QUEUED, RUNNING, DONE, FAILED, CANCELLED = "queued", "running", "done", "failed", "cancelled"
-CLIP, OVERLAY = "clip", "overlay"
+CLIP, OVERLAY, SPLIT = "clip", "overlay", "split"
 SIDES = ("right", "left")
+SPLIT_MODES = ("size", "duration", "count")
+# Формат кусков — как у записи: ffmpeg пишет каждый кусок этим муксером.
+SEGMENT_FORMATS = {".ts": "mpegts", ".mp4": "mp4", ".m4a": "ipod", ".mkv": "matroska",
+                   ".webm": "webm", ".mp3": "mp3"}
 
 _DURATION = re.compile(r"Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)")
 _VIDEO_SIZE = re.compile(r"Stream #\S+.*?Video: .*?(\d{2,5})x(\d{2,5})")
@@ -135,17 +145,38 @@ def overlay_command(ffmpeg, source, chat_video, height, side, target):
             "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", "-f", "mp4", target]
 
 
+def split_command(ffmpeg, source, points, pattern):
+    """
+    Куски записи: сегментный муксер ffmpeg режет по ключевым кадрам после
+    точек points (секунды), каждый кусок — со временем от нуля. Видео — без
+    обложки (0:V), главы целой записи кускам не нужны.
+    """
+    extension = os.path.splitext(source)[1].lower()
+    segment_format = SEGMENT_FORMATS[extension]
+    command = [ffmpeg, "-hide_banner", "-nostdin", "-y", "-i", source,
+               "-map", "0:V?", "-map", "0:a?", "-map_chapters", "-1", "-c", "copy",
+               "-f", "segment", "-segment_times", ",".join("%.3f" % point for point in points),
+               "-segment_start_number", "1", "-reset_timestamps", "1", "-segment_format", segment_format]
+    if segment_format in ("mp4", "ipod"):
+        command += ["-segment_format_options", "movflags=+faststart"]
+    return command + ["-progress", "pipe:1", "-nostats", pattern]
+
+
 class Editor(threading.Thread):
     """
     Очередь правок: по одной за раз, в своём потоке. События в шину —
     "edit" со снимком правки. ffmpeg() — путь к ffmpeg (его могут поставить
-    кнопкой, пока программа работает).
+    кнопкой, пока программа работает). integrity — итоги проверок на
+    пропуски: у кусков они свои. after_split(куски) — запись поделилась
+    (HTML и видео чата кусков доделывает очередь чатов эфиров).
     """
 
-    def __init__(self, ffmpeg, bus=None):
+    def __init__(self, ffmpeg, bus=None, integrity=None, after_split=None):
         super().__init__(name="editor", daemon=True)
         self._ffmpeg = ffmpeg
         self._bus = bus
+        self._integrity = integrity
+        self._after_split = after_split
         self._lock = threading.Condition()
         self._jobs = []
         self._process = None
@@ -168,6 +199,27 @@ class Editor(threading.Thread):
             raise ValueError(tr("у записи нет видео чата — сделай его кнопкой «чат + видео чата»"))
         return self._add(OVERLAY, source, side=side)
 
+    def split(self, source, mode, size_gb=0, minutes=0, count=0):
+        """Запись source — на куски того же формата. Возвращает id правки."""
+        from .library import piece_mark
+        if mode not in SPLIT_MODES:
+            raise ValueError(tr("как делить: size, duration или count"))
+        if os.path.splitext(source)[1].lower() not in SEGMENT_FORMATS:
+            raise ValueError(tr("такой формат не делится: {name}", name=os.path.basename(source)))
+        stem = os.path.splitext(os.path.basename(source))[0]
+        from .library import EDIT_MARK
+        if EDIT_MARK.search(stem):
+            # имя куска клипа библиотека приняла бы за часть эфира
+            raise ValueError(tr("клип и видео с чатом поверх не делятся"))
+        if piece_mark(stem):
+            raise ValueError(tr("это уже кусок поделённой записи: {name}", name=os.path.basename(source)))
+        with self._lock:
+            if any(job["kind"] == SPLIT and job["source"] == source and job["state"] in (QUEUED, RUNNING)
+                   for job in self._jobs):
+                raise ValueError(tr("эта запись уже делится: {name}", name=os.path.basename(source)))
+        return self._add(SPLIT, source, mode=mode, size_gb=float(size_gb or 0), minutes=int(minutes or 0),
+                         count=int(count or 0), pieces=[])
+
     def cancel(self, job_id):
         with self._lock:
             job = self._job(job_id)
@@ -181,7 +233,10 @@ class Editor(threading.Thread):
 
     def snapshot(self):
         with self._lock:
-            return [copy.deepcopy(job) for job in self._jobs]
+            jobs = [copy.deepcopy(job) for job in self._jobs]
+        for job in jobs:
+            job.pop("checked", None)
+        return jobs
 
     def stop(self):
         with self._lock:
@@ -217,6 +272,8 @@ class Editor(threading.Thread):
         if not ffmpeg:
             raise EditError(tr("нужен ffmpeg — его можно скачать в настройках"))
         source = job["source"]
+        if job["kind"] == SPLIT:
+            return self._split(job, ffmpeg)
         if job["kind"] == CLIP:
             command = clip_command(ffmpeg, source, job["start"], job["end"], job["partial"])
             duration = job["end"] - job["start"]
@@ -244,6 +301,102 @@ class Editor(threading.Thread):
                     logging.warning(tr("чат клипа не сохранился: {error}", error=error))
         logging.info(tr("готово: {name}", name=os.path.basename(job["target"])))
         self._finish(job, DONE)
+
+    def _split(self, job, ffmpeg):
+        from .library import probe_duration
+        from .live.processing import MIN_PIECE, piece_name, split_points
+        source = job["source"]
+        if not os.path.isfile(source):
+            raise EditError(tr("файла уже нет: {name}", name=job["name"]))
+        duration = probe_duration(ffmpeg, source)
+        if not duration:
+            raise EditError(tr("не понял, какой длины запись: {name}", name=job["name"]))
+        points = split_points(job["mode"], duration, os.path.getsize(source), job["size_gb"],
+                              job["minutes"], job["count"])
+        if not points:
+            raise EditError(tr("делить нечего: запись не больше одного куска (или короче {minutes} мин)",
+                               minutes=2 * MIN_PIECE // 60))
+        stem, extension = os.path.splitext(source)
+        # в шаблоне ffmpeg «%» — служебный: в имени файла он удваивается
+        pattern = stem.replace("%", "%%") + " - piece %d" + extension + util.PARTIAL_SUFFIX
+        job["partials"] = [stem + " - piece %d" % number + extension + util.PARTIAL_SUFFIX
+                           for number in range(1, len(points) + 2)]
+        job["partial"] = job["partials"][0]
+        logging.info(tr("делю на куски ({count}): {name}", count=len(points) + 1, name=job["name"]))
+        self._run(job, split_command(ffmpeg, source, points, pattern), duration)
+        if job["state"] == CANCELLED:
+            return
+        produced = [path for path in job["partials"] if os.path.isfile(path) and os.path.getsize(path) > 0]
+        if len(produced) < 2:
+            # ключевых кадров меньше, чем точек разреза: вышел один кусок — та же запись
+            self._drop(job["partials"])
+            raise EditError(tr("не поделилось: в записи слишком мало ключевых кадров"))
+        lengths = [probe_duration(ffmpeg, path) for path in produced]
+        pieces = [util.unique_path(piece_name(source, number, len(produced)))
+                  for number in range(1, len(produced) + 1)]
+        chats = self._split_chat(source, pieces, lengths)
+        # целая запись — в корзину. Открыта (проигрыватель, плеер) — не выйдет,
+        # и тогда куски не нужны: иначе в библиотеке были бы и целая, и куски
+        try:
+            util.send_to_recycle_bin(source)
+        except OSError as error:
+            self._drop(job["partials"] + chats)
+            logging.warning("%s", error)
+            raise EditError(tr("запись открыта в другой программе (или в проигрывателе окна) — "
+                               "закрой её и попробуй снова"))
+        logging.info(tr("отправлено в корзину: {path}", path=source))
+        for path in chat.existing(source).values():
+            try:
+                util.send_to_recycle_bin(path)
+            except OSError as error:
+                logging.warning("%s", error)
+        for partial, piece in zip(produced, pieces):
+            os.replace(partial, piece)
+        self._split_gaps(source, job.get("checked"), pieces, lengths)
+        job["pieces"] = pieces
+        job["target"] = pieces[0]
+        logging.info(tr("готово: {name}", name=", ".join(os.path.basename(piece) for piece in pieces)))
+        self._finish(job, DONE)
+        if self._after_split is not None:
+            try:
+                self._after_split(pieces)
+            except Exception:
+                logging.exception(tr("после деления {name}: сбой", name=job["name"]))
+
+    def _split_chat(self, source, pieces, lengths):
+        """
+        Чат целой записи — по кускам: границы — по настоящей длине каждого,
+        последний забирает и хвост. Возвращает записанные файлы чата.
+        """
+        whole = chat.chat_paths(source)["json"]
+        if not os.path.isfile(whole):
+            return []
+        written = []
+        begin = 0.0
+        try:
+            for number, (piece, length) in enumerate(zip(pieces, lengths), 1):
+                length = length or 0
+                end = begin + length if number < len(pieces) else float("inf")
+                target = chat.chat_paths(piece)["json"]
+                if clip_chat(whole, target, begin, end, length):
+                    written.append(target)
+                begin += length
+        except (OSError, ValueError) as error:
+            logging.error(tr("чат не поделился по кускам записи: {error}", error=error))
+        return written
+
+    def _split_gaps(self, source, checked, pieces, lengths):
+        """Пропуски, найденные в целой записи, — у кусков, со временем от их начала."""
+        if self._integrity is None or checked is None:
+            return
+        from .integrity import map_to_pieces
+        for piece, gaps, length in zip(pieces, map_to_pieces(checked["gaps"], lengths), lengths):
+            self._integrity.put(piece, gaps, length)
+
+    @staticmethod
+    def _drop(paths):
+        for path in paths:
+            util.remove_quietly(path)
 
     def _run(self, job, command, duration):
         """ffmpeg с прогрессом: -progress pipe:1 пишет out_time_us по ходу работы."""
@@ -276,10 +429,10 @@ class Editor(threading.Thread):
         with self._lock:
             self._process = None
         if job["state"] == CANCELLED:
-            util.remove_quietly(job["partial"])
+            self._drop(job.get("partials") or [job["partial"]])
             return
         if process.returncode != 0 or not os.path.isfile(job["partial"]):
-            util.remove_quietly(job["partial"])
+            self._drop(job.get("partials") or [job["partial"]])
             lines = [line for line in tail if line][-_TAIL:]
             for line in lines[-5:]:
                 logging.error("  ffmpeg: %s", line)
@@ -289,8 +442,15 @@ class Editor(threading.Thread):
     # ------------------------------------------------------------ внутреннее
 
     def _add(self, kind, source, **options):
-        target = (clip_path(source, options["start"], options["end"]) if kind == CLIP
-                  else overlay_path(source))
+        if kind == CLIP:
+            target = clip_path(source, options["start"], options["end"])
+        elif kind == OVERLAY:
+            target = overlay_path(source)
+        else:
+            # куски получат имена в конце; до того строка правки показывает запись
+            target = source
+            # проверка на пропуски — у целой записи, пока она есть
+            options["checked"] = self._integrity.get(source) if self._integrity is not None else None
         job = {"id": uuid.uuid4().hex[:12], "kind": kind, "source": source, "target": target,
                "partial": target + util.PARTIAL_SUFFIX, "name": os.path.basename(target),
                "state": QUEUED, "progress": 0, "error": "", "chat_messages": None,
@@ -323,4 +483,6 @@ class Editor(threading.Thread):
         if self._bus is not None:
             with self._lock:
                 snapshot = copy.deepcopy(job)
+                # итог проверки целой записи окну не нужен
+                snapshot.pop("checked", None)
             self._bus.emit("edit", job=snapshot)

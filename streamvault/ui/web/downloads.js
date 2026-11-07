@@ -66,13 +66,14 @@ export function createJobRow() {
   return row;
 }
 
-// строка правки: клип или видео с чатом поверх
+// строка правки: клип, видео с чатом поверх или деление на куски
 export function updateEditRow(row, job) {
   setText(row._title, job.name);
   row._title.title = job.target;
   setText(row._sub, job.kind === "clip"
     ? [t("клип {start}–{end}", { start: fmt.duration(job.start), end: fmt.duration(job.end) }),
        job.with_chat ? t("с чатом") : ""].filter(Boolean).join(" · ")
+    : job.kind === "split" ? t("деление на куски")
     : t("видео чата поверх записи"));
   row._progress.className = "progress" + (job.state === "running" && job.kind === "clip" ? " indeterminate" : "")
     + (job.state === "failed" ? " failed" : "");
@@ -80,8 +81,12 @@ export function updateEditRow(row, job) {
   row._progress.hidden = !["queued", "running"].includes(job.state);
   setText(row._status, {
     queued: t("в очереди"),
-    running: job.kind === "clip" ? t("вырезаю…") : t("накладываю чат · {percent}%", { percent: job.progress || 0 }),
-    done: job.chat_messages ? t("Готово · чат: {count}", { count: job.chat_messages }) : t("Готово"),
+    running: job.kind === "clip" ? t("вырезаю…")
+      : job.kind === "split" ? t("делю · {percent}%", { percent: job.progress || 0 })
+      : t("накладываю чат · {percent}%", { percent: job.progress || 0 }),
+    done: job.kind === "split" && (job.pieces || []).length
+      ? t("Готово · кусков: {count}", { count: job.pieces.length })
+      : job.chat_messages ? t("Готово · чат: {count}", { count: job.chat_messages }) : t("Готово"),
     failed: t("ошибка: {error}", { error: job.error || t("неизвестная") }),
     cancelled: t("отменено"),
   }[job.state] || job.state);
