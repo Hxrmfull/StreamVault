@@ -43,6 +43,9 @@ versions follow [Semantic Versioning](https://semver.org/).
   afterwards), like splitting does.
 - **The "Convert" window of the whole recording** no longer offers pieces
   it never made: it only converts, and splitting is done with the scissors.
+- While the frames over the timeline are still being made (about a minute
+  for a long recording), the player says "frames are being made…" instead
+  of showing only the time.
 
 ## 0.8.0 — 2026-11-07
 

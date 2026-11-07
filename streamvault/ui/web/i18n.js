@@ -672,6 +672,7 @@
       "Cut without re-encoding, at keyframes: the start may move a couple of seconds earlier.",
     "Рядом с клипом — чат этого отрезка": "The chat of this part goes next to the clip",
     "Смотреть в окне": "Watch in the window",
+    "кадры готовятся…": "frames are being made…",
     "Сохранить клип": "Save clip",
     "Чат слева": "Chat on the left",
     "Чат справа": "Chat on the right",

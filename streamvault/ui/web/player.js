@@ -303,7 +303,9 @@ export function openWatch(item, options) {
     const x = Math.max(half, Math.min(width - half, at.share * width));
     seekPreview.style.left = seekTip.style.left = x + "px";
     const gap = gapAt(at.seconds);
-    setText(seekTip, fmt.duration(at.seconds) + (gap ? " · " + gapText(gap) : ""));
+    // у длинной записи кадры делаются с минуту: пусть видно, что они будут
+    setText(seekTip, fmt.duration(at.seconds) + (gap ? " · " + gapText(gap) : "")
+      + (boardWorking && !shown ? " · " + t("кадры готовятся…") : ""));
     if (dragging !== null) {
       dragging = at.seconds;
       update();
@@ -680,13 +682,15 @@ export function openWatch(item, options) {
   // ---------------------------------------------------------------- кадры, пропуски и график чата
 
   let board = null;           // раскадровка: {interval, columns, rows, sheets, width, height}
+  let boardWorking = false;   // кадры ещё делаются — подпись над шкалой так и скажет
   let gaps = [];              // пропуски в записи: [{at, length, kept}]
 
   function loadStoryboard(attempt) {
     if (closed || live) return;
     bridge.call("storyboard", item.path).then((answer) => {
       if (closed) return;
-      if (answer.state === "working" && attempt < 120) {
+      boardWorking = answer.state === "working" && attempt < 120;
+      if (boardWorking) {
         setTimeout(() => loadStoryboard(attempt + 1), STORYBOARD_RETRY);
         return;
       }
