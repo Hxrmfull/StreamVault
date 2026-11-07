@@ -13,7 +13,7 @@
 
 import { START_WAIT, bridge, button, ensureProfiles, failed, fmt, h, icon, openModal, rememberProfile, setText, showStopped, state, t, toast } from "./common.js";
 import { refreshSidebar, renderChannel, renderLink, renderLive } from "./channels.js";
-import { refreshDownloadsCount, renderDownloads } from "./downloads.js";
+import { convertingText, refreshDownloadsCount, renderDownloads } from "./downloads.js";
 import { renderLibrary, scheduleLibraryReload, showLibrary } from "./library.js";
 import { ffmpegBlock, openAppUpdate, openComponentUpdates, openSettings, refreshAppUpdate, refreshComponentBadge, refreshFfmpegBlocks, refreshTwitchdownloaderBlocks, refreshYtdlpBlocks, setAppUpdate } from "./settings.js";
 import { attachChannelSearch, openAddChannel } from "./search.js";
@@ -206,6 +206,10 @@ export function tick() {
                   + (el.dataset.bytes ? " · " + fmt.size(Number(el.dataset.bytes)) : "")
                   + (el.dataset.chat ? " · " + t("чат {count}", { count: el.dataset.chat }) : "");
     setText(el.lastChild && el.lastChild.nodeType === 3 ? el.lastChild : el, label);
+  }
+  // идущая конвертация в «Редактировании»: сколько уже идёт
+  for (const el of document.querySelectorAll("[data-convert-since]")) {
+    setText(el, convertingText(Number(el.dataset.convertSince)));
   }
   // боковая панель: только время записи — места мало
   for (const el of document.querySelectorAll("[data-rec-time]")) {

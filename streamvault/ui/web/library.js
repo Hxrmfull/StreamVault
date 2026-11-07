@@ -3,7 +3,7 @@
  * эфиры из частей одной карточкой, отбор, порядок и место на диске.
  */
 
-import { CONVERT_FORMATS, SPLIT_MODES, bridge, fillChannelLine, button, channelName, confirmDialog, displayTitle, ensureProfiles, failed, fmt, h, icon, iconButton, openModal, platformName, safeUrl, setSrc, setText, state, syncList, t, toast, tp } from "./common.js";
+import { CONVERT_FORMATS, SPLIT_MODES, showEditsNext, bridge, fillChannelLine, button, channelName, confirmDialog, displayTitle, ensureProfiles, failed, fmt, h, icon, iconButton, openModal, platformName, safeUrl, setSrc, setText, state, syncList, t, toast, tp } from "./common.js";
 import { openWatch } from "./player.js";
 import { openChatSearch, openSummary } from "./summary.js";
 import { view } from "./app.js";
@@ -425,7 +425,10 @@ function openSplit(item) {
       }
     }
     modal.close();
-    if (started) toast(t("Делю на части — ход виден в «Загрузках»"), "ok", "#downloads");
+    if (started) {
+      showEditsNext();
+      toast(t("Делю на части — ход виден в «Загрузках»"), "ok", "#downloads");
+    }
   } });
   const skipped = partsOf(item).length - parts.length;
   modal.body.append(
@@ -459,7 +462,10 @@ function openConvert(card) {
     Promise.all(parts.map((part) => {
       state.converting.add(part.path);
       return bridge.call("convert_recording", part.path, split, format.value)
-        .then(() => toast(t("Конвертирую: {name}", { name: part.name }), "ok"))
+        .then(() => {
+          showEditsNext();
+          toast(t("Конвертирую: {name} — ход виден в «Загрузках»", { name: part.name }), "ok", "#downloads");
+        })
         .catch((error) => {
           state.converting.delete(part.path);
           throw error;

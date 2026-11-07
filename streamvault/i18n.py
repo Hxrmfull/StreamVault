@@ -207,6 +207,9 @@ STRINGS = {
     'не скачалось — подробности в журнале': 'not downloaded — details are in the log',
     'проигрыватель StreamVault': 'the StreamVault player',
     'Медиаплеер': 'Media Player',
+    'эта запись уже конвертируется: {name}': 'this recording is already being converted: {name}',
+    'не сконвертировалось, запись осталась в .ts — подробности в «Журнале»':
+        'not converted, the recording stayed in .ts — details are in the "Log"',
     'запись открыта в {programs} — закрой её и попробуй снова':
         'the recording is open in {programs} — close it and try again',
     'целая запись оставлена: {path}': 'whole recording kept: {path}',
@@ -625,9 +628,9 @@ STRINGS = {
     'не удалось запустить ffmpeg: {error}': 'could not start ffmpeg: {error}',
     'нужен ffmpeg — его можно скачать в настройках':
         'ffmpeg is needed — it can be downloaded in the settings',
-    'правка {name} упала': 'editing {name} crashed',
-    'правка записей здесь недоступна': 'editing recordings is not available here',
-    'правки {id} нет': 'there is no edit {id}',
+    'редактирование {name} упало': 'editing {name} crashed',
+    'редактирование записей здесь недоступно': 'editing recordings is not available here',
+    'редактирования {id} нет': 'there is no edit {id}',
     'у записи нет видео чата — сделай его кнопкой «чат + видео чата»':
         'the recording has no chat video — make it with the “chat + chat video” option',
     'чат клипа не сохранился: {error}': 'the clip chat was not saved: {error}',

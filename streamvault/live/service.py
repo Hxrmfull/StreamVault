@@ -13,6 +13,7 @@ import logging
 import os
 import shutil
 import threading
+import time
 
 from .. import util
 from ..ffmpeg import FFmpegLocator, own_dir_for
@@ -123,6 +124,15 @@ class _ChannelBus:
         return getattr(self._service._bus, name)
 
 
+class _ProcessingBus(_ChannelBus):
+    """Шина очереди обработки: её шаги видит и учёт ручных конвертаций (строки «Редактирования»)."""
+
+    def emit(self, kind, **payload):
+        if kind == "processing":
+            self._service._conversion_step(payload)
+        self._service._bus.emit(kind, **payload)
+
+
 class LiveService:
     """
     Все наблюдаемые каналы и общая очередь постобработки.
@@ -174,6 +184,8 @@ class LiveService:
         self._processing = None
         self._chat_finisher = None
         self._joiner = None
+        # ручные конвертации из библиотеки за этот запуск: путь .ts -> строка «Редактирования»
+        self._conversions = {}
         self._started = False
 
     # ------------------------------------------------------------ запуск и остановка
@@ -201,7 +213,7 @@ class LiveService:
                 max_attempts=self._settings["ffmpeg_attempts"],
                 retry_delay=self._settings["ffmpeg_retry_delay"],
                 drain_grace=self._settings["drain_grace"],
-                bus=self._bus, on_done=self._chat_finisher.finish,
+                bus=_ProcessingBus(self) if self._bus is not None else None, on_done=self._chat_finisher.finish,
                 faststart=lambda recorded=None: self._recording_setting(recorded, "mp4_faststart"),
                 convert_format=lambda recorded=None: self._recording_setting(recorded, "convert_format"),
                 # пропуски в записи ищутся до конвертации; итог видит окно
@@ -286,7 +298,52 @@ class LiveService:
         # библиотека не разберёт; целая, оставленная рядом с кусками, — тем более
         if piece_mark(os.path.splitext(os.path.basename(path))[0]) or is_whole(path):
             split = ("off", 0, 0, 0)
+        # строка в «Редактировании»: конвертация идёт в очереди обработки, и без строки её не видно
+        job = {"id": "convert-%d" % (len(self._conversions) + 1), "kind": "convert", "source": path,
+               "name": os.path.basename(path), "target": "", "pieces": [], "state": "queued",
+               "format": fmt or self._recording_setting(path, "convert_format") or "mp4",
+               "created": time.time(), "started": None, "progress": 0, "error": ""}
+        with self._lock:
+            before = self._conversions.get(path)
+            if before is not None and before["state"] in ("queued", "running"):
+                raise ValueError(tr("эта запись уже конвертируется: {name}", name=job["name"]))
+            if before is not None:
+                job["id"] = before["id"]
+            self._conversions[path] = job
+        self._emit_conversion(job)
         processing.submit(path, path, trusted=True, convert=True, split=split, fmt=fmt)
+
+    def conversions(self):
+        """Ручные конвертации за этот запуск — строками «Редактирования»."""
+        with self._lock:
+            return [dict(job) for job in self._conversions.values()]
+
+    def _emit_conversion(self, job):
+        if self._bus is not None:
+            self._bus.emit("edit", job=dict(job))
+
+    def _conversion_step(self, event):
+        """Шаг очереди обработки — в строку ручной конвертации, если это она."""
+        with self._lock:
+            job = self._conversions.get(event.get("file"))
+            if job is None or job["state"] not in ("queued", "running"):
+                return
+            action = event.get("action")
+            if action == "started":
+                job["state"], job["started"] = "running", job["started"] or time.time()
+            elif action == "done":
+                job["state"], job["progress"] = "done", 100
+                job["pieces"] = list(event.get("pieces") or [])
+                job["target"] = event.get("result") or (job["pieces"][0] if job["pieces"] else "")
+                if len(job["pieces"]) < 2:
+                    job["pieces"] = []
+            elif action == "gave_up":
+                job["state"] = "failed"
+                job["error"] = tr("не сконвертировалось, запись осталась в .ts — подробности в «Журнале»")
+            else:
+                return
+            snapshot = dict(job)
+        self._emit_conversion(snapshot)
 
     def beginning_waits(self, path):
         """

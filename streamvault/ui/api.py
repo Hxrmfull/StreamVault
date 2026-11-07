@@ -210,7 +210,9 @@ class Api:
             "clip_periods": list(ytdlp.CLIP_PERIODS),
             "live": self._live.snapshot(),
             "disk": self.disk_status(),
-            "edits": self._editor.snapshot() if self._editor else [],
+            # правка: клипы, деление — и ручные конвертации из библиотеки
+            "edits": (self._editor.snapshot() if self._editor else [])
+                     + (self._live.conversions() if hasattr(self._live, "conversions") else []),
             "downloads": self._downloads.snapshot(),
             # склейки начала эфира с записью за этот запуск — для строк загрузок
             "joins": self._live.join_status() if hasattr(self._live, "join_status") else [],
@@ -682,7 +684,7 @@ class Api:
 
     def _need_editor(self):
         if self._editor is None:
-            raise ValueError(tr("правка записей здесь недоступна"))
+            raise ValueError(tr("редактирование записей здесь недоступно"))
         return self._editor
 
     def cut_clip(self, path, start, end, with_chat=False):

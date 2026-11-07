@@ -367,6 +367,11 @@ export const SPLIT_MODES = [["off", "не делить"], ["size", "по раз�
 export const CONVERT_FORMATS = [["mp4", "mp4 — видео, открывается везде"], ["mkv", "mkv — видео, лучше переживает сбой"],
                                 ["audio", "только звук (m4a)"]];
 
+// правка запущена из библиотеки или проигрывателя: в «Загрузках» сразу открыть вкладку «Редактирование»
+export function showEditsNext() {
+  try { sessionStorage.setItem("downloads-tab", "edits"); } catch (error) { /* не помним — не беда */ }
+}
+
 // сколько дней хранить записи канала
 export const KEEP_DAYS = [0, 7, 14, 30, 60, 90, 180, 365];
 

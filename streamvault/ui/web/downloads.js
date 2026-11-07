@@ -8,7 +8,7 @@ import { requestPreview } from "./library.js";
 import { openLive } from "./player.js";
 
 // вкладки «Загрузок»: идущие записи — отдельно от того, что докачивается, правка — третьей
-const DOWNLOAD_TABS = [["records", "Записи"], ["downloads", "Загрузки"], ["edits", "Правка"]];
+const DOWNLOAD_TABS = [["records", "Записи"], ["downloads", "Загрузки"], ["edits", "Редактирование"]];
 
 function chosenTab(counts) {
   let tab = "";
@@ -192,7 +192,14 @@ function editTimeLeft(job) {
   return t("осталось {time}", { time: fmt.duration(Math.max(1, passed * (100 - percent) / percent)) });
 }
 
-// строка правки: клип, видео с чатом поверх или деление на куски
+// названия форматов конвертации — короткие, для строки «конвертация в …»
+const CONVERT_NAMES = { mp4: "mp4", mkv: "mkv", audio: "m4a" };
+
+export function convertingText(started) {
+  return t("конвертирую… · {time}", { time: fmt.duration(Math.max(0, Date.now() / 1000 - (started || Date.now() / 1000))) });
+}
+
+// строка правки: клип, видео с чатом поверх, деление на части или конвертация
 export function updateEditRow(row, job) {
   // кадр — из записи, а когда готово — из результата (у поделённой — первый кусок):
   // исходника к тому времени на месте может уже не быть
@@ -209,17 +216,23 @@ export function updateEditRow(row, job) {
     ? [t("клип {start}–{end}", { start: fmt.duration(job.start), end: fmt.duration(job.end) }),
        job.with_chat ? t("с чатом") : ""].filter(Boolean).join(" · ")
     : job.kind === "split" ? t("деление на части")
+    : job.kind === "convert" ? t("конвертация в {format}", { format: CONVERT_NAMES[job.format] || job.format })
     : t("видео чата поверх записи"));
   row._progress.className = "progress" + (job.state === "running" && job.kind === "clip" ? " indeterminate" : "")
     + (job.state === "failed" ? " failed" : "");
   row._bar.style.width = (job.progress || 0) + "%";
-  row._progress.hidden = !["queued", "running"].includes(job.state);
+  // у конвертации доли нет (ffmpeg перекладывает без перекодирования, за секунды-минуты):
+  // не полоса, а время, которое идёт, — видно, что работа не встала
+  row._progress.hidden = !["queued", "running"].includes(job.state) || job.kind === "convert";
+  if (job.kind === "convert" && job.state === "running" && job.started) row._status.dataset.convertSince = job.started;
+  else delete row._status.dataset.convertSince;
   setText(row._status, {
     queued: t("в очереди"),
-    running: job.kind === "clip" ? t("вырезаю…")
+    running: job.kind === "convert" ? convertingText(job.started)
+      : job.kind === "clip" ? t("вырезаю…")
       : [job.kind === "split" ? (job.progress || 0) + "%"
          : t("накладываю чат · {percent}%", { percent: job.progress || 0 }), editTimeLeft(job)].filter(Boolean).join(" · "),
-    done: job.kind === "split" && (job.pieces || []).length
+    done: ["split", "convert"].includes(job.kind) && (job.pieces || []).length
       ? t("Готово · частей: {count}", { count: job.pieces.length })
       : job.chat_messages ? t("Готово · чат: {count}", { count: job.chat_messages }) : t("Готово"),
     failed: t("ошибка: {error}", { error: job.error || t("неизвестная") }),
@@ -230,10 +243,11 @@ export function updateEditRow(row, job) {
   row._actions.dataset.key = job.state;
   const call = (name, ...args) => () => bridge.call(name, ...args).catch(failed);
   const actions = [];
-  if (["queued", "running"].includes(job.state)) {
+  // конвертацию из очереди обработки не отменить: она занимает секунды-минуты
+  if (["queued", "running"].includes(job.state) && job.kind !== "convert") {
     actions.push(iconButton("close", t("Отменить"), call("cancel_edit", job.id)));
   }
-  if (job.state === "done") {
+  if (job.state === "done" && job.target) {
     actions.push(iconButton("play", t("Открыть"), call("open_file", job.target)),
                  iconButton("folder", t("Показать в папке"), call("show_in_folder", job.target)));
   }

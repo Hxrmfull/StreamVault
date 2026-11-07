@@ -23,6 +23,10 @@ versions follow [Semantic Versioning](https://semver.org/).
   pieces: the scissors are on its card too. The new pieces go to the channel
   folder next to the earlier ones, and the whole one stays in "whole" (or
   goes to the Recycle Bin when the checkbox is off).
+- **Conversion from the library is shown in "Editing"** (Downloads): a row
+  "converting to mkv" with the time it has been running, then "Done" with
+  "Open" and the folder. The notice about a started split or conversion
+  opens Downloads right on this tab.
 
 ### Fixed
 

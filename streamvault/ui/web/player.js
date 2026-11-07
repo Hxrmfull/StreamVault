@@ -9,7 +9,7 @@
  * в его шапке, разворачивается кнопкой на видео.
  */
 
-import { bridge, button, channelName, displayTitle, english, failed, fillAvatar, fmt, h, icon, iconButton,
+import { bridge, button, channelName, displayTitle, english, failed, fillAvatar, fmt, h, icon, iconButton, showEditsNext,
          openModal, platformName, setText, state, t, toast } from "./common.js";
 import { openSummary } from "./summary.js";
 
@@ -666,7 +666,8 @@ export function openWatch(item, options) {
           state.converting.add(item.path);
           bridge.call("convert_recording", item.path)
             .then(() => {
-              toast(t("Конвертирую: {name}", { name: item.name }), "ok");
+              showEditsNext();
+              toast(t("Конвертирую: {name} — ход виден в «Загрузках»", { name: item.name }), "ok", "#downloads");
               modal.close();
             })
             .catch((error) => {

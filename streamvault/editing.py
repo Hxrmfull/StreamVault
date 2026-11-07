@@ -269,7 +269,7 @@ class Editor(threading.Thread):
             except EditError as error:
                 self._finish(job, FAILED, str(error))
             except Exception as error:
-                logging.exception(tr("правка {name} упала", name=job["name"]))
+                logging.exception(tr("редактирование {name} упало", name=job["name"]))
                 self._finish(job, FAILED, str(error))
 
     def _do(self, job):
@@ -522,7 +522,7 @@ class Editor(threading.Thread):
         for job in self._jobs:
             if job["id"] == job_id:
                 return job
-        raise KeyError(tr("правки {id} нет", id=job_id))
+        raise KeyError(tr("редактирования {id} нет", id=job_id))
 
     def _emit(self, job):
         if self._bus is not None:

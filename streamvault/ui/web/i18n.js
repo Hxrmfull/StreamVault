@@ -251,8 +251,10 @@
       "Convert the recording",
     "Во что":
       "Into",
-    "Конвертирую: {name}":
-      "Converting: {name}",
+    "Конвертирую: {name} — ход виден в «Загрузках»":
+      "Converting: {name} — progress is in Downloads",
+    "конвертация в {format}": "converting to {format}",
+    "конвертирую… · {time}": "converting… · {time}",
     "В корзину": "Move to Recycle Bin",
     "Открыть в проигрывателе": "Open in player",
     "Отправить в корзину?": "Move to the Recycle Bin?",
@@ -538,7 +540,7 @@
     "Идёт запись": "Recording now",
     "Начало эфира не скачать: {name} — {error}": "Cannot download the stream beginning: {name} — {error}",
     "Записи": "Recordings",
-    "Правка": "Editing",
+    "Редактирование": "Editing",
     "Сейчас ничего не пишется": "Nothing is recording now",
     "Начни запись на странице канала или включи автозапись — идущие записи появятся здесь.": "Start a recording on a channel page or turn on auto-record — running recordings appear here.",
     "Начало эфира: {status}": "Stream beginning: {status}",
