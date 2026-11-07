@@ -762,6 +762,8 @@ select { padding-right: 6px; }
 }
 .tabs button:hover { color: var(--accent-text); }
 .tabs button.active { color: var(--accent-text); }
+.tabs .tab-count { margin-left: 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.tabs .tab-count:empty { display: none; }
 .tabs button.active::after {
   content: "";
   position: absolute;
@@ -821,6 +823,11 @@ select { padding-right: 6px; }
 .job .thumb { position: relative; }
 .rec-corner { position: absolute; left: 6px; bottom: 6px; }
 .rec-stats { display: flex; gap: 24px; margin-top: 4px; }
+.rec-beginning { margin-top: 4px; }
+/* кнопки идущей записи: с подписями, «Остановить» — красная, чтобы не нажать вместо «Смотреть» */
+.rec-actions { gap: 8px; align-items: center; }
+.btn.stop { background: transparent; border: 1px solid var(--live); color: #ff6b6b; }
+.btn.stop:hover { background: var(--live); color: #fff; }
 .rec-stat { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .rec-stat strong { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rec-stat span { font-size: 11px; color: var(--muted); }

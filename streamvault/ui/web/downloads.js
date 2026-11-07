@@ -7,14 +7,41 @@ import { view } from "./app.js";
 import { requestPreview } from "./library.js";
 import { openLive } from "./player.js";
 
+// вкладки «Загрузок»: идущие записи — отдельно от того, что докачивается, правка — третьей
+const DOWNLOAD_TABS = [["records", "Записи"], ["downloads", "Загрузки"], ["edits", "Правка"]];
+
+function chosenTab(counts) {
+  let tab = "";
+  try { tab = sessionStorage.getItem("downloads-tab") || ""; } catch (error) { /* хранилище закрыто */ }
+  if (DOWNLOAD_TABS.some(([name]) => name === tab) && (tab !== "edits" || counts.edits)) return tab;
+  return counts.records ? "records" : "downloads";
+}
+
 export function renderDownloads(main) {
   view.jobs = h("div", { class: "jobs" });
+  view.tabs = h("div", { class: "tabs" });
+  view.tabButtons = {};
+  for (const [name, label] of DOWNLOAD_TABS) {
+    const count = h("span", { class: "tab-count" });
+    const tab = h("button", { type: "button" }, t(label), count);
+    tab._count = count;
+    tab.addEventListener("click", () => {
+      view.downloadsTab = name;
+      try { sessionStorage.setItem("downloads-tab", name); } catch (error) { /* не помним — не беда */ }
+      refreshDownloads();
+    });
+    view.tabButtons[name] = tab;
+    view.tabs.append(tab);
+  }
+  view.downloadsTab = null;
   // клипы и видео с чатом поверх: их ход — здесь же, над загрузками
   view.edits = h("div", { class: "jobs" });
-  view.editsBox = h("div", { class: "edits" }, h("h3", { class: "subhead", text: t("Правка записей") }), view.edits);
+  view.editsBox = h("div", { class: "edits" }, view.edits);
   // идущие записи эфиров: сколько записано, скорость, часть, чат
   view.records = h("div", { class: "jobs" });
-  view.recordsBox = h("div", { class: "edits" }, h("h3", { class: "subhead", text: t("Идёт запись") }), view.records);
+  view.recordsBox = h("div", { class: "edits" }, view.records);
+  view.recordsEmpty = h("div", { class: "empty" }, h("strong", { text: t("Сейчас ничего не пишется") }),
+    t("Начни запись на странице канала или включи автозапись — идущие записи появятся здесь."));
   view.empty = h("div", { class: "empty" },
     h("strong", { text: t("Загрузок пока нет") }),
     t("Вставь ссылку на запись или клип в строку сверху либо найди там канал и выбери его записи."));
@@ -26,7 +53,7 @@ export function renderDownloads(main) {
       view.clearFinished = button(t("Очистить список"), {
         icon: "close", title: t("Убрать завершённые загрузки из списка; файлы останутся на диске"),
         onclick: () => bridge.call("clear_finished").catch(failed) })),
-    view.recordsBox, view.editsBox, view.empty, view.jobs);
+    view.tabs, view.recordsBox, view.recordsEmpty, view.editsBox, view.empty, view.jobs);
   view.refresh = refreshDownloads;
   refreshDownloads();
 }
@@ -34,14 +61,26 @@ export function renderDownloads(main) {
 export function refreshDownloads() {
   const jobs = [...state.jobs.values()].sort((a, b) => b.created - a.created);
   const edits = [...state.edits.values()].sort((a, b) => b.created - a.created);
-  view.editsBox.hidden = edits.length === 0;
-  syncList(view.edits, edits, (job) => job.id, createJobRow, updateEditRow);
   const records = [...state.channels.values()].filter((channel) => channel.recording)
     .sort((a, b) => a.recording.started - b.recording.started);
-  view.recordsBox.hidden = records.length === 0;
+  const active = jobs.filter((job) => ["queued", "downloading", "processing"].includes(job.state)).length;
+  const counts = { records: records.length, downloads: active, edits: edits.length };
+  const tab = view.downloadsTab || chosenTab(counts);
+  view.downloadsTab = tab;
+  for (const [name, button] of Object.entries(view.tabButtons)) {
+    button.classList.toggle("active", name === tab);
+    setText(button._count, counts[name] ? String(counts[name]) : "");
+  }
+  // вкладка правки — только когда есть что показать
+  view.tabButtons.edits.hidden = edits.length === 0 && tab !== "edits";
+  view.recordsBox.hidden = tab !== "records";
+  view.recordsEmpty.hidden = tab !== "records" || records.length > 0;
+  view.editsBox.hidden = tab !== "edits";
+  view.jobs.hidden = tab !== "downloads";
+  view.empty.hidden = tab !== "downloads" || jobs.length > 0;
+  syncList(view.edits, edits, (job) => job.id, createJobRow, updateEditRow);
   syncList(view.records, records, (channel) => channel.id, createJobRow, updateRecordRow);
-  view.empty.hidden = jobs.length > 0 || edits.length > 0 || records.length > 0;
-  view.clearFinished.hidden = !jobs.some((job) => ["done", "cancelled", "failed"].includes(job.state));
+  view.clearFinished.hidden = tab !== "downloads" || !jobs.some((job) => ["done", "cancelled", "failed"].includes(job.state));
   syncList(view.jobs, jobs, (job) => job.id, createJobRow, updateJobRow);
 }
 
@@ -107,12 +146,42 @@ export function updateRecordRow(row, channel) {
   row._stats.chat.parentNode.hidden = messages === null || messages === undefined;
   // точное число, а не «1,5 тыс.»: счётчик растёт на глазах
   setText(row._stats.chat, Number(messages || 0).toLocaleString());
+  // начало этого эфира (part00): качается, ждёт повтора, склеено — прямо в строке записи
+  const beginning = beginningOf(recording);
+  if (!row._beginning) {
+    row._beginning = h("div", { class: "job-status rec-beginning" });
+    row.querySelector(".job-main").append(row._beginning);
+  }
+  row._beginning.hidden = !beginning;
+  if (beginning) setText(row._beginning, t("Начало эфира: {status}", { status: beginningStatus(beginning) }));
   if (row._actions.dataset.key === channel.id) return;
   row._actions.dataset.key = channel.id;
+  row._actions.classList.add("rec-actions");
   row._actions.replaceChildren(
-    iconButton("play", t("Смотреть"), () => openLive(channel.id)),
+    button(t("Смотреть"), { icon: "play", onclick: () => openLive(channel.id) }),
     iconButton("folder", t("Показать в папке"), () => bridge.call("show_in_folder", channel.recording.file).catch(failed)),
-    iconButton("stop", t("Остановить запись"), () => bridge.call("stop_recording", channel.id).catch(failed)));
+    button(t("Остановить"), { icon: "stop", kind: "stop", title: t("Остановить запись — записанное уйдёт в обработку"),
+                              onclick: () => bridge.call("stop_recording", channel.id).catch(failed) }));
+}
+
+// загрузка начала эфира этой записи: «… - part00» с тем же именем, что у записи
+function beginningOf(recording) {
+  const base = (path) => String(path || "").split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
+  const name = base(recording.file);
+  return [...state.jobs.values()].find((job) => job.fixed_target && base(job.fixed_target + ".x") === name + " - part00");
+}
+
+function beginningStatus(job) {
+  if (job.state === "queued" && job.retry_at && job.retry_at * 1000 > Date.now()) {
+    return t("повтор в {time}: {error}", { time: new Date(job.retry_at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                                         error: job.reason || job.error || "?" });
+  }
+  if (job.state === "queued") return t("в очереди");
+  if (job.state === "downloading") return progressText(job);
+  if (job.state === "processing") return t("склеиваю и перепаковываю…");
+  if (job.state === "done") return joinText(job) || t("скачано");
+  if (job.state === "failed") return job.reason || job.error || t("не скачалось");
+  return job.state;
 }
 
 // сколько примерно осталось: по прошедшему времени и сделанной доле

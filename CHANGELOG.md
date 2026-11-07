@@ -15,6 +15,10 @@ versions follow [Semantic Versioning](https://semver.org/).
   beginning is joined with the recording, "not joined" with the reason in
   the tooltip. Repacking a recording before the join is shown too
   ("preparing the recording for joining…").
+- **Downloads has tabs:** "Recordings" (running recordings), "Downloads"
+  (what is being downloaded) and "Editing" (when there is any), with
+  counters. A recording row also shows how its stream beginning is going.
+  Its buttons have labels: "Play" and a red "Stop".
 
 ## 0.8.0 — 2026-11-07
 
