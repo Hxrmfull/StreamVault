@@ -248,13 +248,14 @@ def spawn_outside(command, **options):
     Если внешнее задание (бывает у лаунчеров) выход из него запрещает —
     запуск как обычно.
     """
+    flags = options.pop("creationflags", 0)
     if _job is not None:
         try:
-            return subprocess.Popen(command, creationflags=options.pop("creationflags", 0)
-                                    | CREATE_BREAKAWAY_FROM_JOB, **options)
+            return subprocess.Popen(command, creationflags=flags | CREATE_BREAKAWAY_FROM_JOB, **options)
         except OSError as error:
             logging.debug("запуск вне задания Windows не вышел (%s): %s", error, command)
-    return subprocess.Popen(command, **options)
+    # те же флаги: без CREATE_NO_WINDOW мелькало бы окно консоли
+    return subprocess.Popen(command, creationflags=flags, **options)
 
 
 def open_outside(target):
@@ -270,7 +271,10 @@ def open_outside(target):
     if _job is None:
         os.startfile(target)
         return
-    spawn_outside(["explorer.exe", target])
+    # кавычки — всегда свои: Проводник делит строку запуска по запятым, и
+    # «стрим,часть1.mp4» (без пробела — без кавычек списка) открывал бы не то.
+    # Кавычек в путях Windows не бывает
+    spawn_outside('explorer.exe "%s"' % str(target).replace('"', ""))
 
 
 def session_ending():

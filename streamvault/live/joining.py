@@ -46,6 +46,10 @@ THUMB = (32, 18)            # размер кадра для сравнения
 FRAMES_TO_MATCH = 3         # столько первых кадров записи ищется подряд
 MATCH_LIMIT = 10.0          # средняя разница яркости (0–255), выше — «не то место»
 VIDEO_EXTENSIONS = (".mp4", ".ts", ".mkv", ".webm")
+# Запись открыта (смотрят в окне программы или в проигрывателе) — Windows не даёт
+# подменить её склейкой и удалить начало: столько ждать, проверяя так часто, секунды
+REPLACE_WAIT = 600
+REPLACE_STEP = 5
 
 
 # ------------------------------------------------------------ кадры и стык
@@ -252,6 +256,14 @@ def _listing(lines):
     return listing.name
 
 
+def _remove_existing(path):
+    """Удаляет файл; его уже нет — тоже хорошо."""
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+
+
 def _merge_embedded(first, second):
     """Смайлы и значки обоих чатов: списки по ключам, без повторов."""
     if not first:
@@ -376,8 +388,36 @@ class Joiner(threading.Thread):
                 continue
             if self._busy(head) or self._busy(main):
                 continue
-            if not self.join(head, main):
+            try:
+                joined = self.join(head, main)
+            except Exception as error:
+                # сбой одной пары (ffmpeg завис, файл пропал) — не повод склеивать её
+                # заново каждую минуту: до перезапуска она не трогается, как и не склеенные
+                logging.exception(tr("склейка начала эфира: сбой"))
+                stem, extension = os.path.splitext(main)
+                util.remove_quietly(stem + JOINING + extension)
+                self._report(head, main, "failed", reason=str(error))
+                joined = False
+            if not joined:
                 self._failed.add((head, main))
+
+    def _when_free(self, action):
+        """
+        action() — подмена или удаление файла. Пока файл открыт в другой
+        программе, Windows этого не даёт: попытки раз в REPLACE_STEP секунд,
+        до REPLACE_WAIT. True — вышло; False — нет или программа закрывается.
+        """
+        waited = 0
+        while True:
+            try:
+                action()
+                return True
+            except FileNotFoundError:
+                raise
+            except OSError:
+                if waited >= REPLACE_WAIT or self._stop.wait(REPLACE_STEP):
+                    return False
+                waited += REPLACE_STEP
 
     def _report(self, head, main, state, **extra):
         if self._on_change is not None:
@@ -448,14 +488,22 @@ class Joiner(threading.Thread):
         except (OSError, ValueError) as error:
             util.remove_quietly(output)
             return self._refuse(head, main, tr("чат не склеился: {error}", error=error), kept=False, error=True)
-        os.replace(output, main)
+        # запись смотрят — склейка ждёт, пока её закроют, а не начинается заново через минуту
+        if not self._when_free(lambda: os.replace(output, main)):
+            util.remove_quietly(output)
+            util.remove_quietly(main_chat["json"] + ".joined")
+            return self._refuse(head, main, tr("запись открыта в другой программе"))
         if count is not None:
             os.replace(main_chat["json"] + ".joined", main_chat["json"])
             # HTML и видео чата — заново, по склеенному чату
             for key in ("html", "video"):
                 util.remove_quietly(main_chat[key])
         for path in [head, *head_chat.values()]:
-            util.remove_quietly(path)
+            if os.path.exists(path) and not self._when_free(lambda path=path: _remove_existing(path)):
+                # начало осталось рядом со склеенной записью: снова его не склеивать
+                logging.warning(tr("не удалить {name}: файл открыт в другой программе",
+                                   name=os.path.basename(path)))
+                self._failed.add((head, main))
         logging.info(tr("начало эфира склеено с записью: {name} — стык на {at}, вышло {length}",
                         name=name, at=clock(cut), length=clock(joined_length)))
         self._report(head, main, "done", seam=cut, length=joined_length)

@@ -14,6 +14,7 @@ Mozilla (certifi), как у yt-dlp и streamlink. Отрезок от нача�
 
 import logging
 import os
+import time
 from urllib.parse import urljoin
 
 import requests
@@ -23,6 +24,8 @@ from ..i18n import tr
 TIMEOUT = 30
 ATTEMPTS = 3
 CHUNK = 256 * 1024
+# Пауза перед следующей попыткой куска, секунды: сразу после обрыва CDN часто рвёт снова.
+RETRY_PAUSES = (1, 3)
 
 
 class HlsSectionError(Exception):
@@ -41,6 +44,9 @@ def playlist_segments(text, base_url):
             raise HlsSectionError(tr("это список качеств, а не плейлист записи"))
         if line.startswith("#EXT-X-KEY") and "METHOD=NONE" not in line:
             raise HlsSectionError(tr("запись зашифрована"))
+        if line.startswith("#EXT-X-BYTERANGE"):
+            # куски — части одного файла: качать каждый целиком значило бы писать мусор
+            raise HlsSectionError(tr("куски записи заданы диапазонами байт"))
         if line.startswith("#EXT-X-MAP"):
             uri = line.split('URI="', 1)[-1].split('"', 1)[0]
             init = urljoin(base_url, uri)
@@ -106,6 +112,8 @@ def _fetch(session, url, headers, output):
     """Кусок целиком в output; обрыв — ещё попытка с начала куска."""
     start = output.tell()
     for attempt in range(ATTEMPTS):
+        if attempt:
+            time.sleep(RETRY_PAUSES[min(attempt, len(RETRY_PAUSES)) - 1])
         output.seek(start)
         output.truncate()
         try:

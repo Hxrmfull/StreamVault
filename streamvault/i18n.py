@@ -463,6 +463,9 @@ STRINGS = {
     'запись зашифрована': 'the recording is encrypted',
     'кусок записи не скачался: {error}': 'a recording segment did not download: {error}',
     'остановлено': 'stopped',
+    'запись открыта в другой программе': 'the recording is open in another program',
+    'не удалить {name}: файл открыт в другой программе': 'cannot delete {name}: the file is open in another program',
+    'куски записи заданы диапазонами байт': 'the recording pieces are given as byte ranges',
     'не скачалось: {name} — {error}; попробую снова через {seconds} с (повтор {number} из {total})':
         'not downloaded: {name} — {error}; trying again in {seconds} s (retry {number} of {total})',
     'Начало эфира склеено с записью': 'Stream beginning joined to the recording',

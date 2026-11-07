@@ -17,6 +17,7 @@ import logging
 import os
 import struct
 import subprocess
+import time
 
 import requests
 
@@ -27,6 +28,8 @@ TIMEOUT = 30
 CHUNK = 10 * 1024 * 1024
 ATTEMPTS = 5
 HEADER = 256 * 1024
+# Пауза перед следующей попыткой, секунды: сразу после обрыва YouTube чаще рвёт снова.
+RETRY_PAUSES = (1, 2, 4, 8)
 
 
 class DashSectionError(Exception):
@@ -116,13 +119,18 @@ def download(streams, length, target, ffmpeg, progress=None, stopped=None, sessi
 def _range(session, url, headers, start, last):
     """Байты start..last; обрыв или ответ не тот — ещё попытка."""
     for attempt in range(ATTEMPTS):
+        if attempt:
+            time.sleep(RETRY_PAUSES[min(attempt, len(RETRY_PAUSES)) - 1])
         try:
-            answer = session.get(url, headers=dict(headers or {}, Range="bytes=%d-%d" % (start, last)),
-                                 timeout=TIMEOUT)
-            answer.raise_for_status()
-            if answer.status_code == 206 and answer.content:
-                return answer.content
-            error = tr("площадка ответила {status}", status=answer.status_code)
+            # stream: ответ 200 — это файл целиком (диапазон не понят), читать его в память нельзя
+            with session.get(url, headers=dict(headers or {}, Range="bytes=%d-%d" % (start, last)),
+                             timeout=TIMEOUT, stream=True) as answer:
+                answer.raise_for_status()
+                if answer.status_code == 206:
+                    content = answer.content
+                    if content:
+                        return content
+                error = tr("площадка ответила {status}", status=answer.status_code)
         except requests.RequestException as problem:
             error = str(problem)
         logging.debug("часть записи YouTube (%d-%d), попытка %d: %s", start, last, attempt + 1, error)

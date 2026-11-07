@@ -17,6 +17,13 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 - After "Stop recording" processing could wait two minutes if the file was
   briefly open in a player or the antivirus. Now it tries again in seconds.
+- **Joining the stream beginning while you watched the recording** failed
+  and started over from scratch every minute while the file stayed open.
+  Now it waits for the file to be closed and finishes the join.
+- "Open" and "Show in folder" for a file with a comma in its name (and no
+  spaces) opened a different folder.
+- Downloading the YouTube and VK stream beginning pauses briefly between
+  attempts after a dropped connection instead of retrying at once.
 
 ## 0.4.1 — 2026-11-01
 

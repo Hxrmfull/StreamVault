@@ -677,9 +677,11 @@ class LiveService:
         целиком: без этого после любого события потока они бы пропадали.
         """
         if entry is None:
-            with self._lock:
-                entry = copy.deepcopy(next((entry for entry in self._entries
-                                            if self._key(entry) == snapshot.get("id")), None))
+            # без self._lock: его держит, например, _launch, ожидая прежний поток канала,
+            # а тот как раз шлёт событие — окно замирало бы на RELAUNCH_WAIT. Профиль и
+            # настройки канала заменяются целиком, а не правятся на месте: читать так можно
+            entry = next((entry for entry in list(self._entries)
+                          if self._key(entry) == snapshot.get("id")), None)
         if entry is not None:
             snapshot["favorite"] = self._favorite(entry)
             snapshot["profile"] = entry.get("profile")
