@@ -5,6 +5,13 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- The page title row (Library, Downloads, Log) is even: the note "6 files · 12 GB"
+  sits on the title's line, and the buttons are centred on it.
+
 ## 0.9.0 — 2026-11-07
 
 ### Added

@@ -547,6 +547,13 @@ select { padding-right: 6px; }
 /* ---------------------------------------------------------------- заголовки и разделы */
 
 .page-title { font-size: 26px; font-weight: 700; margin: 0 0 18px; }
+/* заголовок в строке с кнопками: отступ снизу — у строки, иначе он входит в высоту
+   заголовка и кнопки с подписью «6 файлов · 12 ГБ» садятся ниже его текста */
+.toolbar:has(> .page-title) { margin-bottom: 18px; }
+.toolbar > .page-title { margin: 0; }
+/* подпись к заголовку — по одной линии с его текстом */
+.toolbar > .page-title, .toolbar > .page-note { align-self: baseline; }
+.page-note { margin-left: 6px; }
 .section-title {
   font-size: 18px;
   font-weight: 700;

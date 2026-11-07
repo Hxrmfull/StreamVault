@@ -55,7 +55,7 @@ export function renderLibrary(main) {
   const remembered = sessionStorage.getItem("library-kind");
   view.kind = LIBRARY_KINDS.some(([kind]) => kind === remembered) ? remembered : "all";
   view.items = null;
-  view.summary = h("span", { class: "muted" });
+  view.summary = h("span", { class: "muted page-note" });
   view.tabs = h("div", { class: "tabs" });
   for (const [kind, label] of LIBRARY_KINDS) {
     const tab = h("button", { type: "button", text: t(label) });
