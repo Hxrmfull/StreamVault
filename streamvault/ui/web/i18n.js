@@ -310,8 +310,6 @@
     "Уже последняя версия": "Already the latest version",
     "Не обновился: {error}": "Not updated: {error}",
     "Обновление отменено": "Update cancelled",
-    "Не скачивается? Сайты меняются, и yt-dlp перестаёт их понимать, пока его не обновят.":
-      "Downloads failing? Sites change, and yt-dlp stops understanding them until it is updated.",
     "обновлённая": "updated",
     "встроенная": "built-in",
     "установленная через pip": "installed with pip",
@@ -538,6 +536,16 @@
     "Канал в избранном — он в панели слева": "The channel is in favorites — it is in the left panel",
     "Канал убран из избранного": "Removed from favorites",
     "Идёт запись": "Recording now",
+    "Обновить {name} {version}":
+      "Update {name} {version}",
+    "Обновления: {names}":
+      "Updates: {names}",
+    "Обновления компонентов":
+      "Component updates",
+    "Вышел yt-dlp {version}. Сайты меняются, и без свежего yt-dlp записи и клипы перестают скачиваться.":
+      "yt-dlp {version} is out. Sites change, and without a fresh yt-dlp videos and clips stop downloading.",
+    "Вышел TwitchDownloader {version}: им делаются HTML и видео чата.":
+      "TwitchDownloader {version} is out: it makes the chat HTML and video.",
     "повтор в {time}: {error}": "retry at {time}: {error}",
     "Начало эфира склеено с записью: {name}": "Stream beginning joined to the recording: {name}",
     "Начало эфира не склеено с записью: {reason}": "Stream beginning not joined to the recording: {reason}",
@@ -609,7 +617,10 @@
     "Готово · чат: {count}": "Done · chat: {count}",
     "Готово · частей: {count}": "Done · pieces: {count}",
     "Идёт запись": "Recording now",
-    "записано {time}": "recorded {time}",
+    "записано": "recorded",
+    "размер": "size",
+    "скорость": "speed",
+    "сообщений чата": "chat messages",
     "Идёт запись — подробности в «Загрузках»": "Recording — details are in Downloads",
     "начало эфира не скачать: {reason}": "cannot download the stream beginning: {reason}",
     "деление на части": "splitting into pieces",

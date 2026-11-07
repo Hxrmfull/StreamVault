@@ -229,6 +229,20 @@ class YtdlpUpdater(Installer):
     def _work_dir(self):
         return self._locator.own_dir
 
+    def newer_version(self):
+        """
+        Есть ли yt-dlp новее того, что запускает программа: версия или None.
+        Только спрашивает GitHub — ничего не скачивает.
+        """
+        if self.busy():
+            return None
+        version = str(self._get_json(self._urls["latest"]).get("tag_name", ""))
+        current = self._locator.status()["version"]
+        if version_key(version) is None or (version_key(current) is not None
+                                            and version_key(version) <= version_key(current)):
+            return None
+        return version
+
     def _plan(self):
         problems = []
         github = pypi = None

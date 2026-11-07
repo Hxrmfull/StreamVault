@@ -187,6 +187,11 @@ STRINGS = {
         'Twitch token: unreadable answer, retrying in {delay} s',
     'конвертирую в {format}: {name}': 'converting to {format}: {name}',
     'готово: {name}': 'done: {name}',
+    'запись эфира на площадке ещё не дошла до начала записи ({have} из {need})':
+        "the platform's recording of the stream has not reached the recording start yet ({have} of {need})",
+    'запись эфира на площадке ещё догоняет эфир': "the platform's recording is still catching up with the stream",
+    '{name}: новую версию не узнать — {error}': '{name}: cannot find out the new version — {error}',
+    'доступна новая версия {name}: {version}': 'a new version of {name} is available: {version}',
     'начало записи осталось со своим временем: {error}': 'the recording beginning kept its own timestamps: {error}',
     'запись эфира доступна только подписчикам канала': "the stream's recording is for channel subscribers only",
     'запись эфира доступна только спонсорам канала': "the stream's recording is for channel members only",

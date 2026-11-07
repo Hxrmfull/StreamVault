@@ -5,6 +5,31 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- **New versions of yt-dlp and TwitchDownloader are found by themselves** —
+  at startup and every 12 hours, like updates of the program. A button at
+  the top ("Update yt-dlp …") opens the update. The "Not downloading?"
+  banner in Downloads is gone.
+
+### Changed
+
+- **The "Recording now" row** has no moving bar any more (it looked like
+  waiting): "REC" with a blinking dot on the frame and figures that grow —
+  recorded, size, speed, chat messages.
+
+### Fixed
+
+- **The stream beginning ended before the recording started**, so there was
+  nothing to join on: Twitch publishes the recording of a live stream with
+  a delay, and the beginning was taken too early. Now the program waits
+  until the platform's recording reaches the start of the recording.
+- **Joining a Twitch recording made of MP4 pieces inside .ts** lost its end
+  (12 minutes out of 45) and the join was discarded. Such a recording is
+  now repacked into MP4 first; the joined file is MP4.
+
 ## 0.7.0 — 2026-11-07
 
 ### Added

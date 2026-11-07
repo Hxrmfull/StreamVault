@@ -39,7 +39,7 @@ PART00 = " - part00"
 # Склейка пишется сюда и лишь потом заменяет запись.
 JOINING = ".joining"
 # Её файлы, оставшиеся от прерванной склейки: «….joining.ts» и «….joining.ts.head.ts».
-LEFTOVER = re.compile(r"\.joining\.(ts|mp4|mkv|m4a)(\.head\.(ts|mp4|mkv|m4a))?$", re.IGNORECASE)
+LEFTOVER = re.compile(r"\.joining(\.tail)?\.(ts|mp4|mkv|m4a)(\.head\.(ts|mp4|mkv|m4a))?$", re.IGNORECASE)
 SCAN_INTERVAL = 60          # как часто искать готовые пары, секунды
 # Стык ищется в последних SEARCH_BEFORE секундах начала перед тем местом, где
 # по оценке начинается запись (начало скачано на OVERLAP секунд дальше).
@@ -208,6 +208,33 @@ def join_command(ffmpeg, listing, output, maps=("0:v:0?", "0:a:0?"), timescale=N
         if timescale:
             command += ["-video_track_timescale", str(timescale)]
     return command + ["-f", container, output]
+
+
+def mp4_inside_ts(ffmpeg, path):
+    """
+    Запись .ts, в которой на деле куски mp4: Twitch бывает отдаёт эфир так,
+    и streamlink пишет их как есть. ffmpeg читает такой файл как mp4, время
+    в нём — от начала трансляции, а склейка в .ts теряла конец записи.
+    """
+    if not path.lower().endswith(".ts"):
+        return False
+    result = subprocess.run([ffmpeg, "-hide_banner", "-nostdin", "-i", path], capture_output=True, timeout=120,
+                            creationflags=util.subprocess_flags())
+    return bool(re.search(r"^Input #0, mov,", result.stderr.decode("utf-8", "replace"), re.MULTILINE))
+
+
+def as_mp4(ffmpeg, path, target):
+    """
+    Запись — в обычный mp4 без перекодирования, со временем от нуля. Битый
+    последний кадр (запись оборвали) не мешает: ошибки не роняют перепаковку.
+    """
+    try:
+        _run([ffmpeg, "-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-err_detect", "ignore_err",
+              "-i", path, "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-movflags", "+faststart",
+              "-f", "mp4", target])
+    except BaseException:
+        util.remove_quietly(target)
+        raise
 
 
 def video_timescale(ffmpeg, path):
@@ -532,12 +559,15 @@ class Joiner(threading.Thread):
     def join(self, head, main):
         """Склеивает пару; True — склеено, False — части остались как есть."""
         from ..editing import probe
+        from ..library import probe_duration
         ffmpeg = self._ffmpeg()
         name = os.path.basename(main)
         if not ffmpeg:
             return False
         head_length, head_size = probe(ffmpeg, head)
         main_length, main_size = probe(ffmpeg, main)
+        # у кусков mp4 внутри .ts заголовок считает время от начала трансляции: длина — настоящая
+        main_length = probe_duration(ffmpeg, main) or main_length
         if not head_length or not main_length:
             return self._refuse(head, main, tr("не прочитать длительность"), kept=False)
         # запись сконвертирована в «только звук»: у начала берётся только звук
@@ -555,14 +585,26 @@ class Joiner(threading.Thread):
             return self._refuse(head, main, tr("кодеки разные ({head} и {main})",
                                                head=", ".join(sorted(head_codecs.values())) or "?",
                                                main=", ".join(sorted(main_codecs.values())) or "?"))
-        needed = os.path.getsize(head) + os.path.getsize(main)
+        fmp4 = mp4_inside_ts(ffmpeg, main)
+        # такую запись склейка ещё и перепаковывает: место — на неё тоже
+        needed = os.path.getsize(head) + os.path.getsize(main) * (2 if fmp4 else 1)
         if shutil.disk_usage(os.path.dirname(main)).free < needed * 1.1:
             return self._refuse(head, main, tr("мало места на диске"), kept=False)
-        seam = find_sound_seam if sound_only else find_seam
-        cut = seam(ffmpeg, head, main, max(0.0, head_length - OVERLAP))
-        if cut is None:
-            return self._refuse(head, main, tr("стык не найден"))
         stem, extension = os.path.splitext(main)
+        tail, target = main, main
+        if fmp4:
+            # куски mp4 внутри .ts: склеивается с ней же, перепакованной в mp4, и итог — .mp4
+            tail, target, extension = stem + JOINING + ".tail.mp4", stem + ".mp4", ".mp4"
+            try:
+                as_mp4(ffmpeg, main, tail)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                return self._refuse(head, main, str(error), kept=False, error=True)
+            main_length = probe(ffmpeg, tail)[0] or main_length
+        seam = find_sound_seam if sound_only else find_seam
+        cut = seam(ffmpeg, head, tail, max(0.0, head_length - OVERLAP))
+        if cut is None:
+            util.remove_quietly(tail if tail != main else "")
+            return self._refuse(head, main, tr("стык не найден"))
         output = stem + JOINING + extension
         logging.info(tr("склеиваю начало эфира с записью: {name}", name=name))
         self._report(head, main, "joining", percent=0)
@@ -575,10 +617,13 @@ class Joiner(threading.Thread):
                 self._report(head, main, "joining", percent=percent)
 
         try:
-            join_video(ffmpeg, head, cut, main, output, progress, main_length)
+            join_video(ffmpeg, head, cut, tail, output, progress, main_length)
         except (OSError, subprocess.TimeoutExpired) as error:
             util.remove_quietly(output)
             return self._refuse(head, main, str(error), kept=False, error=True)
+        finally:
+            if tail != main:
+                util.remove_quietly(tail)
         joined_length = probe(ffmpeg, output)[0]
         if not joined_length or abs(joined_length - (cut + main_length)) > 3:
             util.remove_quietly(output)
@@ -591,10 +636,12 @@ class Joiner(threading.Thread):
             util.remove_quietly(output)
             return self._refuse(head, main, tr("чат не склеился: {error}", error=error), kept=False, error=True)
         # запись смотрят — склейка ждёт, пока её закроют, а не начинается заново через минуту
-        if not self._when_free(lambda: os.replace(output, main), main):
+        if not self._when_free(lambda: os.replace(output, target), main):
             util.remove_quietly(output)
             util.remove_quietly(main_chat["json"] + ".joined")
             return self._refuse(head, main, tr("запись открыта в другой программе"))
+        if target != main and os.path.exists(main) and not self._when_free(lambda: _remove_existing(main), main):
+            logging.warning(tr("не удалить {name}: файл открыт в другой программе", name=os.path.basename(main)))
         if count is not None:
             os.replace(main_chat["json"] + ".joined", main_chat["json"])
             # HTML и видео чата — заново, по склеенному чату
@@ -608,7 +655,8 @@ class Joiner(threading.Thread):
                 self._failed.add((head, main))
         logging.info(tr("начало эфира склеено с записью: {name} — стык на {at}, вышло {length}",
                         name=name, at=clock(cut), length=clock(joined_length)))
-        self._report(head, main, "done", seam=cut, length=joined_length)
+        # итог мог стать .mp4 (куски mp4 внутри .ts): загрузки и окно смотрят на него
+        self._report(head, target, "done", seam=cut, length=joined_length)
         if count is not None and self._chat is not None:
-            self._chat.enqueue(main)
+            self._chat.enqueue(target)
         return True

@@ -155,6 +155,19 @@ class TwitchDownloaderInstaller(Installer):
     def _work_dir(self):
         return self._locator.own_dir
 
+    def newer_version(self):
+        """
+        Есть ли TwitchDownloader новее своей копии: версия или None. Не
+        установлен или стоит свой у человека — обновлять нечего: None.
+        """
+        current = self._locator.status()
+        if self.busy() or not current["path"] or not current["own"]:
+            return None
+        version = str(self._get_json(self._urls["latest"]).get("tag_name", ""))
+        if _version_key(version) is None or _version_key(version) <= _version_key(current["version"]):
+            return None
+        return version
+
     def _plan(self):
         problems = []
         latest = None

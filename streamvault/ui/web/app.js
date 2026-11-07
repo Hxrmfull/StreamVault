@@ -15,7 +15,7 @@ import { START_WAIT, bridge, button, ensureProfiles, failed, fmt, h, icon, openM
 import { refreshSidebar, renderChannel, renderLink, renderLive } from "./channels.js";
 import { refreshDownloadsCount, renderDownloads } from "./downloads.js";
 import { renderLibrary, scheduleLibraryReload } from "./library.js";
-import { ffmpegBlock, openAppUpdate, openSettings, refreshAppUpdate, refreshFfmpegBlocks, refreshTwitchdownloaderBlocks, refreshYtdlpBlocks, setAppUpdate } from "./settings.js";
+import { ffmpegBlock, openAppUpdate, openComponentUpdates, openSettings, refreshAppUpdate, refreshComponentBadge, refreshFfmpegBlocks, refreshTwitchdownloaderBlocks, refreshYtdlpBlocks, setAppUpdate } from "./settings.js";
 import { attachChannelSearch, openAddChannel } from "./search.js";
 import { enhanceSelects } from "./dropdown.js";
 
@@ -79,6 +79,10 @@ export function receive(batch) {
         break;
       case "app_update":
         setAppUpdate(event.install);
+        break;
+      case "component_updates":
+        state.componentUpdates = event.updates || {};
+        refreshComponentBadge();
         break;
       case "disk":
         state.disk = event;
@@ -372,6 +376,7 @@ export function setupChrome() {
   quit.addEventListener("click", () => askQuit(true));
   document.getElementById("settings-button").addEventListener("click", openSettings);
   document.getElementById("update-badge").addEventListener("click", openAppUpdate);
+  document.getElementById("components-badge").addEventListener("click", openComponentUpdates);
   document.getElementById("add-channel-button").addEventListener("click", openAddChannel);
   document.getElementById("sidebar-add").addEventListener("click", openAddChannel);
 
@@ -419,6 +424,8 @@ export async function start() {
   state.twitchdownloader = data.twitchdownloader || {};
   state.appUpdate = data.app_update || {};
   refreshAppUpdate();
+  state.componentUpdates = data.component_updates || {};
+  refreshComponentBadge();
   if (data.last_update) {
     // чем кончилось обновление перед этим запуском
     if (data.last_update.ok) toast(t("StreamVault обновлён до {version}", { version: data.last_update.version }), "ok");

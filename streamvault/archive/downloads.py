@@ -152,6 +152,7 @@ def beginning_reason(error):
         (("timed out", "timeout", "connection", "wsae", "reset", "4294957242", "http error 5", "temporarily"),
          tr("площадка не ответила или оборвалась связь")),
         (("404", "not found", "does not exist", "unavailable"), tr("записи эфира на площадке пока нет")),
+        (("ещё не дошла",), tr("запись эфира на площадке ещё догоняет эфир")),
     )
     for words, reason in passing:
         if any(word in text for word in words):

@@ -111,7 +111,7 @@ class Api:
     def __init__(self, settings, live, downloads, logs=None, problems=(), library=None,
                  autostart=None, tray=False, ffmpeg=None, installer=None, ytdlp_copy=None,
                  ytdlp_updater=None, twitchdownloader=None, twitchdownloader_installer=None,
-                 app_updater=None, last_update=None, positions=None, editor=None,
+                 app_updater=None, last_update=None, positions=None, editor=None, components=None,
                  integrity=None, checker=None, storyboards=None, chat_index=None):
         """
         library — Library; autostart — модуль запуска вместе с Windows (или
@@ -143,6 +143,7 @@ class Api:
         self._twitchdownloader = twitchdownloader
         self._twitchdownloader_installer = twitchdownloader_installer
         self._app_updater = app_updater
+        self._components = components
         self._last_update = last_update
         self._positions = positions or Positions()
         self._editor = editor
@@ -220,6 +221,8 @@ class Api:
             "ytdlp": self.ytdlp_status(),
             "twitchdownloader": self.twitchdownloader_status(),
             "app_update": self.app_update_status(),
+            # новые версии yt-dlp и TwitchDownloader: {название: версия}
+            "component_updates": self._components.snapshot() if self._components else {},
             "last_update": self._last_update,
             "can_choose_folder": self._window is not None,
             "window": self._window is not None,
@@ -894,6 +897,8 @@ class Api:
         if self._app_updater is None:
             raise ValueError(tr("обновление программы здесь недоступно"))
         self._app_updater.check_in_background()
+        if self._components is not None:
+            self._components.check_in_background()
         return self._app_updater.snapshot()
 
     def install_app_update(self):

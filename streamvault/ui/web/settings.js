@@ -209,20 +209,17 @@ export function ytdlpUpdateText(install) {
 }
 
 /*
- * Версия yt-dlp и кнопка обновления. compact — подсказка на странице
- * загрузок, когда что-то не скачалось; иначе — блок в настройках.
+ * Версия yt-dlp и кнопка обновления: в настройках и в окне обновлений
+ * компонентов (кнопка сверху, когда вышла новая версия).
  */
-export function ytdlpBlock(compact) {
-  const box = h("div", { class: compact ? "banner ffmpeg-banner" : "ffmpeg-box" });
+export function ytdlpBlock() {
+  const compact = false;
+  const box = h("div", { class: "ffmpeg-box" });
   box._fill = () => {
     const status = state.ytdlp || {};
     const install = status.install || {};
     const busy = INSTALLING.includes(install.state);
     const body = h("div", { class: "ffmpeg-body" });
-    if (compact) {
-      body.append(h("div", { text: t("Не скачивается? Сайты меняются, и yt-dlp перестаёт их понимать, " +
-                                     "пока его не обновят.") }));
-    }
     const kind = status.own ? t("обновлённая") : status.frozen ? t("встроенная") : t("установленная через pip");
     body.append(h("div", { class: compact ? "faint" : "" },
       status.version ? t("yt-dlp {version}", { version: status.version }) : t("yt-dlp не найден"),
@@ -460,6 +457,30 @@ export function refreshAppUpdate() {
   badge.hidden = !UPDATE_BADGE_STATES.includes(update.state);
   setText(badge, update.state === "done" ? t("Перезапустить и обновить")
                                          : t("Обновление {version}", { version: update.version || "" }));
+}
+
+// новые версии компонентов: кнопка сверху, как у обновления программы
+export function refreshComponentBadge() {
+  const found = Object.entries(state.componentUpdates || {});
+  const badge = document.getElementById("components-badge");
+  badge.hidden = found.length === 0;
+  setText(badge, found.length === 1
+    ? t("Обновить {name} {version}", { name: found[0][0], version: found[0][1] })
+    : t("Обновления: {names}", { names: found.map(([name]) => name).join(", ") }));
+}
+
+export function openComponentUpdates() {
+  const found = state.componentUpdates || {};
+  const modal = openModal();
+  const blocks = [];
+  if (found["yt-dlp"]) {
+    blocks.push(h("div", { class: "muted field-gap", text: t("Вышел yt-dlp {version}. Сайты меняются, и без свежего yt-dlp записи и клипы перестают скачиваться.", { version: found["yt-dlp"] }) }), ytdlpBlock());
+  }
+  if (found.TwitchDownloader) {
+    blocks.push(h("div", { class: "muted field-gap", text: t("Вышел TwitchDownloader {version}: им делаются HTML и видео чата.", { version: found.TwitchDownloader }) }), twitchdownloaderBlock(false));
+  }
+  modal.body.append(h("h2", { text: t("Обновления компонентов") }), ...blocks,
+    h("div", { class: "actions" }, button(t("Закрыть"), { onclick: () => modal.close() })));
 }
 
 export function openAppUpdate() {
@@ -711,7 +732,7 @@ export function openSettings() {
       subhead("TwitchDownloader"),
       twitchdownloaderBlock(false),
       subhead("yt-dlp"),
-      ytdlpBlock(false),
+      ytdlpBlock(),
       h("div", { class: "hint", text: t("Сайты меняются, и старый yt-dlp перестаёт их понимать. " +
         "Обновление проверяется подписью разработчиков yt-dlp.") })]],
     [t("Программа"), [

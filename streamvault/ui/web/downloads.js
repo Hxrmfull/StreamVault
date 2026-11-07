@@ -3,7 +3,6 @@
  */
 
 import { CHAT_STAGES, DOWNLOAD_QUALITIES, bridge, button, channelName, chatSupported, failed, fmt, h, icon, iconButton, liveThumb, platformName, setSrc, setText, state, syncList, t } from "./common.js";
-import { INSTALLING, ytdlpBlock } from "./settings.js";
 import { view } from "./app.js";
 import { requestPreview } from "./library.js";
 import { openLive } from "./player.js";
@@ -27,7 +26,7 @@ export function renderDownloads(main) {
       view.clearFinished = button(t("Очистить список"), {
         icon: "close", title: t("Убрать завершённые загрузки из списка; файлы останутся на диске"),
         onclick: () => bridge.call("clear_finished").catch(failed) })),
-    view.ytdlpHint = ytdlpBlock(true), view.recordsBox, view.editsBox, view.empty, view.jobs);
+    view.recordsBox, view.editsBox, view.empty, view.jobs);
   view.refresh = refreshDownloads;
   refreshDownloads();
 }
@@ -43,10 +42,6 @@ export function refreshDownloads() {
   syncList(view.records, records, (channel) => channel.id, createJobRow, updateRecordRow);
   view.empty.hidden = jobs.length > 0 || edits.length > 0 || records.length > 0;
   view.clearFinished.hidden = !jobs.some((job) => ["done", "cancelled", "failed"].includes(job.state));
-  // что-то не скачалось — часто помогает свежий yt-dlp; во время обновления подсказка не прячется
-  const install = (state.ytdlp && state.ytdlp.install) || {};
-  view.ytdlpHint.hidden = !jobs.some((job) => job.state === "failed")
-    && !INSTALLING.includes(install.state);
   syncList(view.jobs, jobs, (job) => job.id, createJobRow, updateJobRow);
 }
 
@@ -89,16 +84,28 @@ export function updateRecordRow(row, channel) {
     row._img.dataset.src = thumb;
     setSrc(row._img, thumb);
   }
-  // сколько всего будет — неизвестно: полоса просто идёт
-  row._progress.className = "progress indeterminate rec";
-  const speed = (state.recordSpeeds.get(channel.id) || {}).speed;
-  const parts = [t("записано {time}", { time: fmt.duration(Date.now() / 1000 - recording.started) }),
-                 fmt.size(recording.bytes || 0)];
-  if (speed) parts.push(t("{speed}/с", { speed: fmt.size(speed) }));
-  if (recording.chat_messages !== null && recording.chat_messages !== undefined) {
-    parts.push(t("чат {count}", { count: recording.chat_messages }));
+  // сколько всего будет — неизвестно, поэтому не полоса (она выглядела как ожидание), а
+  // «REC» с мигающей точкой на кадре и показатели, которые растут на глазах
+  if (!row._rec) {
+    row._rec = h("span", { class: "badge rec rec-corner", text: "REC" });
+    row._img.parentNode.append(row._rec);
+    row._stats = {};
+    const cell = (key, label) => {
+      row._stats[key] = h("strong");
+      return h("div", { class: "rec-stat" }, row._stats[key], h("span", { text: label }));
+    };
+    row._status.replaceWith(h("div", { class: "rec-stats" }, cell("time", t("записано")), cell("size", t("размер")),
+                                     cell("speed", t("скорость")), cell("chat", t("сообщений чата"))));
   }
-  setText(row._status, parts.join(" · "));
+  row._progress.hidden = true;
+  const speed = (state.recordSpeeds.get(channel.id) || {}).speed;
+  setText(row._stats.time, fmt.duration(Date.now() / 1000 - recording.started));
+  setText(row._stats.size, fmt.size(recording.bytes || 0));
+  setText(row._stats.speed, speed ? t("{speed}/с", { speed: fmt.size(speed) }) : "…");
+  const messages = recording.chat_messages;
+  row._stats.chat.parentNode.hidden = messages === null || messages === undefined;
+  // точное число, а не «1,5 тыс.»: счётчик растёт на глазах
+  setText(row._stats.chat, Number(messages || 0).toLocaleString());
   if (row._actions.dataset.key === channel.id) return;
   row._actions.dataset.key = channel.id;
   row._actions.replaceChildren(

@@ -27,7 +27,7 @@ MEDIA_EXTENSIONS = (".mp4", ".ts", ".m4a", ".mkv", ".webm", ".mp3")
 
 # Промежуточные файлы ffmpeg и yt-dlp: пока они есть, видео не готово.
 # .joining — склейка начала эфира с записью (live/joining.py)
-_UNFINISHED = re.compile(r"\.part\b|\.ytdl$|\.temp\.|\.f\d+\.\w+$|\.joining\.(ts|mp4|mkv|m4a)\b", re.IGNORECASE)
+_UNFINISHED = re.compile(r"\.part\b|\.ytdl$|\.temp\.|\.f\d+\.\w+$|\.joining\.(tail\.)?(ts|mp4|mkv|m4a)\b", re.IGNORECASE)
 
 _RECORDING_NAME = re.compile(
     r"^(?P<label>.+?) - (?P<date>\d{4}-\d{2}-\d{2}) (?P<h>\d{2})h(?P<m>\d{2})m(?P<s>\d{2})s"

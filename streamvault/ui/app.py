@@ -24,7 +24,7 @@ from ..events import EventBus
 from ..ffmpeg import FFmpegInstaller, FFmpegLocator, own_dir_for
 from ..twitchdownloader import TwitchDownloaderInstaller, TwitchDownloaderLocator
 from ..twitchdownloader import own_dir_for as twitchdownloader_dir
-from ..update import AppUpdater, finish_previous, program_dir
+from ..update import AppUpdater, finish_previous, program_dir, ComponentUpdates
 from ..i18n import tr
 from ..chatindex import ChatIndex
 from ..integrity import IntegrityChecker, IntegrityStore, integrity_path
@@ -119,6 +119,16 @@ def run(settings_path=DEFAULT_SETTINGS_PATH, browser=False, port=0, open_browser
 
     twitchdownloader_installer = TwitchDownloaderInstaller(
         twitchdownloader, on_change=twitchdownloader_changed)
+    # новые версии yt-dlp и TwitchDownloader — как у программы: при запуске и раз в 12 часов
+    components = ComponentUpdates({"yt-dlp": ytdlp_updater.newer_version,
+                                   "TwitchDownloader": twitchdownloader_installer.newer_version},
+                                  on_change=lambda found: bus.emit("component_updates", updates=found))
+    component_checks = components.check_periodically(lambda: settings["check_updates"])
+    # обновили кнопкой — кнопка сверху больше не нужна
+    bus.subscribe(lambda event: components.forget(
+        {"ytdlp": "yt-dlp", "twitchdownloader": "TwitchDownloader"}[event["type"]])
+        if event["type"] in ("ytdlp", "twitchdownloader") and (event.get("install") or {}).get("state") == "done"
+        else None)
     live = LiveService(settings, bus=bus, ffmpeg=ffmpeg, twitchdownloader=twitchdownloader,
                        ytdlp_copy=ytdlp_copy)
     downloads = DownloadManager(settings, bus=bus, ffmpeg=ffmpeg, ytdlp_copy=ytdlp_copy,
@@ -161,7 +171,7 @@ def run(settings_path=DEFAULT_SETTINGS_PATH, browser=False, port=0, open_browser
               ffmpeg=ffmpeg, installer=installer, ytdlp_copy=ytdlp_copy,
               ytdlp_updater=ytdlp_updater, twitchdownloader=twitchdownloader,
               twitchdownloader_installer=twitchdownloader_installer,
-              app_updater=app_updater, last_update=last_update,
+              app_updater=app_updater, last_update=last_update, components=components,
               positions=Positions(os.path.join(app_dir, "cache", "positions.json")),
               editor=editor, integrity=integrity, checker=checker,
               storyboards=Storyboards(os.path.join(app_dir, "cache"), ffmpeg.path), chat_index=chat_index)
@@ -186,6 +196,7 @@ def run(settings_path=DEFAULT_SETTINGS_PATH, browser=False, port=0, open_browser
         twitchdownloader_installer.cancel()
         app_updater.cancel()
         update_checks.set()
+        component_checks.set()
         editor.stop()
         checker.stop()
         beginning.stop()

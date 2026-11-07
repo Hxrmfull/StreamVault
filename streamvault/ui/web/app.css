@@ -814,6 +814,13 @@ select { padding-right: 6px; }
 .job .job-title { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .job .job-sub { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .job .job-status { font-size: 12px; color: var(--muted); }
+/* идущая запись: показатели вместо полосы, «REC» на кадре */
+.job .thumb { position: relative; }
+.rec-corner { position: absolute; left: 6px; bottom: 6px; }
+.rec-stats { display: flex; gap: 24px; margin-top: 4px; }
+.rec-stat { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.rec-stat strong { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rec-stat span { font-size: 11px; color: var(--muted); }
 .job .job-status.error { color: var(--error); white-space: normal; }
 .job .job-actions { display: flex; gap: 4px; flex: none; }
 

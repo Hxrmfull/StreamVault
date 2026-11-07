@@ -495,3 +495,65 @@ def finish_previous(folder):
                          daemon=True).start()
     return result
 
+
+class ComponentUpdates:
+    """
+    Новые версии компонентов (yt-dlp, TwitchDownloader) — ищутся так же, как
+    обновление программы: при запуске и раз в 12 часов. Нашлось — окно
+    показывает кнопку сверху, как у новой версии программы. components —
+    {название: функция, возвращающая новую версию или None}. on_change(найденное).
+    """
+
+    def __init__(self, components, on_change=None):
+        self._components = dict(components)
+        self._on_change = on_change
+        self._found = {}
+        self._lock = threading.Lock()
+
+    def snapshot(self):
+        with self._lock:
+            return dict(self._found)
+
+    def check(self):
+        for name, newer in self._components.items():
+            try:
+                version = newer()
+            except Exception as error:
+                # нет сети или GitHub недоступен — проверим в другой раз
+                logging.info(tr("{name}: новую версию не узнать — {error}", name=name, error=error))
+                continue
+            with self._lock:
+                if version:
+                    if self._found.get(name) != version:
+                        logging.info(tr("доступна новая версия {name}: {version}", name=name, version=version))
+                    self._found[name] = version
+                else:
+                    self._found.pop(name, None)
+        self._changed()
+
+    def forget(self, name):
+        """Компонент обновили — кнопка больше не нужна."""
+        with self._lock:
+            known = self._found.pop(name, None)
+        if known is not None:
+            self._changed()
+
+    def _changed(self):
+        if self._on_change is not None:
+            self._on_change(self.snapshot())
+
+    def check_in_background(self):
+        threading.Thread(target=self.check, name="component-check", daemon=True).start()
+
+    def check_periodically(self, enabled, delay=20, every=CHECK_EVERY, stop=None):
+        """Через delay секунд после запуска и раз в every, пока включена проверка обновлений."""
+        stop = stop or threading.Event()
+
+        def run():
+            wait = delay
+            while not stop.wait(wait):
+                wait = every
+                if enabled():
+                    self.check()
+        threading.Thread(target=run, name="component-checks", daemon=True).start()
+        return stop

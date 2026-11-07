@@ -315,6 +315,8 @@ export function failed(error) {
 export const state = {
   info: null,
   channels: new Map(),
+  // новые версии компонентов: {"yt-dlp": "2026.11.05"} (update.ComponentUpdates)
+  componentUpdates: {},
   // скорость идущих записей: id канала -> {bytes, time, speed} по событиям «recording»
   recordSpeeds: new Map(),
   processing: { pending: 0, current: null },

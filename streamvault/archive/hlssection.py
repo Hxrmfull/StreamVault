@@ -41,6 +41,14 @@ class HlsSectionError(Exception):
     """Отрезок так не скачать — текст для человека."""
 
 
+class NotYet(HlsSectionError):
+    """
+    Запись идущего эфира на площадке ещё не дошла до нужного места: Twitch
+    выкладывает её с отставанием. Скачанное оказалось бы короче — без
+    нахлёста с записью, и склейка не нашла бы стык. Через минуту — снова.
+    """
+
+
 class PlaylistError(HlsSectionError):
     """Плейлист не взять — до кусков дело не дошло: можно качать по-старому, через ffmpeg."""
 
@@ -73,6 +81,11 @@ def playlist_segments(text, base_url):
     return init, segments
 
 
+def _clock(seconds):
+    seconds = int(seconds)
+    return "%d:%02d:%02d" % (seconds // 3600, seconds // 60 % 60, seconds % 60)
+
+
 def first_segments(segments, length):
     """Куски с начала, покрывающие первые length секунд."""
     chosen, covered = [], 0.0
@@ -101,6 +114,10 @@ def download(playlist_url, headers, length, target, progress=None, stopped=None,
         init, segments = playlist_segments(answer.text, answer.url)
     except HlsSectionError as error:
         raise PlaylistError(str(error))
+    available = sum(duration for duration, _ in segments)
+    if available < length and "#EXT-X-ENDLIST" not in answer.text:
+        raise NotYet(tr("запись эфира на площадке ещё не дошла до начала записи ({have} из {need})",
+                        have=_clock(available), need=_clock(length)))
     urls = ([init] if init else []) + first_segments(segments, length)
     path = target + (".mp4" if init else ".ts")
     partial = path + ".part"
