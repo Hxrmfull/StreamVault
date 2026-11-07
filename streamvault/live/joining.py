@@ -394,11 +394,14 @@ def _merge_embedded(first, second):
     return merged
 
 
-def join_chat(head_json, tail_json, cut, length, target):
+def join_chat(head_json, tail_json, cut, length, target, shift=None):
     """
     Чат склейки: сообщения начала до стыка и сообщения записи со сдвигом
     на длину начала. Чата нет ни у одной части — None. Возвращает число сообщений.
+    shift — насколько сдвинуть сообщения tail; по умолчанию на стык. 0 — tail
+    уже склеенная запись: чат начала докачали после склейки, и он встаёт перед ним.
     """
+    shift = cut if shift is None else shift
     parts = []
     for path in (head_json, tail_json):
         try:
@@ -416,9 +419,10 @@ def join_chat(head_json, tail_json, cut, length, target):
     if tail is not None:
         for comment in tail.get("comments") or ():
             comment = dict(comment)
-            comment["content_offset_seconds"] = round(float(comment.get("content_offset_seconds", 0)) + cut, 3)
+            comment["content_offset_seconds"] = round(float(comment.get("content_offset_seconds", 0)) + shift, 3)
             comments.append(comment)
     result = dict(head or tail)
+    comments.sort(key=lambda comment: float(comment.get("content_offset_seconds", 0)))
     result["comments"] = comments
     result["video"] = dict((head or tail).get("video") or {}, start=0, end=round(length), length=round(length))
     result["embeddedData"] = _merge_embedded((head or {}).get("embeddedData"), (tail or {}).get("embeddedData"))
@@ -633,6 +637,7 @@ class Joiner(threading.Thread):
             return self._refuse(head, main, tr("длина вышла {got} вместо {want}", got=joined_length,
                                                want=round(cut + main_length)), kept=False, error=True)
         head_chat, main_chat = archive_chat.chat_paths(head), archive_chat.chat_paths(main)
+        head_had_chat = os.path.isfile(head_chat["json"])
         try:
             count = join_chat(head_chat["json"], main_chat["json"], cut, joined_length, main_chat["json"] + ".joined")
         except (OSError, ValueError) as error:
@@ -660,7 +665,8 @@ class Joiner(threading.Thread):
         logging.info(tr("начало эфира склеено с записью: {name} — стык на {at}, вышло {length}",
                         name=name, at=clock(cut), length=clock(joined_length)))
         # итог мог стать .mp4 (куски mp4 внутри .ts): загрузки и окно смотрят на него
-        self._report(head, target, "done", seam=cut, length=joined_length)
+        # chat — был ли у начала свой чат: нет — его можно докачать потом (загрузки)
+        self._report(head, target, "done", seam=cut, length=joined_length, chat=head_had_chat)
         if count is not None and self._chat is not None:
             self._chat.enqueue(target)
         return True

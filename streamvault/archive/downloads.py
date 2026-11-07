@@ -62,6 +62,9 @@ def _file_size(path):
 
 # Начало эфира кладётся рядом с записью под этим хвостом (live/joining.py).
 PART00 = " - part00"
+# Отрезок начала эфира длиннее стыка на столько (live/beginning.py: OVERLAP): по нему
+# — стык у склеенных до того, как он стал запоминаться
+BEGINNING_OVERLAP = 15
 # Начало эфира не скачалось — через сколько секунд пробовать снова: сбои там
 # обычно временные (YouTube оборвал соединение, площадка ответила 5xx)
 BEGINNING_RETRIES = (60, 180, 300)
@@ -557,6 +560,9 @@ class DownloadManager:
                     pass
             if size:
                 job["progress"] = dict(progress, downloaded=size)
+        if job.get("joined") and "beginning_chat" not in job:
+            # склеено раньше, чем это запоминалось: чат начала был, если он скачался без ошибки
+            job["beginning_chat"] = job.get("chat", chat.NONE) != chat.NONE and not job.get("chat_error")
         return job
 
     # ------------------------------------------------------------ внутреннее
@@ -581,17 +587,23 @@ class DownloadManager:
                 return
         self._bus.emit("download", job=snapshot)
 
-    def mark_joined(self, head, main):
+    def mark_joined(self, head, main, seam=None, had_chat=None):
         """
         Начало эфира (head) склеено с записью (main) и удалено: загрузка
-        теперь показывает и открывает склеенную запись.
+        теперь показывает и открывает склеенную запись. seam — стык: по нему
+        встанет чат начала, если его докачают потом; had_chat — был ли он.
         """
         key = os.path.normcase(os.path.abspath(head))
         with self._lock:
             found = [job["id"] for job in self._jobs
                      if job.get("file") and os.path.normcase(os.path.abspath(job["file"])) == key]
             for job_id in found:
-                self._job(job_id).update(file=main, joined=True, chat_files=chat.existing(main))
+                job = self._job(job_id)
+                if had_chat is None:
+                    had_chat = bool((job.get("chat_files") or {}).get("json"))
+                job.update(file=main, joined=True, chat_files=chat.existing(main), beginning_chat=bool(had_chat))
+                if seam is not None:
+                    job["joined_seam"] = float(seam)
             if found:
                 self._save()
         for job_id in found:
@@ -888,9 +900,74 @@ class DownloadManager:
         return self._finish(job_id, runtime, DONE, file=files.get("html") or files["json"], chat_files=files,
                             chat_error=result.get("chat_error") or "", chat_progress=None)
 
+    def _beginning_chat_later(self, job_id, runtime, job):
+        """
+        Чат начала эфира, которое уже склеено с записью (file — сама запись):
+        качается отдельно, рядом под именем начала, и встаёт в чат записи до
+        стыка; чат прямого эфира в записи не трогается. Без этого чат начала
+        лёг бы поверх чата записи.
+        """
+        from ..live.joining import join_chat
+        main = job["file"]
+        stem, _ = os.path.splitext(main)
+        named = stem + PART00 + ".mp4"           # начала уже нет — имена файлов чата от него
+        result, interrupted = self._fetch_chat(job_id, runtime, job, named)
+        head_chat, main_chat = chat.chat_paths(named), chat.chat_paths(main)
+        changes = {"file": main, "chat_only": False, "chat_progress": None, "chat_files": chat.existing(main)}
+        try:
+            if interrupted:
+                if runtime["stop"] in ("pause", "shutdown"):
+                    return self._finish(job_id, runtime, None, **dict(changes, chat_only=True))
+                return self._finish(job_id, runtime, DONE, **dict(changes, chat_error=tr("чат отменён")))
+            if not os.path.isfile(head_chat["json"]):
+                return self._finish(job_id, runtime, DONE, **dict(changes, chat_error=result.get("chat_error")
+                                                                  or tr("чат не скачался")))
+            # стык — с склейки; у склеенных раньше его нет: отрезок начала длиннее стыка на запас
+            seam = job.get("joined_seam") or max(0.0, (job["section"] or [0, 0])[1] - BEGINNING_OVERLAP)
+            length = None
+            try:
+                with open(main_chat["json"], encoding="utf-8") as source:
+                    length = (json.load(source).get("video") or {}).get("length")
+            except (OSError, ValueError):
+                pass
+            length = length or (seam + (self._probe_length(main) or 0))
+            joined = main_chat["json"] + ".joined"
+            join_chat(head_chat["json"], main_chat["json"], seam, length, joined, shift=0)
+            os.replace(joined, main_chat["json"])
+            # HTML и видео чата — заново, по общему чату
+            for key in ("html", "video"):
+                util.remove_quietly(main_chat[key])
+            notes = [result.get("chat_error") or ""]
+            cli = self._twitchdownloader.command()
+            if cli:
+                mode = job["chat"] if job["chat"] != chat.NONE else chat.TEXT
+                temp_dir = os.path.join(os.path.dirname(os.path.abspath(self._settings.path)), "cache",
+                                        "twitchdownloader")
+                size = (self._settings["chat_width"], self._settings["chat_height"], self._settings["chat_font_size"])
+                try:
+                    chat.run(chat.finishing(cli, main, mode, self._ffmpeg.path(), size, temp_dir, embedded=False))
+                except (chat.ChatError, chat.ChatStopped) as error:
+                    notes.append(tr("HTML чата не сделан: {error}", error=error))
+            logging.info(tr("чат начала эфира вклеен в чат записи: {name}", name=os.path.basename(main)))
+            return self._finish(job_id, runtime, DONE, **dict(changes, chat_files=chat.existing(main),
+                                                              beginning_chat=True,
+                                                              chat_error="; ".join(filter(None, notes))))
+        finally:
+            for path in head_chat.values():
+                util.remove_quietly(path)
+
+    def _probe_length(self, path):
+        from ..library import probe_duration
+        try:
+            return probe_duration(self._ffmpeg.path(), path)
+        except Exception:
+            return None
+
     def _finish_with_chat(self, job_id, runtime, produced):
         """Видео скачано; если просили — ещё чат. Чат не удался — видео всё равно готово."""
         job = self.job(job_id)
+        if job.get("joined"):
+            return self._beginning_chat_later(job_id, runtime, job)
         changes = {"file": produced, "chat_only": False, "chat_progress": None}
         if job["chat"] != chat.NONE and self._chat_supported(job):
             result, interrupted = self._fetch_chat(job_id, runtime, job, produced)

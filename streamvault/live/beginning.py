@@ -82,9 +82,12 @@ class Beginning:
     def stop(self):
         self._stop.set()
 
-    def joined(self, head, main):
-        """Начало склеено с записью: его загрузка теперь — про склеенную запись."""
-        self._downloads.mark_joined(head, main)
+    def joined(self, head, main, seam=None, chat=None):
+        """
+        Начало склеено с записью: его загрузка теперь — про склеенную запись.
+        seam — стык, chat — был ли у начала чат (нет — его докачают потом).
+        """
+        self._downloads.mark_joined(head, main, seam, chat)
 
     def busy(self, path):
         """Начало эфира path (файл «… - part00») ещё качается — с чатом или без."""

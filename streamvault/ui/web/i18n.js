@@ -515,6 +515,9 @@
     "только звук": "audio only",
     "только чат, без видео": "chat only, no video",
     "только чат": "chat only",
+    "Скачать чат начала": "Get the beginning's chat",
+    "Чат начала эфира встанет в чат записи до стыка; чат прямого эфира останется":
+      "The stream beginning's chat goes into the recording's chat before the seam; the live chat stays",
     "Без чата пропущено: {count} — у этих видео чата не бывает": "Skipped without chat: {count} — these videos have no chat",
     "Всё": "All",
     "Записанные эфиры": "Recorded streams",

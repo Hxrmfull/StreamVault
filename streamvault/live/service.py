@@ -275,7 +275,7 @@ class LiveService:
             self._joins[event["head"]] = dict(event)
             beginning = self._beginning
         if event["state"] == "done" and beginning is not None:
-            beginning.joined(event["head"], event["main"])
+            beginning.joined(event["head"], event["main"], event.get("seam"), event.get("chat"))
         if self._bus is not None:
             self._bus.emit("joining", **event)
 

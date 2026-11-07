@@ -13,8 +13,14 @@ versions follow [Semantic Versioning](https://semver.org/).
   stream recording or a clip (one video or several selected on the channel
   page). Only .chat.json and .chat.html are saved; videos without a chat are
   skipped.
+- **The chat of a stream beginning can be fetched after joining:** "Get the
+  beginning's chat" on its Downloads row. The chat goes into the recording's
+  chat before the seam; the live chat stays.
 
 ### Fixed
+
+- "Get chat" on a stream beginning that was already joined with the recording
+  would have written the beginning's chat over the recording's live chat.
 
 - The "Editing" tab in Downloads is always there; when it is empty it says
   what appears in it. Before, it disappeared after a restart.

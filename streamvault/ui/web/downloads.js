@@ -406,7 +406,7 @@ export function updateJobRow(row, job) {
   setText(row._note, note);
 
   const chatFiles = job.chat_files || {};
-  const actionsKey = [job.state, job.chat_only, chatFiles.html, chatFiles.video].join("|");
+  const actionsKey = [job.state, job.chat_only, chatFiles.html, chatFiles.video, job.beginning_chat].join("|");
   if (row._actions.dataset.key === actionsKey) return;
   row._actions.dataset.key = actionsKey;
   const call = (name, ...args) => () => bridge.call(name, ...args).catch(failed);
@@ -425,9 +425,12 @@ export function updateJobRow(row, job) {
                  iconButton("folder", t("Показать в папке"), call("show_in_folder", job.file)));
     if (chatFiles.html) actions.push(iconButton("chat", t("Открыть чат"), call("open_file", chatFiles.html)));
     if (chatFiles.video) actions.push(iconButton("video", t("Открыть видео чата"), call("open_file", chatFiles.video)));
-    // скачать чат — словами: значок чата рядом означает «открыть»
-    if (!chatFiles.html && chatSupported(job)) {
-      actions.push(button(t("Скачать чат"), { kind: "ghost", icon: "download", onclick: call("download_chat", job.id) }));
+    // скачать чат — словами: значок чата рядом означает «открыть». У склеенного
+    // начала эфира чат записи уже есть (прямой эфир) — докачивается чат самого начала
+    if (job.joined ? !job.beginning_chat && chatSupported(job) : !chatFiles.html && chatSupported(job)) {
+      actions.push(button(job.joined ? t("Скачать чат начала") : t("Скачать чат"),
+        { kind: "ghost", icon: "download", onclick: call("download_chat", job.id),
+          title: job.joined ? t("Чат начала эфира встанет в чат записи до стыка; чат прямого эфира останется") : "" }));
     }
   }
   if (["done", "cancelled", "failed", "paused"].includes(job.state)) {
