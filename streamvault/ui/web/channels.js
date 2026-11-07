@@ -98,8 +98,15 @@ export function renderLive(main) {
   refreshLive();
 }
 
+// Канал на «Эфирах»: в избранном, с автозаписью или пишется сейчас. Каналы, которые программа
+// хранит только ради их своих настроек записи, здесь не мелькают «в эфире, без записи»
+export function onLivePage(channel) {
+  return isFavorite(channel) || Boolean(channel.enabled) || Boolean(channel.recording)
+    || isRecording(channel) || recordStarting(channel.id, channel);
+}
+
 export function refreshLive() {
-  const channels = sortedChannels();
+  const channels = sortedChannels().filter(onLivePage);
   const live = channels.filter(isLive);
   const rest = channels.filter((channel) => !isLive(channel));
   view.welcome.hidden = channels.length > 0;

@@ -19,6 +19,8 @@ versions follow [Semantic Versioning](https://semver.org/).
 - **The "Recording now" row** has no moving bar any more (it looked like
   waiting): "REC" with a blinking dot on the frame and figures that grow —
   recorded, size, speed, chat messages.
+- A channel kept only for its own recording settings (not a favorite, no
+  auto-record) no longer shows on "Live" as "live, not recording".
 
 ### Fixed
 
