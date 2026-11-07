@@ -28,6 +28,8 @@ versions follow [Semantic Versioning](https://semver.org/).
   Such a recording is now turned into a real .ts (or MP4 with conversion
   on) right after the stream; splitting and joining skip the broken frame
   of recordings made earlier.
+- The notice about a stream beginning that did not download shows the same
+  short reason as its row, not the network error.
 
 ## 0.8.0 — 2026-11-07
 

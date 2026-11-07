@@ -452,15 +452,17 @@ def mp4_inside_ts(ffmpeg, path):
     и streamlink пишет их как есть. Время в ней — от начала трансляции, в
     конце бывает битый кадр (запись оборвали): проигрыватели такой «.ts» не
     открывают, а ffmpeg, перекладывая её в .ts, спотыкается о битый кадр.
+    Узнаётся по началу файла: у mp4 там коробка ftyp (или сразу moof), у
+    настоящего .ts — байт синхронизации 0x47. ffmpeg для этого не нужен.
     """
-    if not ffmpeg or not str(path).lower().endswith(".ts"):
+    if not str(path).lower().endswith(".ts"):
         return False
     try:
-        result = subprocess.run([ffmpeg, "-hide_banner", "-nostdin", "-i", path], capture_output=True, timeout=120,
-                                creationflags=subprocess_flags())
-    except (OSError, subprocess.TimeoutExpired):
+        with open(path, "rb") as source:
+            head = source.read(12)
+    except OSError:
         return False
-    return bool(re.search(r"^Input #0, mov,", result.stderr.decode("utf-8", "replace"), re.MULTILINE))
+    return len(head) >= 8 and head[4:8] in (b"ftyp", b"styp", b"moof", b"moov")
 
 
 # У кусков mp4 внутри .ts — пропускать битые кадры: иначе ffmpeg бросает всё на последнем

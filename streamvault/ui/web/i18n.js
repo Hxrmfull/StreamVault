@@ -536,6 +536,7 @@
     "Канал в избранном — он в панели слева": "The channel is in favorites — it is in the left panel",
     "Канал убран из избранного": "Removed from favorites",
     "Идёт запись": "Recording now",
+    "Начало эфира не скачать: {name} — {error}": "Cannot download the stream beginning: {name} — {error}",
     "Записи": "Recordings",
     "Правка": "Editing",
     "Сейчас ничего не пишется": "Nothing is recording now",

@@ -142,7 +142,9 @@ export function noticeJob(job) {
   if (job.state === "done") scheduleLibraryReload();
   if (job.state === "done") toast(t("Скачано: {name}", { name: job.title || job.url }), "ok");
   else if (job.state === "failed") {
-    toast(t("Не скачалось: {name} — {error}", { name: job.title || job.url, error: job.error }), "error");
+    // у начала эфира — короткая причина, как в строке; текст ошибки — в журнале
+    toast(job.reason ? t("Начало эфира не скачать: {name} — {error}", { name: job.title || job.url, error: job.reason })
+                     : t("Не скачалось: {name} — {error}", { name: job.title || job.url, error: job.error }), "error");
   }
 }
 
