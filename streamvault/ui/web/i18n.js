@@ -407,21 +407,23 @@
     "downloads в папке записей": "downloads inside the recordings folder",
     "Качество по умолчанию": "Default quality",
     "Одновременных загрузок": "Simultaneous downloads",
-    "Кусков записи параллельно": "Parallel video fragments",
-    "Сколько кусков одной загрузки качать одновременно. Больше — быстрее, пока не упрётся в интернет: обычно хватает 8.":
-      "How many pieces of one download to fetch at once. More is faster until your connection is the limit: 8 is usually enough.",
+    "Фрагментов параллельно":
+      "Parallel fragments",
+    "Сколько фрагментов одной загрузки качать одновременно. Больше — быстрее, пока не упрётся в интернет: обычно хватает 8.":
+      "How many fragments of one download to fetch at once. More is faster until your connection is the limit: 8 is usually enough.",
     "Сколько видео качается сразу; остальные ждут в очереди. Интернет они делят между собой и с идущими записями.":
       "How many videos download at once; the rest wait in the queue. They share the connection with each other and with running recordings.",
     "Поставить это число": "Use this number",
     "столько же": "the same",
-    "Запись лежит на площадке кусками по нескольку секунд — программа качает их по нескольку сразу.":
-      "A recording is stored on the platform in pieces of a few seconds — the program fetches several at once.",
+    "Запись лежит на площадке фрагментами по нескольку секунд — программа качает их по нескольку сразу.":
+      "A recording is stored on the platform in fragments of a few seconds — the program fetches several at once.",
     "Замер на записи Twitch": "Measured on a Twitch recording",
     "Дальше 8 упирается в интернет, а YouTube на много соединений бывает отвечает отказом.":
       "Beyond 8 the connection is the limit, and YouTube may refuse too many connections.",
     "около 17 МБ/с": "about 17 MB/s",
     "около 19 МБ/с — по умолчанию": "about 19 MB/s — the default",
-    "Сколько кусков качать одновременно": "How many pieces to fetch at once",
+    "Сколько фрагментов качать одновременно":
+      "How many fragments to fetch at once",
     "Свои аргументы yt-dlp": "Custom yt-dlp arguments",
     "Для опытных, например --limit-rate 5M": "For advanced users, e.g. --limit-rate 5M",
     "Скачивание": "Downloads",
@@ -687,8 +689,10 @@
     "Смотреть (пробел)": "Play (space)",
     "Со звуком (M)": "Unmute (M)",
     "Чат приостановлен из-за прокрутки": "Chat paused due to scroll",
-    "В записи нет кусков эфира": "Parts of the stream are missing from the recording",
-    "В записи нет кусков эфира: пропало {length}": "Parts of the stream are missing from the recording: {length} lost",
+    "В записи пропущены отрезки эфира":
+      "Parts of the stream are missing from the recording",
+    "В записи пропущены отрезки эфира: пропало {length}":
+      "Parts of the stream are missing from the recording: {length} lost",
     "Всплеск чата: {count} за {length} — смотреть": "Chat spike: {count} in {length} — watch",
     "Где искать": "Where to search",
     "Где чат писал больше всего — щелчок откроет запись чуть раньше всплеска.": "Where the chat was busiest — a click opens the recording a little before the spike.",
@@ -698,7 +702,8 @@
     "Ещё не просмотрено чатов: {count}": "Chats not searched yet: {count}",
     "Запись": "Recording",
     "Ищет во всех чатах библиотеки сразу. Первый поиск дольше: чаты переписываются в базу программы.": "Searches every chat in the library at once. The first search takes longer: chats are copied into the program's database.",
-    "Куски эфира, которых нет в файле: сеть или диск не успевали, реклама Twitch. На шкале проигрывателя они помечены.": "Parts of the stream missing from the file: the network or disk couldn't keep up, Twitch ads. They are marked on the player's timeline.",
+    "Отрезки эфира, которых нет в файле: сеть или диск не успевали, реклама Twitch. На шкале проигрывателя они помечены.":
+      "Parts of the stream missing from the file: the network or disk couldn't keep up, Twitch ads. They are marked on the player's timeline.",
     "Найдено {count} в записях: {files}": "Found {count} in recordings: {files}",
     "Найти слово или ник во всех чатах библиотеки": "Find a word or a username in every chat in the library",
     "Настройки записи канала": "Channel recording settings",

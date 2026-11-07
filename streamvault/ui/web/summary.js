@@ -103,7 +103,7 @@ export function openSummary(item, options) {
 
     // пропуски: у записей эфиров ищутся сами при конвертации, у прочего — по кнопке
     sections.push(h("h3", { class: "subhead", text: t("Пропуски в записи") }),
-      h("div", { class: "hint field-gap", text: t("Куски эфира, которых нет в файле: сеть или диск не успевали, реклама Twitch. " +
+      h("div", { class: "hint field-gap", text: t("Отрезки эфира, которых нет в файле: сеть или диск не успевали, реклама Twitch. " +
         "На шкале проигрывателя они помечены.") }),
       h("div", { class: "summary-list" }, parts.map((part, index) => {
         const row = h("div", { class: "summary-gaps" },

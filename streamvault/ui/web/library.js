@@ -509,8 +509,8 @@ export function updateLibraryCard(card, item) {
   const lost = gaps.reduce((sum, part) => sum + part.lost, 0);
   card._gaps.hidden = !gapCount;
   setText(card._gaps, gapCount + " " + tp(gapCount, t("пропуск|пропуска|пропусков")));
-  card._gaps.title = lost ? t("В записи нет кусков эфира: пропало {length}", { length: fmt.duration(lost) })
-                          : t("В записи нет кусков эфира");
+  card._gaps.title = lost ? t("В записи пропущены отрезки эфира: пропало {length}", { length: fmt.duration(lost) })
+                          : t("В записи пропущены отрезки эфира");
   setText(card._parts, parts.length + " " + tp(parts.length, t("часть|части|частей")));
   card._whole.hidden = !item.whole;
   setText(card._kind, item.edit === "chat" ? t("с чатом поверх")

@@ -5,7 +5,7 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.7.0 — 2026-11-07
 
 ### Added
 
@@ -17,10 +17,10 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- "Parallel recording pieces" is 8 by default instead of 4: on a Twitch
-  recording 4 gave about 17 MB/s and 8 about 19 MB/s, more did not help.
-  Settings already saved keep their value.
-
+- "Parallel recording pieces" is now called "Parallel fragments" and is 8
+  by default instead of 4: on a Twitch recording 4 gave about 17 MB/s and 8
+  about 19 MB/s, more did not help. Settings already saved keep their
+  value. The setting has a "?" tip with this measurement.
 - **New icon:** a silver wheel with a play button on black — in the window,
   the tray, the program and installer icons. The red recording dot is shown
   in the tray only while recording.
@@ -30,7 +30,7 @@ versions follow [Semantic Versioning](https://semver.org/).
 - **The Twitch and Kick stream beginning downloaded slowly** — tens to
   hundreds of KB/s: ffmpeg fetched the recording one piece at a time. Now
   the program downloads it itself, several pieces at once (as many as
-  "Parallel recording pieces" in the settings): on the same recording,
+  "Parallel fragments" in the settings): on the same recording,
   about 14 MB/s instead of 30–250 KB/s. This applies to VK as well.
 - **Joining the stream beginning with the recording** could add a frame at
   the seam, and with an MP4 recording mix up the frames of the beginning

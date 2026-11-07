@@ -59,7 +59,7 @@ def playlist_segments(text, base_url):
             raise HlsSectionError(tr("запись зашифрована"))
         if line.startswith("#EXT-X-BYTERANGE"):
             # куски — части одного файла: качать каждый целиком значило бы писать мусор
-            raise HlsSectionError(tr("куски записи заданы диапазонами байт"))
+            raise HlsSectionError(tr("фрагменты записи заданы диапазонами байт"))
         if line.startswith("#EXT-X-MAP"):
             uri = line.split('URI="', 1)[-1].split('"', 1)[0]
             init = urljoin(base_url, uri)
@@ -69,7 +69,7 @@ def playlist_segments(text, base_url):
             segments.append((duration, urljoin(base_url, line)))
             duration = None
     if not segments:
-        raise HlsSectionError(tr("в плейлисте записи нет кусков"))
+        raise HlsSectionError(tr("в плейлисте записи нет фрагментов"))
     return init, segments
 
 
@@ -197,5 +197,5 @@ def _fetch(session, url, headers):
                 return b"".join(answer.iter_content(CHUNK))
         except requests.RequestException as error:
             if attempt == ATTEMPTS - 1:
-                raise HlsSectionError(tr("кусок записи не скачался: {error}", error=error))
+                raise HlsSectionError(tr("фрагмент записи не скачался: {error}", error=error))
     return b""
