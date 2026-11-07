@@ -3,7 +3,7 @@
  * канала, списки записей и клипов, одно видео и запись по ссылке.
  */
 
-import { CHAT_MODES, CONVERT_FORMATS, DOWNLOAD_QUALITIES, SPLIT_MODES, KIND_LABELS, PAGE, PERIOD_LABELS, bridge, button, channelName, channelUrl, chatSelect, chatSupported, confirmDialog, displayTitle, ensureProfiles, entryChannelName, failed, fillAvatar, fmt, h, icon, iconButton, isLive, isRecording, isUrl, recordStarting, keepDaysSelect, setLiveQuality, knownProfile, liveQualityLabel, liveQualitySelect, liveThumb, openModal, platformName, qualitySelect, setSrc, setText, siteInfo, sortedChannels, splitId, state, stateText, stateTone, syncList, t, toast } from "./common.js";
+import { CHAT_MODES, CHAT_ONLY, CONVERT_FORMATS, DOWNLOAD_QUALITIES, SPLIT_MODES, KIND_LABELS, PAGE, PERIOD_LABELS, bridge, button, channelName, channelUrl, chatSelect, chatSupported, confirmDialog, displayTitle, ensureProfiles, entryChannelName, failed, fillAvatar, fmt, h, icon, iconButton, isLive, isRecording, isUrl, recordStarting, keepDaysSelect, setLiveQuality, knownProfile, liveQualityLabel, liveQualitySelect, liveThumb, openModal, platformName, qualitySelect, setSrc, setText, siteInfo, sortedChannels, splitId, state, stateText, stateTone, syncList, t, toast } from "./common.js";
 import { twitchdownloaderBlock } from "./settings.js";
 import { openAddChannel } from "./search.js";
 import { navigate, recBadge, refreshView, render, routeHash, view } from "./app.js";
@@ -669,7 +669,7 @@ export function createVideoBrowser(key, load) {
   const more = button(t("Показать ещё"), { onclick: () => loadMore() });
   const moreBox = h("div", { class: "more" }, more);
   const count = h("span", { class: "muted" });
-  const quality = qualitySelect(DOWNLOAD_QUALITIES);
+  const quality = qualitySelect([...DOWNLOAD_QUALITIES, CHAT_ONLY]);
   const chatMode = chatSelect();
   const chatLabel = h("span", { class: "muted", text: t("Чат") });
   const bar = h("div", { class: "selection-bar" }, count, h("span", { class: "spacer" }),
@@ -734,7 +734,10 @@ export function createVideoBrowser(key, load) {
   }
 
   async function downloadSelected() {
-    const entries = [...selected.values()];
+    // «только чат» — у видео, где чат бывает; остальные пропускаются, а не падают ошибкой
+    const chatOnly = quality.value === CHAT_ONLY.quality;
+    const entries = [...selected.values()].filter((entry) => !chatOnly || chatSupported(entry));
+    const skipped = selected.size - entries.length;
     let added = 0;
     for (const entry of entries) {
       try {
@@ -748,6 +751,7 @@ export function createVideoBrowser(key, load) {
     selected.clear();
     refresh();
     if (added) toast(t("Добавлено в загрузки: {count}", { count: added }), "ok", "#downloads");
+    if (skipped) toast(t("Без чата пропущено: {count} — у этих видео чата не бывает", { count: skipped }));
   }
 
   refresh();
@@ -831,6 +835,8 @@ export function videoDetail(entry, onDone) {
   setSrc(img, entry.thumbnail);
   const qualities = h("select");
   for (const option of DOWNLOAD_QUALITIES) qualities.append(h("option", { value: option.quality, text: t(option.label) }));
+  // чат бывает — можно скачать его одного, без видео
+  if (chatSupported(entry)) qualities.append(h("option", { value: CHAT_ONLY.quality, text: t(CHAT_ONLY.label) }));
   qualities.value = state.settings.download_quality || "best";
   const loadingNote = h("span", { class: "faint" }, h("span", { class: "spinner small" }), t(" узнаю варианты качества…"));
 
@@ -918,11 +924,13 @@ export function videoDetail(entry, onDone) {
     const previous = qualities.value;
     qualities.replaceChildren();
     for (const option of full.qualities) qualities.append(h("option", { value: option.quality, text: t(option.label) }));
-    qualities.value = [...qualities.options].some((o) => o.value === previous) ? previous : "best";
     loadingNote.replaceChildren();
-    for (const key of ["duration", "timestamp", "channel", "thumbnail", "title", "id", "kind", "platform"]) {
+    for (const key of ["duration", "timestamp", "channel", "thumbnail", "title", "id", "kind", "platform", "live_status"]) {
       if (!entry[key] && full[key]) entry[key] = full[key];
     }
+    // варианты от yt-dlp — только видео; «только чат» — снова в конце списка
+    if (chatSupported(entry)) qualities.append(h("option", { value: CHAT_ONLY.quality, text: t(CHAT_ONLY.label) }));
+    qualities.value = [...qualities.options].some((o) => o.value === previous) ? previous : "best";
     if (!img.getAttribute("src")) setSrc(img, entry.thumbnail);
     to.placeholder = fmt.duration(entry.duration) || to.placeholder;
     showMeta();

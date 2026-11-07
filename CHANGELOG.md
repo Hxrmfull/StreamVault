@@ -5,6 +5,20 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- **Chat only, no video:** a new choice in the quality list when downloading a
+  stream recording or a clip (one video or several selected on the channel
+  page). Only .chat.json and .chat.html are saved; videos without a chat are
+  skipped.
+
+### Fixed
+
+- The "Editing" tab in Downloads is always there; when it is empty it says
+  what appears in it. Before, it disappeared after a restart.
+
 ## 0.10.0 — 2026-11-08
 
 ### Added

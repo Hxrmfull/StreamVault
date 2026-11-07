@@ -40,6 +40,9 @@ FAILED = "failed"
 CANCELLED = "cancelled"
 
 UNFINISHED = (QUEUED, DOWNLOADING, PROCESSING, PAUSED, FAILED)
+
+# Качество «только чат»: видео не качается, только чат записи эфира или клипа.
+CHAT_ONLY = "chat"
 ACTIVE = (DOWNLOADING, PROCESSING)
 
 # Как часто слать в шину событие о прогрессе одной загрузки, секунды.
@@ -331,7 +334,13 @@ class DownloadManager:
             if len(batch) < ALL_PAGE_SIZE:
                 break
             start += ALL_PAGE_SIZE
-        ids, urls = self.known_videos()
+        chat_only = quality == CHAT_ONLY
+        if chat_only:
+            # «только чат»: уже есть — только такие же загрузки чата, скачанное видео не в счёт
+            with self._lock:
+                ids, urls = set(), {job["url"] for job in self._jobs if job["quality"] == CHAT_ONLY}
+        else:
+            ids, urls = self.known_videos()
         added = known = 0
         for entry in entries:
             if not entry.get("url"):
@@ -342,6 +351,9 @@ class DownloadManager:
                 continue
             meta = {key: entry.get(key) for key in ("id", "title", "channel", "folder", "platform", "kind",
                                                     "duration", "thumbnail", "timestamp", "live_status")}
+            if chat_only and not chat.supported(meta["platform"] or platform, meta["kind"] or "",
+                                                meta["live_status"] or ""):
+                continue                   # у этого видео чата нет — и качать нечего
             self.add(entry["url"], quality=quality, meta=meta, chat_mode=chat_mode)
             urls.add(entry["url"])
             added += 1
@@ -369,6 +381,11 @@ class DownloadManager:
         url = url.strip()
         quality = (quality or self._settings["download_quality"] or "best").strip()
         chat_mode = chat_mode if chat_mode in chat.MODES else self._settings["chat_mode"]
+        if quality == CHAT_ONLY and chat_mode == chat.NONE:
+            chat_mode = chat.TEXT          # «только чат» без чата — пустая загрузка
+        if quality == CHAT_ONLY and meta and meta.get("platform") \
+                and not chat.supported(meta["platform"], meta.get("kind") or "", meta.get("live_status") or ""):
+            raise ValueError(tr("у этого видео чата не бывает"))
         section = [float(section[0]), float(section[1])] if section else None
         if section and meta:
             problem = _section_problem(section, meta.get("duration"))
@@ -753,6 +770,9 @@ class DownloadManager:
             job["target"] = target
         os.makedirs(os.path.dirname(job["target"]), exist_ok=True)
 
+        if job["quality"] == CHAT_ONLY:
+            return self._chat_without_video(job_id, runtime, job)
+
         if job["platform"] in OWN_SECTION_PLATFORMS and job["section"] and not job["section"][0]:
             done = self._own_section(job_id, runtime, job)
             if done:
@@ -841,6 +861,32 @@ class DownloadManager:
             return True
         self._finish_with_chat(job_id, runtime, produced)
         return True
+
+    def _chat_without_video(self, job_id, runtime, job):
+        """
+        «Только чат»: чат записи эфира или клипа без видео — .chat.json и .chat.html
+        (и видео чата, если выбрано) в папке загрузок. Файл загрузки — HTML чата.
+        """
+        if not self._chat_supported(job):
+            return self._finish(job_id, runtime, FAILED, error=tr("у этого видео чата не бывает"))
+        if job["chat"] == chat.NONE:
+            job["chat"] = chat.TEXT
+            self._update(job_id, chat=chat.TEXT)
+        # видео нет: имена файлов чата — от того, каким было бы видео
+        named = job["target"] + ".mp4"
+        result, interrupted = self._fetch_chat(job_id, runtime, job, named)
+        if runtime.get("remove"):
+            self._drop(job_id)
+            return None
+        if interrupted:
+            # пауза или выход — чат скачается заново со следующего раза; отмена — отменена
+            return self._finish(job_id, runtime, None, chat_progress=None)
+        files = result.get("chat_files") or {}
+        if not files.get("json"):
+            return self._finish(job_id, runtime, FAILED, chat_progress=None,
+                                error=result.get("chat_error") or tr("чат не скачался"))
+        return self._finish(job_id, runtime, DONE, file=files.get("html") or files["json"], chat_files=files,
+                            chat_error=result.get("chat_error") or "", chat_progress=None)
 
     def _finish_with_chat(self, job_id, runtime, produced):
         """Видео скачано; если просили — ещё чат. Чат не удался — видео всё равно готово."""
@@ -1065,7 +1111,8 @@ class DownloadManager:
         moment = (datetime.datetime.fromtimestamp(job["timestamp"])
                   if job["timestamp"] else None)
         suffix = ""
-        if job["quality"] not in ("best",):
+        # у «только чата» в имени и так будет .chat.json — без лишнего « chat»
+        if job["quality"] not in ("best", CHAT_ONLY):
             suffix += " " + job["quality"]
         if job["section"]:
             suffix += " (%s-%s)" % (_clock(job["section"][0]), _clock(job["section"][1]))

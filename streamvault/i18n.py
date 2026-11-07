@@ -575,6 +575,7 @@ STRINGS = {
     'смайлы в чат эфира не встроены: {name} — {error}':
         'emotes were not embedded into the live chat: {name} — {error}',
     'у этого видео чата не бывает': 'this video has no chat',
+    'чат не скачался': 'the chat was not downloaded',
     'у этой площадки чата записей нет': 'this platform has no chat for recordings',
     'чат не сохранился: {error}': 'the chat was not saved: {error}',
     'не понял, какая это запись Kick: {url}': 'cannot tell which Kick recording this is: {url}',

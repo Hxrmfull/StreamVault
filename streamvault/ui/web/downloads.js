@@ -2,7 +2,7 @@
  * StreamVault, окно программы: «Загрузки» — очередь, прогресс, пауза и отмена.
  */
 
-import { CHAT_STAGES, DOWNLOAD_QUALITIES, bridge, fillChannelLine, jobChannelId, button, channelName, chatSupported, failed, fmt, h, icon, iconButton, liveThumb, platformName, setSrc, setText, state, syncList, t } from "./common.js";
+import { CHAT_ONLY, CHAT_STAGES, DOWNLOAD_QUALITIES, bridge, fillChannelLine, jobChannelId, button, channelName, chatSupported, failed, fmt, h, icon, iconButton, liveThumb, platformName, setSrc, setText, state, syncList, t } from "./common.js";
 import { view } from "./app.js";
 import { requestPreview } from "./library.js";
 import { openLive } from "./player.js";
@@ -13,7 +13,7 @@ const DOWNLOAD_TABS = [["records", "Записи"], ["downloads", "Загруз�
 function chosenTab(counts) {
   let tab = "";
   try { tab = sessionStorage.getItem("downloads-tab") || ""; } catch (error) { /* хранилище закрыто */ }
-  if (DOWNLOAD_TABS.some(([name]) => name === tab) && (tab !== "edits" || counts.edits)) return tab;
+  if (DOWNLOAD_TABS.some(([name]) => name === tab)) return tab;
   return counts.records ? "records" : "downloads";
 }
 
@@ -73,8 +73,6 @@ export function refreshDownloads() {
     button.classList.toggle("active", name === tab);
     setText(button._count, counts[name] ? String(counts[name]) : "");
   }
-  // вкладка правки — только когда есть что показать
-  view.tabButtons.edits.hidden = edits.length === 0 && tab !== "edits";
   view.recordsBox.hidden = tab !== "records";
   view.recordsEmpty.hidden = tab !== "records" || records.length > 0;
   view.editsBox.hidden = tab !== "edits";
@@ -272,6 +270,7 @@ export function sectionText(section) {
 export function qualityText(quality) {
   // "h264:1080" — начало эфира: те же кодеки, что у записи; качество то же
   const plain = String(quality || "").replace(/^h264:/, "");
+  if (plain === CHAT_ONLY.quality) return t("только чат");
   const known = DOWNLOAD_QUALITIES.find((option) => option.quality === plain);
   return known ? t(known.label) : quality;
 }

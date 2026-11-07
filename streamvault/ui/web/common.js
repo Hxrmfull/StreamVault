@@ -436,6 +436,8 @@ export const DOWNLOAD_QUALITIES = [
   { quality: "360", label: "360p" }, { quality: "worst", label: "худшее" },
   { quality: "audio", label: "только звук" },
 ];
+// «только чат»: видео не качается — чат записи эфира или клипа (archive/downloads.py: CHAT_ONLY)
+export const CHAT_ONLY = { quality: "chat", label: "только чат, без видео" };
 
 export const PAGE = 24;
 
