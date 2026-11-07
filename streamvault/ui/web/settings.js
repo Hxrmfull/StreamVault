@@ -43,6 +43,23 @@ export function ytdlpArgsHelp(input) {
   ];
 }
 
+// «Кусков записи параллельно»: что это и замер — щелчок по строке ставит число в поле
+const FRAGMENT_TIPS = [["4", "около 17 МБ/с"], ["8", "около 19 МБ/с — по умолчанию"], ["16", "столько же"]];
+
+export function fragmentsHelp(input) {
+  const rows = FRAGMENT_TIPS.map(([count, note]) => h("button", {
+    class: "help-row", type: "button", title: t("Поставить это число"),
+    onclick: () => { input.value = count; input.focus(); },
+  }, h("code", { text: count }), h("span", { text: t(note) })));
+  return [
+    h("div", { class: "help-title", text: t("Сколько кусков качать одновременно") }),
+    h("div", { text: t("Запись лежит на площадке кусками по нескольку секунд — программа качает их по нескольку сразу.") }),
+    h("div", { class: "help-subtitle", text: t("Замер на записи Twitch") }),
+    h("div", { class: "help-rows" }, ...rows),
+    h("div", { class: "help-note", text: t("Дальше 8 упирается в интернет, а YouTube на много соединений бывает отвечает отказом.") }),
+  ];
+}
+
 export function twitchKeysHelp() {
   const steps = [
     t("Войди на dev.twitch.tv своим аккаунтом Twitch (нужна включённая двухфакторная защита)."),
@@ -649,9 +666,13 @@ export function openSettings() {
            { folder: true, placeholder: settings.downloads_dir || t("downloads в папке записей") }),
       h("div", { class: "two" },
         select("download_quality", t("Качество по умолчанию"), DOWNLOAD_QUALITIES.map((o) => [o.quality, t(o.label)])),
-        text("max_downloads", t("Одновременных загрузок"), null, { number: true })),
+        text("max_downloads", t("Одновременных загрузок"),
+             t("Сколько видео качается сразу; остальные ждут в очереди. Интернет они делят между собой и с идущими записями."),
+             { number: true })),
       h("div", { class: "two" },
-        text("download_fragments", t("Кусков записи параллельно"), t("Больше — быстрее, если позволяет интернет"), { number: true }),
+        text("download_fragments", t("Кусков записи параллельно"),
+             t("Сколько кусков одной загрузки качать одновременно. Больше — быстрее, пока не упрётся в интернет: обычно хватает 8."),
+             { number: true, help: fragmentsHelp }),
         text("ytdlp_extra_args", t("Свои аргументы yt-dlp"), t("Для опытных, например --limit-rate 5M"),
              { help: ytdlpArgsHelp }))], t("Скачивание")],
     ["Twitch", [

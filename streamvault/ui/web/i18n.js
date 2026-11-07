@@ -408,7 +408,20 @@
     "Качество по умолчанию": "Default quality",
     "Одновременных загрузок": "Simultaneous downloads",
     "Кусков записи параллельно": "Parallel video fragments",
-    "Больше — быстрее, если позволяет интернет": "More is faster if your connection allows",
+    "Сколько кусков одной загрузки качать одновременно. Больше — быстрее, пока не упрётся в интернет: обычно хватает 8.":
+      "How many pieces of one download to fetch at once. More is faster until your connection is the limit: 8 is usually enough.",
+    "Сколько видео качается сразу; остальные ждут в очереди. Интернет они делят между собой и с идущими записями.":
+      "How many videos download at once; the rest wait in the queue. They share the connection with each other and with running recordings.",
+    "Поставить это число": "Use this number",
+    "столько же": "the same",
+    "Запись лежит на площадке кусками по нескольку секунд — программа качает их по нескольку сразу.":
+      "A recording is stored on the platform in pieces of a few seconds — the program fetches several at once.",
+    "Замер на записи Twitch": "Measured on a Twitch recording",
+    "Дальше 8 упирается в интернет, а YouTube на много соединений бывает отвечает отказом.":
+      "Beyond 8 the connection is the limit, and YouTube may refuse too many connections.",
+    "около 17 МБ/с": "about 17 MB/s",
+    "около 19 МБ/с — по умолчанию": "about 19 MB/s — the default",
+    "Сколько кусков качать одновременно": "How many pieces to fetch at once",
     "Свои аргументы yt-dlp": "Custom yt-dlp arguments",
     "Для опытных, например --limit-rate 5M": "For advanced users, e.g. --limit-rate 5M",
     "Скачивание": "Downloads",
