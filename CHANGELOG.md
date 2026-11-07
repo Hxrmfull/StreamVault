@@ -5,7 +5,7 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.10.0 — 2026-11-08
 
 ### Added
 
@@ -27,7 +27,6 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 - Joining percentages no longer "stick" at about 85%: the second pass, which
   rewrites everything, now gets its fair share.
-
 - **A recording that is still being written could not be watched in the
   window** (and "To live" did nothing) when Twitch sends the stream as MP4
   pieces inside .ts: ffmpeg waited for the end of the growing file. The
