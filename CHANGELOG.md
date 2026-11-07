@@ -9,6 +9,11 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A recording that is still being written could not be watched in the
+  window** (and "To live" did nothing) when Twitch sends the stream as MP4
+  pieces inside .ts: ffmpeg waited for the end of the growing file. The
+  program now finds the place itself (a fragment starting with a key frame)
+  and feeds the file to ffmpeg as it grows.
 - The page title row (Library, Downloads, Log) is even: the note "6 files · 12 GB"
   sits on the title's line, and the buttons are centred on it.
 - A cancelled, failed or finished row in "Editing" can be removed: a cross

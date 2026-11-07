@@ -20,8 +20,10 @@ import logging
 import os
 import re
 import secrets
+import struct
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
@@ -144,6 +146,174 @@ def ts_seek_point(path, seconds):
     return 0, 0.0
 
 
+def _boxes(handle, begin, end):
+    """Коробки mp4 подряд: (тип, начало, начало содержимого, конец); недописанная — не отдаётся."""
+    at = begin
+    while at + 8 <= end:
+        handle.seek(at)
+        head = handle.read(16)
+        if len(head) < 8:
+            return
+        size, kind = struct.unpack(">I4s", head[:8])
+        body = at + 8
+        if size == 1:
+            if len(head) < 16:
+                return
+            size, body = struct.unpack(">Q", head[8:16])[0], at + 16
+        if size < 8 or at + size > end:
+            return                       # size 0 («до конца») или ещё пишется
+        yield kind, at, body, at + size
+        at += size
+
+
+def _video_track(handle, moov_body, moov_end):
+    """(номер дорожки видео, её тактов в секунде, флаги кадра по умолчанию из trex) из moov или None."""
+    found = _video_trak(handle, moov_body, moov_end)
+    if found is None:
+        return None
+    defaults = 0
+    for kind, _, body, end in _boxes(handle, moov_body, moov_end):
+        if kind == b"mvex":
+            for inner, _, inner_body, _ in _boxes(handle, body, end):
+                handle.seek(inner_body)
+                data = handle.read(24)
+                if inner == b"trex" and len(data) == 24 and struct.unpack(">I", data[4:8])[0] == found[0]:
+                    defaults = struct.unpack(">I", data[20:24])[0]
+    return found + (defaults,)
+
+
+def _video_trak(handle, moov_body, moov_end):
+    for kind, _, body, end in _boxes(handle, moov_body, moov_end):
+        if kind != b"trak":
+            continue
+        track, scale, video = None, None, False
+        for inner, _, inner_body, inner_end in _boxes(handle, body, end):
+            if inner == b"tkhd":
+                handle.seek(inner_body)
+                data = handle.read(24)
+                track = struct.unpack(">I", data[20:24] if data[0] == 1 else data[12:16])[0]
+            elif inner == b"mdia":
+                for part, _, part_body, part_end in _boxes(handle, inner_body, inner_end):
+                    handle.seek(part_body)
+                    data = handle.read(32)
+                    if part == b"mdhd":
+                        scale = struct.unpack(">I", data[20:24] if data[0] == 1 else data[12:16])[0]
+                    elif part == b"hdlr":
+                        video = data[8:12] == b"vide"
+        if video and track and scale:
+            return track, scale
+    return None
+
+
+def fmp4_seek_point(path, seconds):
+    """
+    Запись Twitch из кусков mp4 внутри .ts, которая ещё пишется: откуда её
+    читать, чтобы попасть в seconds. (конец заголовка ftyp+moov, байт начала
+    куска moof, время куска от начала записи) или None — не разобрать.
+    ffmpeg такой растущий файл сам не перематывает: ждёт его конца. Время
+    куска — из его tfdt (по дорожке видео). Twitch с малой задержкой режет
+    эфир на куски по 0,1 с, и ключевой кадр есть не в каждом: начать можно
+    только с куска, у которого первый кадр — ключевой.
+    """
+    size = os.path.getsize(path)
+    with open(path, "rb") as handle:
+        header_end, track, first, chosen = None, None, None, None
+        for kind, at, body, end in _boxes(handle, 0, size):
+            if kind == b"moov":
+                track = _video_track(handle, body, end)
+                header_end = end
+            elif kind == b"moof" and track is not None:
+                fragment = _fragment_start(handle, body, end, track[0], track[2])
+                if fragment is None:
+                    continue
+                moment, key = fragment
+                if first is None:
+                    first = moment
+                offset_seconds = (moment - first) / track[1]
+                if offset_seconds > seconds and chosen is not None:
+                    break
+                if key or chosen is None:
+                    chosen = (header_end, at, offset_seconds)
+        return chosen
+
+
+# Флаг кадра mp4 «не ключевой» (sample_is_non_sync_sample)
+_NON_SYNC = 0x00010000
+
+
+def _fragment_start(handle, moof_body, moof_end, track, defaults):
+    """
+    (время начала куска — baseMediaDecodeTime из tfdt, первый кадр ключевой ли)
+    для дорожки track или None. Флаги первого кадра — из trun, иначе из tfhd,
+    иначе из trex (defaults).
+    """
+    for kind, _, body, end in _boxes(handle, moof_body, moof_end):
+        if kind != b"traf":
+            continue
+        current, decode, flags = None, None, defaults
+        run_flags = None
+        for inner, _, inner_body, _ in _boxes(handle, body, end):
+            handle.seek(inner_body)
+            data = handle.read(40)
+            if inner == b"tfhd":
+                box_flags = int.from_bytes(data[1:4], "big")
+                current = struct.unpack(">I", data[4:8])[0]
+                at = 8 + (8 if box_flags & 0x1 else 0) + sum(4 for bit in (0x2, 0x8, 0x10) if box_flags & bit)
+                if box_flags & 0x20 and len(data) >= at + 4:
+                    flags = struct.unpack(">I", data[at:at + 4])[0]
+            elif inner == b"tfdt":
+                decode = struct.unpack(">Q", data[4:12])[0] if data[0] == 1 else struct.unpack(">I", data[4:8])[0]
+            elif inner == b"trun":
+                box_flags = int.from_bytes(data[1:4], "big")
+                at = 8 + (4 if box_flags & 0x1 else 0)
+                if box_flags & 0x4:
+                    run_flags = struct.unpack(">I", data[at:at + 4])[0]
+                elif box_flags & 0x400:
+                    # флаги каждого кадра: у первого — после его длительности и размера
+                    at += sum(4 for bit in (0x100, 0x200) if box_flags & bit)
+                    run_flags = struct.unpack(">I", data[at:at + 4])[0]
+        if current == track and decode is not None:
+            first_flags = run_flags if run_flags is not None else flags
+            return decode, not first_flags & _NON_SYNC
+    return None
+
+
+def fmp4_follow_command(ffmpeg, trim):
+    """ffmpeg для растущей записи из кусков mp4: она приходит в stdin (заголовок и куски с нужного места)."""
+    return [ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", *util.SKIP_CORRUPT, "-f", "mov", "-i", "pipe:0",
+            *(["-ss", "%.3f" % trim] if trim > 0.05 else []),
+            "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-sn", "-dn", "-f", "mp4",
+            "-movflags", "frag_keyframe+empty_moov+default_base_moof+delay_moov", "pipe:1"]
+
+
+def feed_growing(path, header_end, offset, target, stop, idle=FOLLOW_TIMEOUT / 1e6, chunk=256 * 1024):
+    """
+    Заголовок записи и её куски с offset — в target, по мере роста файла;
+    дольше idle секунд без новых данных (запись кончилась) или stop — конец.
+    """
+    try:
+        with open(path, "rb") as source:
+            target.write(source.read(header_end))
+            source.seek(offset)
+            quiet = time.monotonic()
+            while not stop.is_set():
+                data = source.read(chunk)
+                if data:
+                    target.write(data)
+                    quiet = time.monotonic()
+                elif time.monotonic() - quiet > idle:
+                    break
+                else:
+                    time.sleep(0.25)
+    except (OSError, ValueError):
+        pass                              # окно перемотало: ffmpeg закрыт, писать некуда
+    finally:
+        try:
+            target.close()
+        except OSError:
+            pass
+
+
 def remux_command(ffmpeg, path, start, follow=False):
     """
     ffmpeg: запись с места start (секунды) — фрагментами mp4 в stdout, без
@@ -151,6 +321,14 @@ def remux_command(ffmpeg, path, start, follow=False):
     """
     command = [ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error"]
     trim = []
+    if follow and util.mp4_inside_ts(ffmpeg, path):
+        # куски mp4 внутри .ts: растущий файл ffmpeg читает, только если не считает
+        # его перематываемым, — иначе ждёт конца файла и не отдаёт ни кадра. Место —
+        # обрезкой на выходе (запасной путь: обычно место находит fmp4_seek_point)
+        command += ["-follow", "1", "-rw_timeout", str(FOLLOW_TIMEOUT), "-seekable", "0", *util.SKIP_CORRUPT]
+        return command + ["-i", path, *(["-ss", "%.3f" % start] if start > 0 else []),
+                          "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-sn", "-dn", "-f", "mp4",
+                          "-movflags", "frag_keyframe+empty_moov+default_base_moof+delay_moov", "pipe:1"]
     if follow:
         # Растущий файл ffmpeg не перематывает сам: поиск места (-ss до -i) и оценка
         # длительности лезут в конец файла и ждут там, пока streamlink допишет
@@ -312,9 +490,26 @@ class MediaServer:
                 if not body:
                     return
                 # длина заранее неизвестна: ответ кончается закрытием соединения
-                process = subprocess.Popen(remux_command(ffmpeg, path, start, follow), stdout=subprocess.PIPE,
-                                           stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
-                                           creationflags=util.subprocess_flags())
+                plan = None
+                if follow and util.mp4_inside_ts(ffmpeg, path):
+                    try:
+                        plan = fmp4_seek_point(path, start)
+                    except (OSError, struct.error):
+                        plan = None
+                stop = threading.Event()
+                if plan is not None:
+                    # растущая запись из кусков mp4: её подаёт программа — заголовок
+                    # и куски с нужного места, по мере роста файла
+                    header_end, offset, moment = plan
+                    process = subprocess.Popen(fmp4_follow_command(ffmpeg, start - moment), stdout=subprocess.PIPE,
+                                               stderr=subprocess.DEVNULL, stdin=subprocess.PIPE,
+                                               creationflags=util.subprocess_flags())
+                    threading.Thread(target=feed_growing, args=(path, header_end, offset, process.stdin, stop),
+                                     name="media-feed", daemon=True).start()
+                else:
+                    process = subprocess.Popen(remux_command(ffmpeg, path, start, follow), stdout=subprocess.PIPE,
+                                               stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                                               creationflags=util.subprocess_flags())
                 try:
                     while True:
                         chunk = process.stdout.read1(owner.CHUNK)
@@ -323,6 +518,7 @@ class MediaServer:
                         self.wfile.write(chunk)
                 finally:
                     # окно перемотало или закрылось — ffmpeg больше не нужен
+                    stop.set()
                     if process.poll() is None:
                         process.kill()
                     process.stdout.close()
