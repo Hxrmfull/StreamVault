@@ -20,6 +20,15 @@ versions follow [Semantic Versioning](https://semver.org/).
   counters. A recording row also shows how its stream beginning is going.
   Its buttons have labels: "Play" and a red "Stop".
 
+### Fixed
+
+- **A Twitch recording made of MP4 pieces inside .ts** (Twitch sometimes
+  sends a stream like that) did not play in Windows Media Player, and
+  splitting it failed with "Conversion failed!" on its broken last frame.
+  Such a recording is now turned into a real .ts (or MP4 with conversion
+  on) right after the stream; splitting and joining skip the broken frame
+  of recordings made earlier.
+
 ## 0.8.0 — 2026-11-07
 
 ### Added

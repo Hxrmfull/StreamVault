@@ -211,16 +211,8 @@ def join_command(ffmpeg, listing, output, maps=("0:v:0?", "0:a:0?"), timescale=N
 
 
 def mp4_inside_ts(ffmpeg, path):
-    """
-    Запись .ts, в которой на деле куски mp4: Twitch бывает отдаёт эфир так,
-    и streamlink пишет их как есть. ffmpeg читает такой файл как mp4, время
-    в нём — от начала трансляции, а склейка в .ts теряла конец записи.
-    """
-    if not path.lower().endswith(".ts"):
-        return False
-    result = subprocess.run([ffmpeg, "-hide_banner", "-nostdin", "-i", path], capture_output=True, timeout=120,
-                            creationflags=util.subprocess_flags())
-    return bool(re.search(r"^Input #0, mov,", result.stderr.decode("utf-8", "replace"), re.MULTILINE))
+    """Куски mp4 внутри .ts (util.mp4_inside_ts): склейка в .ts теряла конец такой записи."""
+    return util.mp4_inside_ts(ffmpeg, path)
 
 
 def as_mp4(ffmpeg, path, target):
@@ -230,7 +222,7 @@ def as_mp4(ffmpeg, path, target):
     """
     try:
         _run([ffmpeg, "-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-err_detect", "ignore_err",
-              "-i", path, "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-movflags", "+faststart",
+              *util.SKIP_CORRUPT, "-i", path, "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-movflags", "+faststart",
               "-f", "mp4", target])
     except BaseException:
         util.remove_quietly(target)

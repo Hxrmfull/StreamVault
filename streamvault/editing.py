@@ -146,7 +146,7 @@ def overlay_command(ffmpeg, source, chat_video, height, side, target):
             "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", "-f", "mp4", target]
 
 
-def split_command(ffmpeg, source, points, pattern):
+def split_command(ffmpeg, source, points, pattern, skip_corrupt=False):
     """
     Куски записи: сегментный муксер ffmpeg режет по ключевым кадрам после
     точек points (секунды), каждый кусок — со временем от нуля. Видео — без
@@ -154,7 +154,7 @@ def split_command(ffmpeg, source, points, pattern):
     """
     extension = os.path.splitext(source)[1].lower()
     segment_format = SEGMENT_FORMATS[extension]
-    command = [ffmpeg, "-hide_banner", "-nostdin", "-y", "-i", source,
+    command = [ffmpeg, "-hide_banner", "-nostdin", "-y", *(util.SKIP_CORRUPT if skip_corrupt else []), "-i", source,
                "-map", "0:V?", "-map", "0:a?", "-map_chapters", "-1", "-c", "copy",
                "-f", "segment", "-segment_times", ",".join("%.3f" % point for point in points),
                "-segment_start_number", "1", "-reset_timestamps", "1", "-segment_format", segment_format]
@@ -329,7 +329,8 @@ class Editor(threading.Thread):
                            for number in range(1, len(points) + 2)]
         job["partial"] = job["partials"][0]
         logging.info(tr("делю на части ({count}): {name}", count=len(points) + 1, name=job["name"]))
-        self._run(job, split_command(ffmpeg, source, points, pattern), duration)
+        # куски mp4 внутри .ts (запись Twitch): битый последний кадр не роняет деление
+        self._run(job, split_command(ffmpeg, source, points, pattern, util.mp4_inside_ts(ffmpeg, source)), duration)
         if job["state"] == CANCELLED:
             return
         produced = [path for path in job["partials"] if os.path.isfile(path) and os.path.getsize(path) > 0]

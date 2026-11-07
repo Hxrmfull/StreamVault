@@ -490,7 +490,8 @@ class ProcessingQueue(threading.Thread):
             if number:
                 logging.info(tr("звук не ложится в m4a как есть — перекодирую в AAC: {name}",
                                 name=os.path.basename(recorded)))
-            result = subprocess.run([ffmpeg, "-nostdin", "-y", "-err_detect", "ignore_err", "-i", recorded,
+            skip = util.SKIP_CORRUPT if util.mp4_inside_ts(ffmpeg, recorded) else []
+            result = subprocess.run([ffmpeg, "-nostdin", "-y", "-err_detect", "ignore_err", *skip, "-i", recorded,
                                      *streams, *extra], capture_output=True, text=True, encoding="utf-8",
                                     errors="replace", creationflags=util.subprocess_flags())
             if result.returncode == 0 and any(os.path.exists(path) and os.path.getsize(path) > 0
@@ -499,6 +500,30 @@ class ProcessingQueue(threading.Thread):
             for path in outputs:
                 remove_quietly(path)
         return result
+
+    def _as_real_ts(self, ffmpeg, recorded, target):
+        """
+        Запись Twitch из кусков mp4 внутри .ts — в настоящий .ts, со временем от
+        нуля и без битого последнего кадра: такую открывают проигрыватели, её
+        делят и склеивают. True — так и сделано и исходник убран; False — не
+        такая запись (или не вышло): переносить как есть.
+        """
+        if not util.mp4_inside_ts(ffmpeg, recorded):
+            return False
+        partial = target + PARTIAL_SUFFIX
+        result = subprocess.run([ffmpeg, "-nostdin", "-y", "-loglevel", "error", *util.SKIP_CORRUPT, "-i", recorded,
+                                 "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-f", "mpegts", partial],
+                                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                creationflags=util.subprocess_flags())
+        if result.returncode != 0 or not os.path.exists(partial) or not os.path.getsize(partial):
+            remove_quietly(partial)
+            logging.warning(tr("запись из кусков mp4 не перепаковалась в .ts, переношу как есть: {name}",
+                               name=os.path.basename(recorded)))
+            return False
+        os.replace(partial, target)
+        remove_quietly(recorded)
+        logging.info(tr("запись из кусков mp4 — в настоящий .ts: {name}", name=os.path.basename(target)))
+        return True
 
     def _wants_faststart(self, recorded):
         """faststart — значение или функция от пути записи: у канала может быть своё."""
@@ -531,7 +556,8 @@ class ProcessingQueue(threading.Thread):
         if variants is None:
             result = self._ffmpeg_variants(ffmpeg, recorded, fmt, partials, extra + [pattern])
         else:
-            result = subprocess.run([ffmpeg, "-nostdin", "-y", "-err_detect", "ignore_err", "-i", recorded,
+            skip = util.SKIP_CORRUPT if util.mp4_inside_ts(ffmpeg, recorded) else []
+            result = subprocess.run([ffmpeg, "-nostdin", "-y", "-err_detect", "ignore_err", *skip, "-i", recorded,
                                      *variants[0], *extra, pattern], capture_output=True, text=True,
                                     encoding="utf-8", errors="replace", creationflags=util.subprocess_flags())
         produced = [path for path in partials if os.path.exists(path) and os.path.getsize(path) > 0]
@@ -589,8 +615,9 @@ class ProcessingQueue(threading.Thread):
                 # проверить можно и без конвертации — если ffmpeg есть
                 checked = self._check(ffmpeg, recorded) if ffmpeg else None
                 target = unique_path(processed)
-                shutil.move(recorded, target)
-                logging.info(tr("перемещено: {name}", name=os.path.basename(target)))
+                if not self._as_real_ts(ffmpeg, recorded, target):
+                    shutil.move(recorded, target)
+                    logging.info(tr("перемещено: {name}", name=os.path.basename(target)))
                 self._remember_gaps(ffmpeg, checked, [target])
                 self._done(recorded, target)
                 return Outcome.DONE

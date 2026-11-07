@@ -187,6 +187,9 @@ STRINGS = {
         'Twitch token: unreadable answer, retrying in {delay} s',
     'конвертирую в {format}: {name}': 'converting to {format}: {name}',
     'готово: {name}': 'done: {name}',
+    'запись из кусков mp4 не перепаковалась в .ts, переношу как есть: {name}':
+        'the recording of mp4 pieces was not repacked into .ts, moving it as is: {name}',
+    'запись из кусков mp4 — в настоящий .ts: {name}': 'recording of mp4 pieces made into a real .ts: {name}',
     'запись эфира на площадке ещё не дошла до начала записи ({have} из {need})':
         "the platform's recording of the stream has not reached the recording start yet ({have} of {need})",
     'запись эфира на площадке ещё догоняет эфир': "the platform's recording is still catching up with the stream",

@@ -446,6 +446,27 @@ def file_holders(path):
     return names
 
 
+def mp4_inside_ts(ffmpeg, path):
+    """
+    Запись .ts, в которой на деле куски mp4: Twitch бывает отдаёт эфир так,
+    и streamlink пишет их как есть. Время в ней — от начала трансляции, в
+    конце бывает битый кадр (запись оборвали): проигрыватели такой «.ts» не
+    открывают, а ffmpeg, перекладывая её в .ts, спотыкается о битый кадр.
+    """
+    if not ffmpeg or not str(path).lower().endswith(".ts"):
+        return False
+    try:
+        result = subprocess.run([ffmpeg, "-hide_banner", "-nostdin", "-i", path], capture_output=True, timeout=120,
+                                creationflags=subprocess_flags())
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return bool(re.search(r"^Input #0, mov,", result.stderr.decode("utf-8", "replace"), re.MULTILINE))
+
+
+# У кусков mp4 внутри .ts — пропускать битые кадры: иначе ffmpeg бросает всё на последнем
+SKIP_CORRUPT = ["-fflags", "+discardcorrupt"]
+
+
 def send_to_recycle_bin(path):
     """В корзину, а не насовсем: удалённое из библиотеки можно вернуть."""
     if os.name != "nt":
