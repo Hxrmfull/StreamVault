@@ -187,6 +187,9 @@ STRINGS = {
         'Twitch token: unreadable answer, retrying in {delay} s',
     'конвертирую в {format}: {name}': 'converting to {format}: {name}',
     'готово: {name}': 'done: {name}',
+    'проигрыватель StreamVault': 'the StreamVault player',
+    'запись открыта в {programs} — закрой её и попробуй снова':
+        'the recording is open in {programs} — close it and try again',
     'это целая запись, уже поделённая на части: они — в папке канала':
         'this is the whole recording that was already split: the pieces are in the channel folder',
     'целая запись оставлена: {path}': 'whole recording kept: {path}',

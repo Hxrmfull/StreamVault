@@ -477,15 +477,20 @@ class Joiner(threading.Thread):
             if not joined:
                 self._failed.add((head, main))
 
-    def _when_free(self, action):
+    def _when_free(self, action, path=None):
         """
-        action() — подмена или удаление файла. Пока файл открыт в другой
+        action() — подмена или удаление файла path. Пока файл открыт в другой
         программе, Windows этого не даёт: попытки раз в REPLACE_STEP секунд,
-        до REPLACE_WAIT. True — вышло; False — нет или программа закрывается.
+        до REPLACE_WAIT. Бывает, что даёт — новый «Медиаплеер» разрешает
+        удалить открытый файл, и подмена оборвала бы просмотр: поэтому сначала
+        спрашивается, кто держит path. True — вышло; False — нет или программа
+        закрывается.
         """
         waited = 0
         while True:
             try:
+                if path is not None and util.file_holders(path):
+                    raise PermissionError(path)
                 action()
                 return True
             except FileNotFoundError:
@@ -570,7 +575,7 @@ class Joiner(threading.Thread):
             util.remove_quietly(output)
             return self._refuse(head, main, tr("чат не склеился: {error}", error=error), kept=False, error=True)
         # запись смотрят — склейка ждёт, пока её закроют, а не начинается заново через минуту
-        if not self._when_free(lambda: os.replace(output, main)):
+        if not self._when_free(lambda: os.replace(output, main), main):
             util.remove_quietly(output)
             util.remove_quietly(main_chat["json"] + ".joined")
             return self._refuse(head, main, tr("запись открыта в другой программе"))
@@ -580,7 +585,7 @@ class Joiner(threading.Thread):
             for key in ("html", "video"):
                 util.remove_quietly(main_chat[key])
         for path in [head, *head_chat.values()]:
-            if os.path.exists(path) and not self._when_free(lambda path=path: _remove_existing(path)):
+            if os.path.exists(path) and not self._when_free(lambda path=path: _remove_existing(path), path):
                 # начало осталось рядом со склеенной записью: снова его не склеивать
                 logging.warning(tr("не удалить {name}: файл открыт в другой программе",
                                    name=os.path.basename(path)))

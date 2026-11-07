@@ -711,6 +711,12 @@ class Api:
         busy = getattr(self._live, "chat_busy", None)
         if busy is not None and busy(path):
             raise ValueError(tr("чат записи ещё доделывается — попробуй через минуту"))
+        # открытую запись делить без толку: целую в конце не убрать (а новый
+        # «Медиаплеер» Windows дал бы убрать её прямо из-под себя)
+        holders = util.file_holders(path)
+        if holders:
+            raise ValueError(tr("запись открыта в {programs} — закрой её и попробуй снова",
+                                programs=", ".join("«%s»" % name for name in holders)))
         keep = split.get("keep_whole", True)
         if not isinstance(keep, bool):
             raise ValueError(tr("оставить целую запись — да или нет"))

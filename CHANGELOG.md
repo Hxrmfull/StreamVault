@@ -22,6 +22,13 @@ versions follow [Semantic Versioning](https://semver.org/).
 - The progress line of splitting shows the percentage and the time left;
   edit rows in "Downloads" show a frame of the recording.
 
+### Fixed
+
+- **Splitting or joining a recording open in the new Windows Media Player**
+  cut the playback off: that player lets Windows move an open file, so the
+  recording vanished from under it. Now the program asks Windows who holds
+  the file and waits, naming the program ("open in «Media Player»").
+
 ## 0.5.0 — 2026-11-07
 
 ### Added

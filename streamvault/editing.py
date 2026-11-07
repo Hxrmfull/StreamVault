@@ -344,6 +344,11 @@ class Editor(threading.Thread):
         # целая запись — в подпапку whole или в корзину. Открыта (проигрыватель,
         # плеер) — не выйдет, и тогда куски не нужны: иначе рядом были бы и целая, и куски
         whole_chat = chat.existing(source)
+        holders = util.file_holders(source)
+        if holders:
+            self._drop(job["partials"] + chats)
+            raise EditError(tr("запись открыта в {programs} — закрой её и попробуй снова",
+                               programs=", ".join("«%s»" % name for name in holders)))
         try:
             if job["keep_whole"]:
                 folder = os.path.join(os.path.dirname(source), util.WHOLE_DIR)

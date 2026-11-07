@@ -375,6 +375,77 @@ class ShowSignal:
         return True
 
 
+# Свои вспомогательные программы: держат запись секунды (кадр-превью, длительность).
+HELPERS = ("ffmpeg.exe", "ffprobe.exe")
+
+
+def file_users(path):
+    """
+    Какие программы держат файл открытым: [(pid, название)]. Спрашивается
+    Restart Manager Windows — им же установщики узнают, что закрыть. Нужен,
+    потому что отказу Windows верить нельзя: новый «Медиаплеер» открывает
+    файл с разрешением удалить его, и запись уходила в корзину прямо из-под
+    него. Не Windows или не спросить — [].
+    """
+    if os.name != "nt":
+        return []
+    import ctypes
+    from ctypes import wintypes
+
+    class UniqueProcess(ctypes.Structure):
+        _fields_ = [("dwProcessId", wintypes.DWORD), ("ProcessStartTime", wintypes.FILETIME)]
+
+    class ProcessInfo(ctypes.Structure):
+        _fields_ = [("Process", UniqueProcess), ("strAppName", ctypes.c_wchar * 256),
+                    ("strServiceShortName", ctypes.c_wchar * 64), ("ApplicationType", ctypes.c_int),
+                    ("AppStatus", wintypes.ULONG), ("TSSessionId", wintypes.DWORD),
+                    ("bRestartable", wintypes.BOOL)]
+
+    try:
+        manager = ctypes.WinDLL("rstrtmgr")
+    except OSError:
+        return []
+    session = wintypes.DWORD()
+    key = ctypes.create_unicode_buffer(64)
+    if manager.RmStartSession(ctypes.byref(session), 0, key):
+        return []
+    try:
+        files = (wintypes.LPCWSTR * 1)(os.path.abspath(path))
+        if manager.RmRegisterResources(session, 1, files, 0, None, 0, None):
+            return []
+        needed, count, reasons = wintypes.UINT(0), wintypes.UINT(0), wintypes.DWORD()
+        found = (ProcessInfo * 0)()
+        for _ in range(3):
+            result = manager.RmGetList(session, ctypes.byref(needed), ctypes.byref(count), found,
+                                       ctypes.byref(reasons))
+            if result == 234:            # ERROR_MORE_DATA: места мало — ещё раз с нужным
+                found = (ProcessInfo * needed.value)()
+                count = wintypes.UINT(needed.value)
+                continue
+            if result:
+                return []
+            return [(item.Process.dwProcessId, item.strAppName) for item in found[:count.value]]
+        return []
+    finally:
+        manager.RmEndSession(session)
+
+
+def file_holders(path):
+    """
+    Кто, кроме своих вспомогательных программ, держит файл: названия для
+    человека. Сама программа (проигрыватель окна) — «проигрыватель StreamVault».
+    """
+    names = []
+    for pid, name in file_users(path):
+        if pid == os.getpid():
+            name = tr("проигрыватель StreamVault")
+        elif os.path.basename(name).lower() in HELPERS or name.lower() in ("ffmpeg", "ffprobe"):
+            continue
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
 def send_to_recycle_bin(path):
     """В корзину, а не насовсем: удалённое из библиотеки можно вернуть."""
     if os.name != "nt":
