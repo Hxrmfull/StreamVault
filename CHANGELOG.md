@@ -5,6 +5,14 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- The search box at the top had a border and rounded corners on its right
+  side, so the search button stuck to it from the outside. The box and the
+  button are one control again and light up together on hover and focus.
+
 ## 0.6.0 — 2026-11-07
 
 ### Added

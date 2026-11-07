@@ -122,7 +122,14 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   margin: 0 auto;
   display: flex;
 }
-.search input {
+/* поле и кнопка — одно целое: общая рамка, подсветка при наведении и фокусе — у обоих.
+   [type=text] — иначе общее правило полей ниже (та же весомость) вернёт полю рамку
+   и скругление со всех сторон, и кнопка прилипала бы к нему сбоку */
+.search {
+  border-radius: var(--radius);
+  transition: box-shadow .15s ease;
+}
+.search input[type=text] {
   flex: 1;
   min-width: 0;
   height: 36px;
@@ -132,12 +139,13 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   border-right: none;
   border-radius: var(--radius) 0 0 var(--radius);
   outline: none;
+  box-shadow: none;
 }
-.search input:focus { border-color: var(--accent); background: #000; }
 .search-button {
   width: 40px;
   height: 36px;
-  border: none;
+  border: 2px solid var(--control-border);
+  border-left: 1px solid var(--control-border);
   border-radius: 0 var(--radius) var(--radius) 0;
   background: var(--raised);
   color: var(--text);
@@ -145,8 +153,13 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: border-color .15s ease, background .15s ease;
 }
 .search-button:hover { background: #3a3a40; }
+.search:hover input[type=text], .search:hover .search-button { border-color: #7c7c86; }
+.search:focus-within input[type=text], .search:focus-within .search-button { border-color: var(--accent); }
+.search:focus-within input[type=text] { background: #000; }
+.search:focus-within { box-shadow: 0 0 0 3px rgba(145, 71, 255, .22); }
 
 /* выдача каналов под полем поиска */
 .search-anchor { position: relative; }
