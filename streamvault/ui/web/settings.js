@@ -3,7 +3,7 @@
  * TwitchDownloader и обновление самой программы.
  */
 
-import { CHAT_MODES, DOWNLOAD_QUALITIES, bridge, button, confirmDialog, failed, fmt, h, helpTip, icon, liveQualitySelect, openModal, platformName, setText, showStopped, state, t, toast } from "./common.js";
+import { CHAT_MODES, CONVERT_FORMATS, DOWNLOAD_QUALITIES, bridge, button, confirmDialog, failed, fmt, h, helpTip, icon, liveQualitySelect, openModal, platformName, setText, showStopped, state, t, toast } from "./common.js";
 import { render } from "./app.js";
 
 // Полезные аргументы yt-dlp: полный список — сотни строк, здесь — то, что пригождается
@@ -580,6 +580,13 @@ export function openSettings() {
   fields.live_chat.addEventListener("change", showChatSize);
   showChatSize();
 
+  // во что конвертировать: подсказка — под выбором
+  const convertFormat = select("convert_format", t("Формат после конвертации"),
+                               CONVERT_FORMATS.map(([value, label]) => [value, t(label)]));
+  convertFormat.append(h("div", { class: "hint", text: t("mp4 открывают любой проигрыватель, телефон и телевизор. " +
+    "mkv надёжнее: оборванный файл почти всегда открывается, но телефоны и мессенджеры понимают его хуже. " +
+    "Только звук — без видео, в десятки раз меньше: для подкастов и музыкальных эфиров; чат остаётся.") }));
+
   // деление записи на куски при конвертации: у каждого способа своё число
   const splitMode = select("split_mode", t("Делить запись на куски"),
     [["off", t("не делить")], ["size", t("по размеру")], ["duration", t("по длительности")],
@@ -591,7 +598,7 @@ export function openSettings() {
     duration: text("split_minutes", t("Кусок длиной, минут"), null, { number: true }),
     count: text("split_count", t("На сколько частей"), null, { number: true }),
   };
-  const splitHint = h("div", { class: "hint field-gap", text: t("Делится при конвертации в mp4, без перекодирования, " +
+  const splitHint = h("div", { class: "hint field-gap", text: t("Делится при конвертации, без перекодирования, " +
     "по ключевым кадрам — куски выходят примерно такими. Чат делится вместе с записью, в библиотеке куски — " +
     "одной карточкой и смотрятся подряд. Части эфира после обрывов делятся каждая отдельно.") });
   const showSplit = () => {
@@ -609,11 +616,11 @@ export function openSettings() {
       h("div", { class: "field" }, h("label", null, t("Качество записи по умолчанию")),
         fields.quality = liveQualitySelect(settings.quality),
         h("div", { class: "hint", text: t("Если такого нет, берётся ближайшее, а у небольших каналов — исходное.") })),
-      flag("convert_recordings", t("Конвертировать записи в mp4"),
-           t("Включено — после эфира запись переписывается из .ts в mp4, который открывает любой " +
-             "проигрыватель, телефон и телевизор. Выключено — запись остаётся в .ts и пишется на диск " +
-             "один раз; .ts открывают VLC, MPC и mpv, а в mp4 её можно перевести потом кнопкой " +
-             "в библиотеке.")),
+      flag("convert_recordings", t("Конвертировать записи после эфира"),
+           t("Включено — после эфира запись переписывается из .ts в выбранный ниже формат, без " +
+             "перекодирования. Выключено — запись остаётся в .ts и пишется на диск один раз; .ts открывают " +
+             "VLC, MPC и mpv, а сконвертировать её можно потом кнопкой в библиотеке.")),
+      convertFormat,
       flag("mp4_faststart", t("Готовить mp4 к просмотру по сети"),
            t("Включено — видео начинает играть сразу, не скачиваясь целиком: в браузере, мессенджере, " +
              "с облака или домашнего сервера; для этого готовый mp4 переписывается на диск ещё раз. " +

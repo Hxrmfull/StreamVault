@@ -653,14 +653,14 @@ export function openWatch(item, options) {
     const ts = /\.ts$/i.test(item.path);
     const convertible = ts && item.kind === "record" && !state.converting.has(item.path);
     problem.replaceChildren(
-      h("div", { text: ts ? t("Запись в .ts окно не проигрывает: переведи её в mp4 или открой в проигрывателе.")
+      h("div", { text: ts ? t("Запись в .ts окно не проигрывает: сконвертируй её или открой в проигрывателе.")
                           : t("Это видео окно проиграть не может — открой его в проигрывателе.") }),
       h("div", { class: "toolbar" },
-        convertible ? button(t("Конвертировать в mp4"), { kind: "primary", icon: "convert", onclick: () => {
+        convertible ? button(t("Конвертировать запись"), { kind: "primary", icon: "convert", onclick: () => {
           state.converting.add(item.path);
           bridge.call("convert_recording", item.path)
             .then(() => {
-              toast(t("Конвертирую в mp4: {name}", { name: item.name }), "ok");
+              toast(t("Конвертирую: {name}", { name: item.name }), "ok");
               modal.close();
             })
             .catch((error) => {

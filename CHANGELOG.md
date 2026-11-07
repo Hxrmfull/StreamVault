@@ -17,6 +17,13 @@ versions follow [Semantic Versioning](https://semver.org/).
   equal parts, without re-encoding. The pieces keep the format, each gets
   its own chat, and they play one after another as one card; the whole file
   goes to the Recycle Bin. Pieces of a split download now also form one card.
+- **Conversion to MKV or sound only.** Besides MP4 a recording can now be
+  converted to MKV (survives a crash better) or to sound only, M4A (dozens
+  of times smaller, for podcasts and music streams) — in the settings, for
+  each channel and in the "Convert" dialog in the library. Still without
+  re-encoding; sound that does not fit into M4A as is is re-encoded to AAC.
+  The stream beginning is joined with such recordings too: with a sound-only
+  one the seam is found by the sound.
 
 ### Fixed
 

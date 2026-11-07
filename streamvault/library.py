@@ -27,7 +27,7 @@ MEDIA_EXTENSIONS = (".mp4", ".ts", ".m4a", ".mkv", ".webm", ".mp3")
 
 # Промежуточные файлы ffmpeg и yt-dlp: пока они есть, видео не готово.
 # .joining — склейка начала эфира с записью (live/joining.py)
-_UNFINISHED = re.compile(r"\.part\b|\.ytdl$|\.temp\.|\.f\d+\.\w+$|\.joining\.(ts|mp4)\b", re.IGNORECASE)
+_UNFINISHED = re.compile(r"\.part\b|\.ytdl$|\.temp\.|\.f\d+\.\w+$|\.joining\.(ts|mp4|mkv|m4a)\b", re.IGNORECASE)
 
 _RECORDING_NAME = re.compile(
     r"^(?P<label>.+?) - (?P<date>\d{4}-\d{2}-\d{2}) (?P<h>\d{2})h(?P<m>\d{2})m(?P<s>\d{2})s"
@@ -123,8 +123,8 @@ def broadcast_parts(path):
         part = parsed.get("part")
         order = (1 if part is None else part, parsed.get("piece") or 0)
         candidate = os.path.join(folder, name)
-        # часть уже сконвертирована, а .ts ещё лежит — смотреть mp4
-        if order not in parts or candidate.lower().endswith(".mp4"):
+        # часть уже сконвертирована, а .ts ещё лежит — смотреть сконвертированную
+        if order not in parts or not candidate.lower().endswith(".ts"):
             parts[order] = candidate
     if not parts:
         return [(1, path)]
@@ -157,8 +157,8 @@ def piece_parts(path):
             continue
         number = int(found.group(1))
         candidate = os.path.join(folder, name)
-        # кусок уже сконвертирован, а .ts ещё лежит — смотреть mp4
-        if number not in pieces or candidate.lower().endswith(".mp4"):
+        # кусок уже сконвертирован, а .ts ещё лежит — смотреть сконвертированный
+        if number not in pieces or not candidate.lower().endswith(".ts"):
             pieces[number] = candidate
     if not pieces:
         return [(1, path)]

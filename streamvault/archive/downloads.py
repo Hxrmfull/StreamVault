@@ -73,7 +73,7 @@ def _follow_join(job):
     stem = os.path.splitext(file)[0]
     if job.get("state") != DONE or job.get("joined") or not stem.endswith(PART00) or os.path.exists(file):
         return
-    main = next((stem[:-len(PART00)] + extension for extension in (".mp4", ".ts")
+    main = next((stem[:-len(PART00)] + extension for extension in util.RECORDING_EXTENSIONS
                  if os.path.isfile(stem[:-len(PART00)] + extension)), None)
     if main:
         job.update(file=main, joined=True, chat_files=chat.existing(main))

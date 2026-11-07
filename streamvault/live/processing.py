@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Постобработка записей: сырой .ts превращается в .mp4."""
+"""Постобработка записей: сырой .ts превращается в mp4, mkv или только звук (m4a)."""
 
 import enum
 import itertools
@@ -24,6 +24,27 @@ BUSY_RETRY = 5
 # Кусок короче этого не отрезается: хвост в полминуты прилипает к предыдущему.
 MIN_PIECE = 60
 MAX_PIECES = 100
+# Во что конвертируется запись: расширение и муксер ffmpeg. Всё — без перекодирования.
+FORMATS = {"mp4": (".mp4", "mp4"), "mkv": (".mkv", "matroska"), "audio": (".m4a", "ipod")}
+
+
+def stream_args(fmt):
+    """
+    Что взять из .ts и как: варианты по порядку — следующий, если предыдущий
+    не вышел. В .ts бывают служебные дорожки (метаданные Twitch): mkv их не
+    принимает, поэтому только видео и звук. Звук без видео: AAC ложится в m4a
+    как есть; другой кодек (бывает у чужих .ts) — перекодируется в AAC.
+    """
+    if fmt == "audio":
+        return [["-map", "0:a:0", "-vn", "-c:a", "copy"],
+                ["-map", "0:a:0", "-vn", "-c:a", "aac", "-b:a", "192k"]]
+    if fmt == "mkv":
+        return [["-map", "0:v?", "-map", "0:a?", "-c", "copy"]]
+    return [["-c", "copy"]]
+
+
+def _format_label(fmt):
+    return FORMATS.get(fmt, FORMATS["mp4"])[0][1:]
 
 
 def split_points(mode, duration, size, size_gb=0, minutes=0, count=0):
@@ -80,7 +101,7 @@ class ProcessingQueue(threading.Thread):
     def __init__(self, ffmpeg_path, disable_ffmpeg, stop_event, root_path=None,
                  max_attempts=3, retry_delay=120, rescan_interval=600,
                  settle_seconds=120, drain_grace=900, bus=None, on_done=None, faststart=True,
-                 split=None, integrity=None):
+                 split=None, integrity=None, convert_format=None):
         """
         ffmpeg_path — путь или функция, которая его возвращает (None — ffmpeg
         нет): ffmpeg могут установить, пока программа работает. disable_ffmpeg
@@ -93,7 +114,8 @@ class ProcessingQueue(threading.Thread):
         split(запись) — как делить её на куски: (режим, ГБ, минуты, число частей);
         у канала бывает своё деление. integrity — IntegrityStore: запись
         проверяется на пропуски до конвертации (после неё длинные пропуски
-        уже склеены и не видны), итог — у готовых файлов.
+        уже склеены и не видны), итог — у готовых файлов. convert_format(запись) —
+        во что её конвертировать: mp4, mkv или audio (у канала бывает своё).
         """
         super().__init__(name="processing", daemon=True)
         self._ffmpeg_path = ffmpeg_path
@@ -111,6 +133,7 @@ class ProcessingQueue(threading.Thread):
         self._faststart = faststart
         self._split = split
         self._integrity = integrity
+        self._convert_format = convert_format
 
         self._queue = queue.PriorityQueue()
         self._counter = itertools.count()
@@ -120,6 +143,7 @@ class ProcessingQueue(threading.Thread):
         self._trusted = set()
         self._forced = set()     # конвертировать, даже если автоконвертация выключена
         self._split_once = {}    # как делить запись, выбранную в окне конвертации
+        self._format_once = {}   # и во что её конвертировать
         self._watched = []
         self._current = None   # что обрабатывается прямо сейчас
         # взводится, когда рекордеры отработали и новых заданий больше не будет
@@ -161,14 +185,14 @@ class ProcessingQueue(threading.Thread):
         with self._lock:
             self._active.discard(path)
 
-    def submit(self, recorded, processed, delay=0, trusted=False, convert=False, split=None):
+    def submit(self, recorded, processed, delay=0, trusted=False, convert=False, split=None, fmt=None):
         """
         trusted=True ставит рекордер после выхода streamlink: запись заведомо
         закончена, выдержку по времени изменения для неё применять не нужно.
         convert=True — сконвертировать в mp4, даже если автоконвертация
         выключена (кнопка в библиотеке). split — как делить именно эту запись
         (mode, size_gb, minutes, count), выбрано в окне конвертации; None —
-        по настройкам канала.
+        по настройкам канала. fmt — во что конвертировать её (mp4, mkv, audio).
         """
         with self._lock:
             if recorded in (self._forced if convert else self._known):
@@ -180,6 +204,8 @@ class ProcessingQueue(threading.Thread):
                 self._forced.add(recorded)
             if split is not None:
                 self._split_once[recorded] = tuple(split)
+            if fmt is not None:
+                self._format_once[recorded] = fmt
         self._queue.put((time.time() + delay, next(self._counter), 1, recorded, processed))
         self._emit("queued", recorded)
 
@@ -254,6 +280,7 @@ class ProcessingQueue(threading.Thread):
                 with self._lock:
                     self._known.discard(recorded)
                     self._forced.discard(recorded)
+                    self._format_once.pop(recorded, None)
             elif outcome is Outcome.NOT_READY:
                 if draining:
                     self._dropped += 1
@@ -444,11 +471,40 @@ class ProcessingQueue(threading.Thread):
         for piece, gaps, length in zip(results, map_to_pieces(checked["gaps"], lengths), lengths):
             self._integrity.put(piece, gaps, length)
 
+    def _format(self, recorded):
+        """Во что конвертировать запись: выбрано в окне конвертации, у канала или общее."""
+        with self._lock:
+            chosen = self._format_once.get(recorded)
+        if chosen is None and self._convert_format is not None:
+            chosen = self._convert_format(recorded) if callable(self._convert_format) else self._convert_format
+        return chosen if chosen in FORMATS else "mp4"
+
+    def _ffmpeg_variants(self, ffmpeg, recorded, fmt, output, extra):
+        """
+        ffmpeg по вариантам stream_args, пока один не выйдет. Результат
+        последнего запуска; output — путь или список путей результата.
+        """
+        outputs = output if isinstance(output, list) else [output]
+        result = None
+        for number, streams in enumerate(stream_args(fmt)):
+            if number:
+                logging.info(tr("звук не ложится в m4a как есть — перекодирую в AAC: {name}",
+                                name=os.path.basename(recorded)))
+            result = subprocess.run([ffmpeg, "-nostdin", "-y", "-err_detect", "ignore_err", "-i", recorded,
+                                     *streams, *extra], capture_output=True, text=True, encoding="utf-8",
+                                    errors="replace", creationflags=util.subprocess_flags())
+            if result.returncode == 0 and any(os.path.exists(path) and os.path.getsize(path) > 0
+                                              for path in outputs):
+                return result
+            for path in outputs:
+                remove_quietly(path)
+        return result
+
     def _wants_faststart(self, recorded):
         """faststart — значение или функция от пути записи: у канала может быть своё."""
         return self._faststart(recorded) if callable(self._faststart) else self._faststart
 
-    def _convert_pieces(self, ffmpeg, recorded, target, points, checked=None):
+    def _convert_pieces(self, ffmpeg, recorded, target, points, checked=None, fmt="mp4"):
         """
         Конвертация с нарезкой: сегментный муксер ffmpeg пишет куски один за
         другим, без перекодирования, каждый со временем от нуля. Куски пишутся
@@ -460,16 +516,24 @@ class ProcessingQueue(threading.Thread):
         pattern = (stem.replace("%", "%%") + " - piece %d" + extension + PARTIAL_SUFFIX)
         partials = [stem + " - piece %d" % number + extension + PARTIAL_SUFFIX for number in range(1, planned + 1)]
         faststart = self._wants_faststart(recorded)
-        logging.info(tr("конвертирую в mp4 и делю на {count} {pieces}: {name}", count=planned,
-                        pieces=plural(planned, "кусок|куска|кусков"), name=os.path.basename(recorded)))
-        command = [ffmpeg, "-nostdin", "-y", "-err_detect", "ignore_err", "-i", recorded,
-                   "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy",
-                   "-f", "segment", "-segment_times", ",".join("%.3f" % point for point in points),
-                   "-segment_start_number", "1", "-reset_timestamps", "1", "-segment_format", "mp4"]
-        if faststart:
-            command += ["-segment_format_options", "movflags=+faststart"]
-        result = subprocess.run(command + [pattern], capture_output=True, text=True, encoding="utf-8",
-                                errors="replace", creationflags=util.subprocess_flags())
+        muxer = FORMATS[fmt][1]
+        logging.info(tr("конвертирую в {format} и делю на {count} {pieces}: {name}", format=_format_label(fmt),
+                        count=planned, pieces=plural(planned, "кусок|куска|кусков"), name=os.path.basename(recorded)))
+        # первые видео и звук: служебные дорожки .ts кускам не нужны
+        if fmt == "audio":
+            variants = None
+        else:
+            variants = [["-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy"]]
+        extra = ["-f", "segment", "-segment_times", ",".join("%.3f" % point for point in points),
+                 "-segment_start_number", "1", "-reset_timestamps", "1", "-segment_format", muxer]
+        if faststart and muxer in ("mp4", "ipod"):
+            extra += ["-segment_format_options", "movflags=+faststart"]
+        if variants is None:
+            result = self._ffmpeg_variants(ffmpeg, recorded, fmt, partials, extra + [pattern])
+        else:
+            result = subprocess.run([ffmpeg, "-nostdin", "-y", "-err_detect", "ignore_err", "-i", recorded,
+                                     *variants[0], *extra, pattern], capture_output=True, text=True,
+                                    encoding="utf-8", errors="replace", creationflags=util.subprocess_flags())
         produced = [path for path in partials if os.path.exists(path) and os.path.getsize(path) > 0]
         if result.returncode != 0 or not produced:
             logging.error(tr("ffmpeg не справился с {name} (код {code})",
@@ -541,26 +605,24 @@ class ProcessingQueue(threading.Thread):
                 return Outcome.NOT_READY
             self._missing_reported = False
 
-            target = unique_path(os.path.splitext(processed)[0] + ".mp4")
+            fmt = self._format(recorded)
+            extension, muxer = FORMATS[fmt]
+            target = unique_path(os.path.splitext(processed)[0] + extension)
             checked = self._check(ffmpeg, recorded)
             points = self._split_points(ffmpeg, recorded, checked["duration"] if checked else None)
             if points:
-                return self._convert_pieces(ffmpeg, recorded, target, points, checked)
+                return self._convert_pieces(ffmpeg, recorded, target, points, checked, fmt)
             # ffmpeg пишет во временный файл и только по успеху он получает
             # настоящее имя. Иначе прерванная конвертация (Ctrl+C, закрытое окно,
             # сбой) оставляла битый mp4 под основным именем, а целый получал "(2)".
             partial = target + PARTIAL_SUFFIX
-            logging.info(tr("конвертирую в mp4: {name}", name=os.path.basename(recorded)))
+            logging.info(tr("конвертирую в {format}: {name}", format=_format_label(fmt),
+                            name=os.path.basename(recorded)))
             faststart = self._wants_faststart(recorded)
-            # faststart переносит оглавление mp4 в начало — для просмотра по сети;
-            # для этого ffmpeg переписывает готовый файл ещё раз
-            movflags = ["-movflags", "+faststart"] if faststart else []
-            result = subprocess.run(
-                [ffmpeg, "-nostdin", "-y", "-err_detect", "ignore_err",
-                 "-i", recorded, "-c", "copy", *movflags,
-                 "-f", "mp4", partial],
-                capture_output=True, text=True, encoding="utf-8", errors="replace",
-                creationflags=util.subprocess_flags())
+            # faststart переносит оглавление mp4 (и m4a) в начало — для просмотра по сети;
+            # для этого ffmpeg переписывает готовый файл ещё раз. У mkv оглавления в конце нет
+            movflags = ["-movflags", "+faststart"] if faststart and muxer in ("mp4", "ipod") else []
+            result = self._ffmpeg_variants(ffmpeg, recorded, fmt, partial, [*movflags, "-f", muxer, partial])
 
             produced = os.path.exists(partial) and os.path.getsize(partial) > 0
             if result.returncode != 0 or not produced:

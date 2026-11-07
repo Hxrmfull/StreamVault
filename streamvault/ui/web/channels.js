@@ -3,7 +3,7 @@
  * канала, списки записей и клипов, одно видео и запись по ссылке.
  */
 
-import { CHAT_MODES, DOWNLOAD_QUALITIES, SPLIT_MODES, KIND_LABELS, PAGE, PERIOD_LABELS, bridge, button, channelName, channelUrl, chatSelect, chatSupported, confirmDialog, displayTitle, ensureProfiles, entryChannelName, failed, fillAvatar, fmt, h, icon, iconButton, isLive, isRecording, isUrl, recordStarting, keepDaysSelect, knownProfile, liveQualityLabel, liveQualitySelect, liveThumb, openModal, platformName, qualitySelect, setSrc, setText, siteInfo, sortedChannels, splitId, state, stateText, stateTone, syncList, t, toast } from "./common.js";
+import { CHAT_MODES, CONVERT_FORMATS, DOWNLOAD_QUALITIES, SPLIT_MODES, KIND_LABELS, PAGE, PERIOD_LABELS, bridge, button, channelName, channelUrl, chatSelect, chatSupported, confirmDialog, displayTitle, ensureProfiles, entryChannelName, failed, fillAvatar, fmt, h, icon, iconButton, isLive, isRecording, isUrl, recordStarting, keepDaysSelect, knownProfile, liveQualityLabel, liveQualitySelect, liveThumb, openModal, platformName, qualitySelect, setSrc, setText, siteInfo, sortedChannels, splitId, state, stateText, stateTone, syncList, t, toast } from "./common.js";
 import { twitchdownloaderBlock } from "./settings.js";
 import { openAddChannel } from "./search.js";
 import { navigate, recBadge, refreshView, render, routeHash, view } from "./app.js";
@@ -394,6 +394,7 @@ export function openChannelOptions(id) {
     join_beginning: choice("join_beginning", yesNo),
     live_chat: choice("live_chat", chatChoices),
     convert_recordings: choice("convert_recordings", yesNo),
+    convert_format: choice("convert_format", CONVERT_FORMATS.map(([value, label]) => [value, t(label)])),
     mp4_faststart: choice("mp4_faststart", yesNo),
     split_mode: choice("split_mode", splitChoices),
   };
@@ -451,7 +452,8 @@ export function openChannelOptions(id) {
     field(t("Чат прямых эфиров при записи"), fields.live_chat),
     field(t("Записывать с начала эфира, если запись началась позже"), fields.record_from_start),
     field(t("Склеивать начало эфира с записью"), fields.join_beginning),
-    field(t("Конвертировать записи в mp4"), fields.convert_recordings),
+    field(t("Конвертировать записи после эфира"), fields.convert_recordings),
+    field(t("Формат после конвертации"), fields.convert_format),
     field(t("Готовить mp4 к просмотру по сети"), fields.mp4_faststart),
     field(t("Делить запись на куски"), fields.split_mode),
     numberFields.size, numberFields.duration, numberFields.count,

@@ -3,7 +3,7 @@
  * эфиры из частей одной карточкой, отбор, порядок и место на диске.
  */
 
-import { SPLIT_MODES, bridge, button, channelName, confirmDialog, displayTitle, ensureProfiles, failed, fmt, h, icon, iconButton, openModal, platformName, safeUrl, setSrc, setText, state, syncList, t, toast, tp } from "./common.js";
+import { CONVERT_FORMATS, SPLIT_MODES, bridge, button, channelName, confirmDialog, displayTitle, ensureProfiles, failed, fmt, h, icon, iconButton, openModal, platformName, safeUrl, setSrc, setText, state, syncList, t, toast, tp } from "./common.js";
 import { openWatch } from "./player.js";
 import { openChatSearch, openSummary } from "./summary.js";
 import { view } from "./app.js";
@@ -281,7 +281,7 @@ export function createLibraryCard() {
   card._img = h("img", { alt: "" });
   card._img.hidden = true;
   card._kind = h("span", { class: "badge dark" });
-  card._ts = h("span", { class: "badge dark", text: ".ts", title: t("Запись не сконвертирована в mp4") });
+  card._ts = h("span", { class: "badge dark", text: ".ts", title: t("Запись не сконвертирована") });
   card._duration = h("span", { class: "badge dark" });
   card._size = h("span", { class: "badge dark" });
   card._parts = h("span", { class: "badge dark" });
@@ -307,7 +307,7 @@ export function createLibraryCard() {
     event.stopPropagation();
     bridge.call("open_file", card._item.chat.video).catch(failed);
   });
-  card._convert = iconButton("convert", t("Конвертировать в mp4"), (event) => {
+  card._convert = iconButton("convert", t("Конвертировать запись"), (event) => {
     event.stopPropagation();
     openConvert(card);
   });
@@ -343,12 +343,17 @@ export function createLibraryCard() {
   return card;
 }
 
-// как делить: режим и его число; сразу стоит то, что у канала. withOff — можно «не делить»
-function splitControls(item, withOff) {
+// настройка записи канала этой записи: своя у канала или общая
+function channelSetting(item, key) {
   const channel = [...state.channels.values()].find((entry) => entry.platform === item.platform
     && String(entry.label || "").toLowerCase() === String(item.channel || "").toLowerCase());
   const options = (channel && channel.options) || {};
-  const setting = (key) => (key in options ? options[key] : state.settings[key]);
+  return key in options ? options[key] : state.settings[key];
+}
+
+// как делить: режим и его число; сразу стоит то, что у канала. withOff — можно «не делить»
+function splitControls(item, withOff) {
+  const setting = (key) => channelSetting(item, key);
   const modes = SPLIT_MODES.filter(([value]) => withOff || value !== "off");
   const mode = h("select", null, modes.map(([value, label]) => h("option", { value: value, text: t(label) })));
   const chosen = setting("split_mode");
@@ -415,12 +420,14 @@ function openSplit(item) {
     h("div", { class: "actions" }, button(t("Отмена"), { onclick: () => modal.close() }), start));
 }
 
-// «Конвертировать в mp4»: сначала окно — делить ли и как; сразу стоит то, что у канала
+// «Конвертировать запись»: сначала окно — во что, делить ли и как; сразу стоит то, что у канала
 function openConvert(card) {
   const parts = partsOf(card._item).filter((part) => /\.ts$/i.test(part.path));
   if (!parts.length) return;
   const item = card._item;
   const controls = splitControls(item, true);
+  const format = h("select", null, CONVERT_FORMATS.map(([value, label]) => h("option", { value: value, text: t(label) })));
+  format.value = channelSetting(item, "convert_format") || "mp4";
   // кусок поделённой записи ещё раз не делится — только конвертируется
   const pieces = parts.every((part) => part.piece);
   const modal = openModal();
@@ -430,8 +437,8 @@ function openConvert(card) {
     card._convert.disabled = true;
     Promise.all(parts.map((part) => {
       state.converting.add(part.path);
-      return bridge.call("convert_recording", part.path, split)
-        .then(() => toast(t("Конвертирую в mp4: {name}", { name: part.name }), "ok"))
+      return bridge.call("convert_recording", part.path, split, format.value)
+        .then(() => toast(t("Конвертирую: {name}", { name: part.name }), "ok"))
         .catch((error) => {
           state.converting.delete(part.path);
           throw error;
@@ -445,14 +452,20 @@ function openConvert(card) {
       });
   } });
   modal.body.append(
-    h("h2", { text: t("Конвертировать в mp4") }),
+    h("h2", { text: t("Конвертировать запись") }),
     h("div", { class: "muted field-gap", text: pieces
-      ? t("Куски станут mp4 без перекодирования, каждый со своим чатом. Файлы .ts после этого удалятся.")
+      ? t("Куски перепишутся в выбранный формат без перекодирования, каждый со своим чатом. Файлы .ts после этого удалятся.")
       : parts.length > 1
-      ? t("Частей эфира в .ts: {count}. Каждая станет mp4 и поделится так, как выбрано; чат — вместе с ней.", { count: parts.length })
-      : t("Запись станет mp4 без перекодирования и поделится так, как выбрано; у каждого куска свой чат. Файл .ts после этого удалится.") }),
+      ? t("Частей эфира в .ts: {count}. Каждая перепишется в выбранный формат и поделится так, как выбрано; чат — вместе с ней.", { count: parts.length })
+      : t("Запись перепишется в выбранный формат без перекодирования и поделится так, как выбрано; у каждого куска свой чат. Файл .ts после этого удалится.") }),
+    field(t("Во что"), format),
     ...(pieces ? [] : controls.fields),
     h("div", { class: "actions" }, button(t("Отмена"), { onclick: () => modal.close() }), start));
+}
+
+// файл только со звуком: кадра нет, видео чата на него не наложить
+function isSound(path) {
+  return /\.(m4a|mp3)$/i.test(path);
 }
 
 export function updateLibraryCard(card, item) {
@@ -462,10 +475,10 @@ export function updateLibraryCard(card, item) {
   // смотреть в окне можно любую запись: с чатом он идёт рядом, а клип вырезается и без него
   const withChat = parts.some((part) => part.chat && part.chat.json);
   card.title = withChat ? t("Смотреть с чатом") : t("Смотреть в окне");
-  card._overlay.hidden = Boolean(item.edit) || !parts.some((part) => part.chat && part.chat.video);
+  card._overlay.hidden = Boolean(item.edit) || !parts.some((part) => part.chat && part.chat.video && !isSound(part.path));
   card._chatOpen.hidden = !chatFiles.html;
   card._chatVideo.hidden = !chatFiles.video;
-  // запись, оставленная в .ts (автоконвертация выключена), — в mp4 по кнопке
+  // запись, оставленная в .ts (автоконвертация выключена), — сконвертировать по кнопке
   const ts = parts.filter((part) => /\.ts$/i.test(part.path));
   card._convert.hidden = !(item.kind === "record" && ts.length);
   card._ts.hidden = !ts.length;
@@ -525,7 +538,7 @@ export function updateLibraryCard(card, item) {
 // видео чата поверх записи: справа или слева, перекодирование всего видео.
 // У эфира из частей — каждая часть, у которой есть видео чата
 function openOverlay(item) {
-  const targets = partsOf(item).filter((part) => part.chat && part.chat.video);
+  const targets = partsOf(item).filter((part) => part.chat && part.chat.video && !isSound(part.path));
   const modal = openModal();
   const start = async (side) => {
     modal.close();

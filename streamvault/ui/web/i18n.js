@@ -90,10 +90,10 @@
     "Склеивать начало эфира с записью": "Join the stream beginning with the recording",
     "Конвертировать": "Convert",
     "Делить на куски": "Split into pieces",
-    "Частей эфира в .ts: {count}. Каждая станет mp4 и поделится так, как выбрано; чат — вместе с ней.":
-      "Stream parts in .ts: {count}. Each becomes an mp4 and is split as chosen; the chat goes along.",
-    "Запись станет mp4 без перекодирования и поделится так, как выбрано; у каждого куска свой чат. Файл .ts после этого удалится.":
-      "The recording becomes an mp4 without re-encoding and is split as chosen; each piece gets its own chat. The .ts file is deleted afterwards.",
+    "Частей эфира в .ts: {count}. Каждая перепишется в выбранный формат и поделится так, как выбрано; чат — вместе с ней.":
+      "Stream parts in .ts: {count}. Each is rewritten to the chosen format and split as chosen; the chat goes along.",
+    "Запись перепишется в выбранный формат без перекодирования и поделится так, как выбрано; у каждого куска свой чат. Файл .ts после этого удалится.":
+      "The recording is rewritten to the chosen format without re-encoding and split as chosen; each piece gets its own chat. The .ts file is deleted afterwards.",
     "Включено — когда начало скачано и запись обработана, они склеиваются в один файл без перекодирования: стык ищется по кадрам, без повтора и дыры, чат тоже склеивается, а части удаляются. Выключено — начало и запись остаются двумя файлами и играют в окне подряд.":
       "On — once the beginning is downloaded and the recording is processed, they are joined into one file without re-encoding: the seam is found by frames, with no repeat or gap, the chat is joined too, and the parts are deleted. Off — the beginning and the recording stay two files and play one after the other in the window.",
     "Записывать с начала эфира, если запись началась позже":
@@ -244,10 +244,15 @@
     "Сюда попадают готовые записи эфиров и всё скачанное.":
       "Finished stream recordings and everything you download appear here.",
     "Ничего не нашлось.": "Nothing found.",
-    "Запись не сконвертирована в mp4": "The recording is not converted to mp4",
+    "Запись не сконвертирована":
+      "The recording is not converted",
     "Смотреть с чатом": "Watch with chat",
-    "Конвертировать в mp4": "Convert to mp4",
-    "Конвертирую в mp4: {name}": "Converting to mp4: {name}",
+    "Конвертировать запись":
+      "Convert the recording",
+    "Во что":
+      "Into",
+    "Конвертирую: {name}":
+      "Converting: {name}",
     "В корзину": "Move to Recycle Bin",
     "Открыть в проигрывателе": "Open in player",
     "Отправить в корзину?": "Move to the Recycle Bin?",
@@ -259,8 +264,8 @@
     "Чат на секунду раньше": "Chat one second earlier",
     "Чат на секунду позже": "Chat one second later",
     "чат не загрузился: {error}": "chat did not load: {error}",
-    "Запись в .ts окно не проигрывает: переведи её в mp4 или открой в проигрывателе.":
-      "The window cannot play .ts recordings: convert it to mp4 or open it in a player.",
+    "Запись в .ts окно не проигрывает: сконвертируй её или открой в проигрывателе.":
+      "The window cannot play a .ts recording: convert it or open it in a player.",
     "Это видео окно проиграть не может — открой его в проигрывателе.":
       "The window cannot play this video — open it in a player.",
     "Перемотка": "Seek",
@@ -377,9 +382,20 @@
     "Качество записи по умолчанию": "Default recording quality",
     "Если такого нет, берётся ближайшее, а у небольших каналов — исходное.":
       "If there is no such quality, the closest one is used, and for small channels — the source.",
-    "Конвертировать записи в mp4": "Convert recordings to mp4",
-    "Включено — после эфира запись переписывается из .ts в mp4, который открывает любой проигрыватель, телефон и телевизор. Выключено — запись остаётся в .ts и пишется на диск один раз; .ts открывают VLC, MPC и mpv, а в mp4 её можно перевести потом кнопкой в библиотеке.":
-      "On — after the stream the recording is rewritten from .ts to mp4, which any player, phone and TV can open. Off — the recording stays in .ts and is written to disk once; .ts opens in VLC, MPC and mpv, and you can convert it to mp4 later with a button in the library.",
+    "Конвертировать записи после эфира":
+      "Convert recordings after the stream",
+    "Формат после конвертации":
+      "Format after conversion",
+    "mp4 открывают любой проигрыватель, телефон и телевизор. mkv надёжнее: оборванный файл почти всегда открывается, но телефоны и мессенджеры понимают его хуже. Только звук — без видео, в десятки раз меньше: для подкастов и музыкальных эфиров; чат остаётся.":
+      "mp4 opens in any player, phone and TV. mkv is sturdier: a cut-off file almost always opens, but phones and messengers handle it worse. Sound only — no video, dozens of times smaller: for podcasts and music streams; the chat stays.",
+    "mp4 — видео, открывается везде":
+      "mp4 — video, opens everywhere",
+    "mkv — видео, лучше переживает сбой":
+      "mkv — video, survives a crash better",
+    "только звук (m4a)":
+      "sound only (m4a)",
+    "Включено — после эфира запись переписывается из .ts в выбранный ниже формат, без перекодирования. Выключено — запись остаётся в .ts и пишется на диск один раз; .ts открывают VLC, MPC и mpv, а сконвертировать её можно потом кнопкой в библиотеке.":
+      "On — after the stream the recording is rewritten from .ts to the format chosen below, without re-encoding. Off — the recording stays in .ts and is written to disk once; .ts opens in VLC, MPC and mpv, and you can convert it later with a button in the library.",
     "Готовить mp4 к просмотру по сети": "Prepare mp4 for streaming over the network",
     "Включено — видео начинает играть сразу, не скачиваясь целиком: в браузере, мессенджере, с облака или домашнего сервера; для этого готовый mp4 переписывается на диск ещё раз. Выключено — одной перезаписью меньше; на этом компьютере видео играет как обычно, но по сети его сначала придётся скачать целиком.":
       "On — the video starts playing right away without downloading it fully: in a browser, a messenger, from the cloud or a home server; for this the finished mp4 is rewritten to disk once more. Off — one rewrite fewer; on this computer the video plays as usual, but over the network it has to be downloaded fully first.",
@@ -587,8 +603,8 @@
     "Без перекодирования, по ключевым кадрам: куски выходят примерно такими. Формат тот же, у каждого куска свой чат. Целая запись уйдёт в корзину.":
       "Without re-encoding, at keyframes: the pieces come out about this size. Same format, each piece gets its own chat. The whole recording goes to the Recycle Bin.",
     "Уже поделённые куски ({count}) не трогаются.": "Pieces that are already split ({count}) are left as they are.",
-    "Куски станут mp4 без перекодирования, каждый со своим чатом. Файлы .ts после этого удалятся.":
-      "The pieces become mp4 without re-encoding, each with its own chat. The .ts files are deleted afterwards.",
+    "Куски перепишутся в выбранный формат без перекодирования, каждый со своим чатом. Файлы .ts после этого удалятся.":
+      "The pieces are rewritten to the chosen format without re-encoding, each with its own chat. The .ts files are deleted afterwards.",
     "Готово: {name}": "Done: {name}",
     "Конец": "End",
     "Конец клипа должен быть позже начала": "The clip end must be after its start",
@@ -619,8 +635,8 @@
     "Эфир закончился — запись появится в библиотеке, когда обработается":
       "The stream has ended — the recording will appear in the library once processed",
     "чат пишется вместе с записью": "the chat is saved along with the recording",
-    "Делится при конвертации в mp4, без перекодирования, по ключевым кадрам — куски выходят примерно такими. Чат делится вместе с записью, в библиотеке куски — одной карточкой и смотрятся подряд. Части эфира после обрывов делятся каждая отдельно.":
-      "Split while converting to mp4, without re-encoding, at keyframes — the pieces come out about this size. The chat is split along with the recording; in the library the pieces are one card and play one after another. Stream parts after drops are split separately.",
+    "Делится при конвертации, без перекодирования, по ключевым кадрам — куски выходят примерно такими. Чат делится вместе с записью, в библиотеке куски — одной карточкой и смотрятся подряд. Части эфира после обрывов делятся каждая отдельно.":
+      "Split while converting, without re-encoding, at keyframes — the pieces come out about this size. The chat is split along with the recording; in the library the pieces are one card and play one after another. Stream parts after drops are split separately.",
     "Делить запись на куски": "Split recordings into pieces",
     "Запись делится на равные куски, каждый не больше этого: 4,1 ГБ при 2 ГБ — три куска по 1,4 ГБ, а не 2 + 2 + 0,1.":
       "The recording is split into equal pieces, each no larger than this: 4.1 GB with 2 GB gives three pieces of 1.4 GB, not 2 + 2 + 0.1.",

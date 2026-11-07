@@ -18,8 +18,10 @@
 части остаются как есть, а в журнале сказано почему.
 """
 
+import array
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -37,7 +39,7 @@ PART00 = " - part00"
 # Склейка пишется сюда и лишь потом заменяет запись.
 JOINING = ".joining"
 # Её файлы, оставшиеся от прерванной склейки: «….joining.ts» и «….joining.ts.head.ts».
-LEFTOVER = re.compile(r"\.joining\.(ts|mp4)(\.head\.(ts|mp4))?$", re.IGNORECASE)
+LEFTOVER = re.compile(r"\.joining\.(ts|mp4|mkv|m4a)(\.head\.(ts|mp4|mkv|m4a))?$", re.IGNORECASE)
 SCAN_INTERVAL = 60          # как часто искать готовые пары, секунды
 # Стык ищется в последних SEARCH_BEFORE секундах начала перед тем местом, где
 # по оценке начинается запись (начало скачано на OVERLAP секунд дальше).
@@ -46,6 +48,12 @@ THUMB = (32, 18)            # размер кадра для сравнения
 FRAMES_TO_MATCH = 3         # столько первых кадров записи ищется подряд
 MATCH_LIMIT = 10.0          # средняя разница яркости (0–255), выше — «не то место»
 VIDEO_EXTENSIONS = (".mp4", ".ts", ".mkv", ".webm")
+# Запись только со звуком (конвертация «только звук»): стык ищется по громкости.
+ENVELOPE_RATE = 1000        # звук для сравнения — моно, столько отсчётов в секунду
+ENVELOPE_STEP = 10          # громкость — по столько отсчётов (10 мс)
+COARSE = 5                  # грубый поиск — по столько шагов громкости (50 мс)
+SOUND_TO_MATCH = 10         # столько первых секунд записи ищется в начале
+SOUND_LIMIT = 0.8           # совпадение громкости (корреляция) ниже — «не то место»
 # Запись открыта (смотрят в окне программы или в проигрывателе) — Windows не даёт
 # подменить её склейкой и удалить начало: столько ждать, проверяя так часто, секунды
 REPLACE_WAIT = 600
@@ -110,6 +118,68 @@ def find_seam(ffmpeg, head, tail, estimate):
     return best_at
 
 
+def envelope(ffmpeg, path, start=None, length=None):
+    """
+    Громкость звука по шагам ENVELOPE_STEP отсчётов: [средний модуль]. Время —
+    от start (или от начала файла).
+    """
+    command = [ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error"]
+    if start:
+        command += ["-ss", "%.3f" % start]
+    command += ["-i", path, "-map", "0:a:0"]
+    if length:
+        command += ["-t", "%.3f" % length]
+    command += ["-ac", "1", "-ar", str(ENVELOPE_RATE), "-f", "s16le", "pipe:1"]
+    result = subprocess.run(command, capture_output=True, timeout=600, creationflags=util.subprocess_flags())
+    samples = array.array("h")
+    samples.frombytes(result.stdout[:len(result.stdout) // 2 * 2])
+    return [sum(abs(value) for value in samples[index:index + ENVELOPE_STEP]) / ENVELOPE_STEP
+            for index in range(0, len(samples) - ENVELOPE_STEP + 1, ENVELOPE_STEP)]
+
+
+def _correlation(window, wanted, at):
+    """Корреляция wanted с куском window с позиции at: 1 — совпадает по форме."""
+    count = len(wanted)
+    part = window[at:at + count]
+    mean_a, mean_b = sum(part) / count, sum(wanted) / count
+    top = sum((a - mean_a) * (b - mean_b) for a, b in zip(part, wanted))
+    low = math.sqrt(sum((a - mean_a) ** 2 for a in part) * sum((b - mean_b) ** 2 for b in wanted))
+    return top / low if low else 0.0
+
+
+def _coarse(values):
+    return [sum(values[index:index + COARSE]) / COARSE for index in range(0, len(values) - COARSE + 1, COARSE)]
+
+
+def find_sound_seam(ffmpeg, head, tail, estimate):
+    """
+    find_seam для записи без видео: где в начале (head) звучат первые
+    SOUND_TO_MATCH секунд записи (tail) — по громкости. Сначала грубо, по
+    50 мс, потом точно, по 10 мс. Тишина или ничего похожего — None.
+    """
+    wanted = envelope(ffmpeg, tail, length=SOUND_TO_MATCH)
+    begin = max(0.0, estimate - SEARCH_BEFORE)
+    window = envelope(ffmpeg, head, start=begin)
+    if len(wanted) < SOUND_TO_MATCH * ENVELOPE_RATE // ENVELOPE_STEP // 2 or len(window) < len(wanted):
+        return None
+    loudest = max(wanted)
+    if not loudest or max(wanted) - min(wanted) < loudest * 0.05:
+        logging.info(tr("стык начала и записи не найден: в начале записи тишина"))
+        return None
+    small_window, small_wanted = _coarse(window), _coarse(wanted)
+    scores = [(_correlation(small_window, small_wanted, at), at)
+              for at in range(len(small_window) - len(small_wanted) + 1)]
+    if not scores:
+        return None
+    _, rough = max(scores)
+    candidates = range(max(0, rough * COARSE - COARSE), min(len(window) - len(wanted), rough * COARSE + COARSE) + 1)
+    best, at = max((_correlation(window, wanted, index), index) for index in candidates)
+    if best < SOUND_LIMIT:
+        logging.info(tr("стык начала и записи не найден (совпадение звука {score})", score=round(best, 2)))
+        return None
+    return begin + at * ENVELOPE_STEP / ENVELOPE_RATE
+
+
 # ------------------------------------------------------------ склейка
 
 def _concat_line(path):
@@ -117,14 +187,18 @@ def _concat_line(path):
     return "file '%s'" % os.path.abspath(path).replace("\\", "/").replace("'", "'\\''")
 
 
+# Контейнер склейки — как у записи.
+CONTAINERS = {".ts": "mpegts", ".mkv": "matroska", ".m4a": "ipod"}
+
+
 def join_command(ffmpeg, listing, output, maps=("0:v:0?", "0:a:0?")):
-    container = "mpegts" if output.lower().endswith(".ts") else "mp4"
+    container = CONTAINERS.get(os.path.splitext(output)[1].lower(), "mp4")
     command = [ffmpeg, "-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
                "-i", listing]
     for stream in maps:
         command += ["-map", stream]
     command += ["-c", "copy"]
-    if container == "mp4":
+    if container in ("mp4", "ipod"):
         command += ["-movflags", "+faststart"]
     return command + ["-f", container, output]
 
@@ -226,7 +300,9 @@ def join_video(ffmpeg, head, cut, tail, output, progress=None, tail_length=None)
     """
     order = stream_kinds(ffmpeg, tail) or ["video", "audio"]
     maps = ["0:%s:0" % kind[0] for kind in order]
-    trim = "outpoint %.6f\nduration %.6f\n" % (decode_time(ffmpeg, head, cut), cut)
+    # у записи только со звуком кадров нет: режется ровно по стыку
+    outpoint = decode_time(ffmpeg, head, cut) if "video" in order else cut
+    trim = "outpoint %.6f\nduration %.6f\n" % (outpoint, cut)
     cut_head = output + ".head" + os.path.splitext(tail)[1]
     listings = []
     # доля склейки: начало — его секунды, остальное — вся запись целиком
@@ -326,7 +402,7 @@ def beginning_parts(root_path):
             if not stem.endswith(PART00) or extension.lower() not in VIDEO_EXTENSIONS:
                 continue
             base = os.path.join(folder, stem[:-len(PART00)])
-            main = next((base + ext for ext in (".mp4", ".ts") if os.path.isfile(base + ext)), None)
+            main = next((base + ext for ext in util.RECORDING_EXTENSIONS if os.path.isfile(base + ext)), None)
             if main:
                 pairs.append((os.path.join(folder, name), main))
     return pairs
@@ -443,13 +519,17 @@ class Joiner(threading.Thread):
         main_length, main_size = probe(ffmpeg, main)
         if not head_length or not main_length:
             return self._refuse(head, main, tr("не прочитать длительность"), kept=False)
-        if head_size != main_size:
+        # запись сконвертирована в «только звук»: у начала берётся только звук
+        sound_only = "video" not in stream_kinds(ffmpeg, main)
+        if not sound_only and head_size != main_size:
             return self._refuse(head, main, tr("размер кадра разный ({head} и {main})",
                                                head="%dx%d" % head_size if head_size else "?",
                                                main="%dx%d" % main_size if main_size else "?"))
         # без перекодирования склеивается только одно и то же: опубликованная
         # запись YouTube бывает в другом кодеке, чем эфир
         head_codecs, main_codecs = dict(streams(ffmpeg, head)), dict(streams(ffmpeg, main))
+        if sound_only:
+            head_codecs = {kind: codec for kind, codec in head_codecs.items() if kind in main_codecs}
         if head_codecs != main_codecs:
             return self._refuse(head, main, tr("кодеки разные ({head} и {main})",
                                                head=", ".join(sorted(head_codecs.values())) or "?",
@@ -457,7 +537,8 @@ class Joiner(threading.Thread):
         needed = os.path.getsize(head) + os.path.getsize(main)
         if shutil.disk_usage(os.path.dirname(main)).free < needed * 1.1:
             return self._refuse(head, main, tr("мало места на диске"), kept=False)
-        cut = find_seam(ffmpeg, head, main, max(0.0, head_length - OVERLAP))
+        seam = find_sound_seam if sound_only else find_seam
+        cut = seam(ffmpeg, head, main, max(0.0, head_length - OVERLAP))
         if cut is None:
             return self._refuse(head, main, tr("стык не найден"))
         stem, extension = os.path.splitext(main)

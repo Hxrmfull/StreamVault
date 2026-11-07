@@ -203,6 +203,7 @@ class LiveService:
                 drain_grace=self._settings["drain_grace"],
                 bus=self._bus, on_done=self._chat_finisher.finish,
                 faststart=lambda recorded=None: self._recording_setting(recorded, "mp4_faststart"),
+                convert_format=lambda recorded=None: self._recording_setting(recorded, "convert_format"),
                 # пропуски в записи ищутся до конвертации; итог видит окно
                 integrity=IntegrityStore.at(integrity_path(self._settings)),
                 split=lambda recorded: tuple(self._recording_setting(recorded, key) for key in
@@ -268,23 +269,24 @@ class LiveService:
         with self._lock:
             return [dict(event) for event in self._joins.values()]
 
-    def convert_recording(self, path, split=None):
+    def convert_recording(self, path, split=None, fmt=None):
         """
-        Запись, оставленную в .ts, — в mp4 рядом с ней (кнопка в библиотеке).
-        split — (mode, size_gb, minutes, count), выбранные в окне конвертации.
+        Запись, оставленную в .ts, — в mp4, mkv или только звук рядом с ней
+        (кнопка в библиотеке). split — (mode, size_gb, minutes, count), fmt —
+        формат: выбраны в окне конвертации; None — как у канала.
         """
         with self._lock:
             processing = self._processing
         if processing is None:
             raise ValueError(tr("конвертация недоступна: запись эфиров не запущена"))
         if not path.lower().endswith(".ts"):
-            raise ValueError(tr("в mp4 конвертируются только записи .ts"))
+            raise ValueError(tr("конвертируются только записи .ts"))
         from ..library import piece_mark
         # кусок поделённой записи ещё раз не делится: имя «piece 1 of 3 - piece 1 of 2»
         # библиотека не разберёт
         if piece_mark(os.path.splitext(os.path.basename(path))[0]):
             split = ("off", 0, 0, 0)
-        processing.submit(path, path, trusted=True, convert=True, split=split)
+        processing.submit(path, path, trusted=True, convert=True, split=split, fmt=fmt)
 
     def beginning_waits(self, path):
         """

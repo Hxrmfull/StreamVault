@@ -56,8 +56,9 @@ themselves from the app.
   with avatars, viewers and stream previews.
 - **Recording:** a "Start recording" button or auto-record for every stream
   (off by default) — for any channel, in favorites or not. Each channel has
-  its own recording settings: quality, chat, recording from the start, MP4
-  conversion, splitting and how long to keep recordings.
+  its own recording settings: quality, chat, recording from the start,
+  conversion (MP4, MKV or sound only), splitting and how long to keep
+  recordings.
 - **From the very start:** if recording begins mid-stream, the part before it
   is downloaded from the platform's own archive and joined with the recording
   into one file together with the chat, frame-exact and without re-encoding
@@ -72,7 +73,7 @@ themselves from the app.
   thumbnails, filters and disk usage. Watch in the window with synced chat,
   keyboard shortcuts and speed control, even while it is still recording;
   cut a clip or burn the chat video into the picture. A recording left as
-  `.ts` converts to MP4 with a button — whole, or split by size, duration or
+  `.ts` converts with a button — whole, or split by size, duration or
   into equal parts. Any finished recording or download can be split into
   pieces of the same format at any time.
 - **Safety:** stops recording before the disk fills up, can move old

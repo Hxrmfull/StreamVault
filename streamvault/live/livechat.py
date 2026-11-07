@@ -714,7 +714,7 @@ class ChatFinisher(threading.Thread):
                 if not os.path.exists(base + archive_chat.SUFFIXES["html"]) \
                         or render and not os.path.exists(base + archive_chat.SUFFIXES["video"]):
                     # запись могла остаться в .ts (автоконвертация выключена)
-                    video = next((base + ext for ext in (".mp4", ".ts") if os.path.exists(base + ext)),
+                    video = next((base + ext for ext in util.RECORDING_EXTENSIONS if os.path.exists(base + ext)),
                                  base + ".mp4")
                     self._enqueue(video)
 

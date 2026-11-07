@@ -44,7 +44,7 @@ EDITABLE = ("language", "root_path", "quality", "twitch_client_id", "twitch_clie
             "twitch_auth_token", "ytdlp_extra_args", "log_level",
             "close_to_tray", "tray_notifications",
             "chat_mode", "chat_width", "chat_height", "chat_font_size", "check_updates",
-            "live_chat", "convert_recordings", "mp4_faststart",
+            "live_chat", "convert_recordings", "convert_format", "mp4_faststart",
             "record_from_start", "join_beginning", "min_free_gb", "keep_days",
             "split_mode", "split_size_gb", "split_minutes", "split_count")
 
@@ -68,6 +68,8 @@ LIMITS = {"max_downloads": (1, 10), "download_fragments": (1, 16),
 LOG_LEVELS = ("debug", "info", "warning", "error")
 # Как делить запись на куски при конвертации (live/processing.py: split_points).
 SPLIT_MODES = ("off", "size", "duration", "count")
+# Во что конвертировать запись после эфира (live/processing.py: FORMATS).
+CONVERT_FORMATS = ("mp4", "mkv", "audio")
 
 # Какие сведения о видео окно может передать вместе со ссылкой.
 META_TEXT = ("id", "title", "channel", "folder", "platform", "kind", "thumbnail", "live_status")
@@ -803,12 +805,15 @@ class Api:
     def library_preview(self, path):
         return self._need_library().preview(self._media(path))
 
-    def convert_recording(self, path, split=None):
+    def convert_recording(self, path, split=None, fmt=None):
         """
-        Запись эфира в .ts — в mp4 (если автоконвертация была выключена).
-        split — {mode, size_gb, minutes, count} из окна конвертации; None —
-        делить по настройкам канала.
+        Запись эфира в .ts — в mp4, mkv или только звук (если автоконвертация
+        была выключена). split — {mode, size_gb, minutes, count} из окна
+        конвертации; None — делить по настройкам канала. fmt — формат из того
+        же окна; None — по настройкам канала.
         """
+        if fmt is not None and fmt not in CONVERT_FORMATS:
+            raise ValueError(tr("формат после записи: {formats}", formats=", ".join(CONVERT_FORMATS)))
         chosen = None
         if split is not None:
             if not isinstance(split, dict) or split.get("mode") not in ("off", "size", "duration", "count"):
@@ -818,7 +823,7 @@ class Api:
                       channel_option_value("split_size_gb", split.get("size_gb", self._settings["split_size_gb"])),
                       channel_option_value("split_minutes", split.get("minutes", self._settings["split_minutes"])),
                       channel_option_value("split_count", split.get("count", self._settings["split_count"])))
-        self._live.convert_recording(self._media(path), chosen)
+        self._live.convert_recording(self._media(path), chosen, fmt)
 
     def delete_file(self, path):
         self._need_library().delete(self._media(path))
@@ -1027,6 +1032,10 @@ class Api:
                 except (TypeError, ValueError):
                     raise ValueError(tr("интервал опроса — целое число секунд"))
             return result
+        if key == "convert_format":
+            if value not in CONVERT_FORMATS:
+                raise ValueError(tr("формат после записи: {formats}", formats=", ".join(CONVERT_FORMATS)))
+            return value
         if key == "split_mode":
             if value not in SPLIT_MODES:
                 raise ValueError(tr("деление записи: {modes}", modes=", ".join(SPLIT_MODES)))

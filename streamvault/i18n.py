@@ -185,8 +185,16 @@ STRINGS = {
         'Twitch token: network unavailable ({error}), retrying in {delay} s',
     'токен Twitch: непонятный ответ, повтор через {delay} с':
         'Twitch token: unreadable answer, retrying in {delay} s',
-    'конвертирую в mp4: {name}': 'converting to mp4: {name}',
+    'конвертирую в {format}: {name}': 'converting to {format}: {name}',
     'готово: {name}': 'done: {name}',
+    'стык начала и записи не найден (совпадение звука {score})':
+        'no seam between the beginning and the recording (sound match {score})',
+    'стык начала и записи не найден: в начале записи тишина':
+        'no seam between the beginning and the recording: the recording starts with silence',
+    'звук не ложится в m4a как есть — перекодирую в AAC: {name}':
+        'the sound does not fit into m4a as is — re-encoding to AAC: {name}',
+    'формат после записи: {formats}': 'format after recording: {formats}',
+    'конвертируются только записи .ts': 'only .ts recordings are converted',
     'делить нечего: запись не больше одного куска (или короче {minutes} мин)':
         'nothing to split: the recording fits in one piece (or is shorter than {minutes} min)',
     'это уже кусок поделённой записи: {name}': 'this is already a piece of a split recording: {name}',
@@ -464,7 +472,6 @@ STRINGS = {
     'чат эфира: сбой': 'stream chat: crash',
     'конвертация недоступна: запись эфиров не запущена':
         'conversion is unavailable: stream recording is not running',
-    'в mp4 конвертируются только записи .ts': 'only .ts recordings can be converted to mp4',
     '{channel} сейчас не в эфире': '{channel} is not live right now',
     '{channel}: запись начата вручную': '{channel}: recording started manually',
     '{channel}: запись остановлена вручную': '{channel}: recording stopped manually',
@@ -606,8 +613,8 @@ STRINGS = {
         'watching a recording in progress needs ffmpeg — it can be downloaded in the settings',
     '{key} — нужно число': '{key} must be a number',
     'деление записи: {modes}': 'splitting recordings: {modes}',
-    'конвертирую в mp4 и делю на {count} {pieces}: {name}':
-        'converting to mp4 and splitting into {count} {pieces}: {name}',
+    'конвертирую в {format} и делю на {count} {pieces}: {name}':
+        'converting to {format} and splitting into {count} {pieces}: {name}',
     'кусок|куска|кусков': 'piece|pieces',
     'чат не поделился по кускам записи: {error}':
         'the chat was not split along with the recording: {error}',
