@@ -60,7 +60,7 @@ export function receive(batch) {
         if (event.action === "done") state.converting.delete(event.file);
         break;
       case "recording":
-        updateRecordingBytes(event.bytes, event.chats || {});
+        updateRecordingBytes(event.bytes, event.chats || {}, event.time);
         break;
       case "log":
         appendLog(event);
@@ -93,7 +93,8 @@ export function receive(batch) {
   }
   if (channelsChanged) {
     refreshSidebar();
-    if (state.route.name === "live" || state.route.name === "channel") refreshView();
+    // запись началась или кончилась — раздел «Идёт запись» в «Загрузках» тоже
+    if (["live", "channel", "downloads"].includes(state.route.name)) refreshView();
     ensureProfiles([...state.channels.keys()]);
   }
   if (jobsChanged) {
@@ -139,14 +140,26 @@ export function noticeJob(job) {
   }
 }
 
-export function updateRecordingBytes(bytes, chats) {
+export function updateRecordingBytes(bytes, chats, time) {
+  const now = time || Date.now() / 1000;
   for (const [id, size] of Object.entries(bytes)) {
     const channel = state.channels.get(id);
     if (channel && channel.recording) {
       channel.recording.bytes = size;
       if (chats[id] !== undefined) channel.recording.chat_messages = chats[id];
     }
+    // скорость записи — сглаженная, как у загрузок; новая часть (байт меньше) — заново
+    const last = state.recordSpeeds.get(id);
+    if (last && size >= last.bytes && now - last.time >= 1) {
+      const rate = (size - last.bytes) / (now - last.time);
+      state.recordSpeeds.set(id, { bytes: size, time: now,
+                                   speed: last.speed === null ? rate : last.speed * 0.6 + rate * 0.4 });
+    } else if (!last || size < last.bytes) {
+      state.recordSpeeds.set(id, { bytes: size, time: now, speed: null });
+    }
   }
+  for (const id of [...state.recordSpeeds.keys()]) if (!(id in bytes)) state.recordSpeeds.delete(id);
+  if (state.route.name === "downloads") refreshView();
   for (const el of document.querySelectorAll("[data-rec-id]")) {
     const size = bytes[el.dataset.recId];
     if (size !== undefined) el.dataset.bytes = size;
@@ -185,6 +198,10 @@ export function tick() {
                   + (el.dataset.bytes ? " · " + fmt.size(Number(el.dataset.bytes)) : "")
                   + (el.dataset.chat ? " · " + t("чат {count}", { count: el.dataset.chat }) : "");
     setText(el.lastChild && el.lastChild.nodeType === 3 ? el.lastChild : el, label);
+  }
+  // боковая панель: только время записи — места мало
+  for (const el of document.querySelectorAll("[data-rec-time]")) {
+    setText(el, fmt.duration(now - Number(el.dataset.recTime)));
   }
   for (const el of document.querySelectorAll("[data-ago]")) {
     setText(el, (el.dataset.prefix || "") + fmt.ago(Number(el.dataset.ago)));

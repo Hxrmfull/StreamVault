@@ -315,6 +315,8 @@ export function failed(error) {
 export const state = {
   info: null,
   channels: new Map(),
+  // скорость идущих записей: id канала -> {bytes, time, speed} по событиям «recording»
+  recordSpeeds: new Map(),
   processing: { pending: 0, current: null },
   jobs: new Map(),
   joins: new Map(),          // склейка начала эфира с записью: путь начала → последнее событие

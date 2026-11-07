@@ -311,6 +311,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 .dot.live { background: var(--live); }
 .dot.warn { background: var(--warn); }
 .dot.error { background: var(--error); }
+/* идёт запись: красная точка, как у кнопки записи */
+.dot.rec { background: var(--rec, #eb0400); }
+.channel-item .status .rec-time { font-variant-numeric: tabular-nums; }
 
 /* ---------------------------------------------------------------- аватарки и значки */
 
@@ -821,6 +824,8 @@ select { padding-right: 6px; }
   overflow: hidden;
 }
 .progress .bar { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+/* идёт запись — полоса красная, как точка записи */
+.progress.rec .bar { background: var(--rec, #eb0400); }
 .progress.indeterminate .bar {
   width: 30%;
   animation: slide 1.2s ease-in-out infinite;

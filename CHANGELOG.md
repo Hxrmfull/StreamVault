@@ -7,7 +7,19 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+### Added
+
+- **"Recording now" in Downloads:** every running recording as a row — the
+  stream, quality, part, how long and how much is recorded, recording speed
+  and chat messages, with Play, Show in folder and Stop. In the sidebar a
+  recorded channel shows a red dot and the recording time instead of
+  "live".
+
 ### Changed
+
+- "Parallel recording pieces" is 8 by default instead of 4: on a Twitch
+  recording 4 gave about 17 MB/s and 8 about 19 MB/s, more did not help.
+  Settings already saved keep their value.
 
 - **New icon:** a silver wheel with a play button on black — in the window,
   the tray, the program and installer icons. The red recording dot is shown

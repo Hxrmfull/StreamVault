@@ -50,10 +50,18 @@ export function updateSidebarItem(li, channel) {
                         : platformName(channel.platform));
   li.title = channelName(channel.id) + " — " + stateText(channel);
 
-  const key = [channel.state, stream.viewers].join("|");
+  const recording = channel.recording;
+  const key = [channel.state, stream.viewers, recording ? recording.started : ""].join("|");
   if (li._status.dataset.key === key) return;
   li._status.dataset.key = key;
-  if (live) {
+  if (recording) {
+    // пишется — сколько уже записано по времени; подробности — в «Загрузках»
+    const time = h("span", { class: "rec-time" });
+    time.dataset.recTime = recording.started;
+    li._status.replaceChildren(h("span", { class: "dot rec" }), time);
+    li._status.title = t("Идёт запись — подробности в «Загрузках»");
+  } else if (live) {
+    li._status.title = "";
     li._status.replaceChildren(h("span", { class: "dot live" }),
                                stream.viewers !== null && stream.viewers !== undefined ? fmt.count(stream.viewers) : t("в эфире"));
   } else if (stateTone(channel)) {

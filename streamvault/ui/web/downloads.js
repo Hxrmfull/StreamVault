@@ -2,16 +2,20 @@
  * StreamVault, окно программы: «Загрузки» — очередь, прогресс, пауза и отмена.
  */
 
-import { CHAT_STAGES, DOWNLOAD_QUALITIES, bridge, button, chatSupported, failed, fmt, h, icon, iconButton, platformName, setSrc, setText, state, syncList, t } from "./common.js";
+import { CHAT_STAGES, DOWNLOAD_QUALITIES, bridge, button, channelName, chatSupported, failed, fmt, h, icon, iconButton, liveThumb, platformName, setSrc, setText, state, syncList, t } from "./common.js";
 import { INSTALLING, ytdlpBlock } from "./settings.js";
 import { view } from "./app.js";
 import { requestPreview } from "./library.js";
+import { openLive } from "./player.js";
 
 export function renderDownloads(main) {
   view.jobs = h("div", { class: "jobs" });
   // клипы и видео с чатом поверх: их ход — здесь же, над загрузками
   view.edits = h("div", { class: "jobs" });
   view.editsBox = h("div", { class: "edits" }, h("h3", { class: "subhead", text: t("Правка записей") }), view.edits);
+  // идущие записи эфиров: сколько записано, скорость, часть, чат
+  view.records = h("div", { class: "jobs" });
+  view.recordsBox = h("div", { class: "edits" }, h("h3", { class: "subhead", text: t("Идёт запись") }), view.records);
   view.empty = h("div", { class: "empty" },
     h("strong", { text: t("Загрузок пока нет") }),
     t("Вставь ссылку на запись или клип в строку сверху либо найди там канал и выбери его записи."));
@@ -23,7 +27,7 @@ export function renderDownloads(main) {
       view.clearFinished = button(t("Очистить список"), {
         icon: "close", title: t("Убрать завершённые загрузки из списка; файлы останутся на диске"),
         onclick: () => bridge.call("clear_finished").catch(failed) })),
-    view.ytdlpHint = ytdlpBlock(true), view.editsBox, view.empty, view.jobs);
+    view.ytdlpHint = ytdlpBlock(true), view.recordsBox, view.editsBox, view.empty, view.jobs);
   view.refresh = refreshDownloads;
   refreshDownloads();
 }
@@ -33,7 +37,11 @@ export function refreshDownloads() {
   const edits = [...state.edits.values()].sort((a, b) => b.created - a.created);
   view.editsBox.hidden = edits.length === 0;
   syncList(view.edits, edits, (job) => job.id, createJobRow, updateEditRow);
-  view.empty.hidden = jobs.length > 0 || edits.length > 0;
+  const records = [...state.channels.values()].filter((channel) => channel.recording)
+    .sort((a, b) => a.recording.started - b.recording.started);
+  view.recordsBox.hidden = records.length === 0;
+  syncList(view.records, records, (channel) => channel.id, createJobRow, updateRecordRow);
+  view.empty.hidden = jobs.length > 0 || edits.length > 0 || records.length > 0;
   view.clearFinished.hidden = !jobs.some((job) => ["done", "cancelled", "failed"].includes(job.state));
   // что-то не скачалось — часто помогает свежий yt-dlp; во время обновления подсказка не прячется
   const install = (state.ytdlp && state.ytdlp.install) || {};
@@ -65,6 +73,38 @@ export function createJobRow() {
              h("div", { class: "job-main" }, row._title, row._sub, row._progress, row._status),
              row._actions);
   return row;
+}
+
+// строка идущей записи: эфир, сколько записано, скорость, часть, чат
+export function updateRecordRow(row, channel) {
+  const recording = channel.recording;
+  const stream = channel.stream || {};
+  setText(row._title, stream.title || channelName(channel.id));
+  row._title.title = recording.file || "";
+  setText(row._sub, [channelName(channel.id), platformName(channel.platform), qualityText(recording.quality),
+                     recording.part > 1 ? t("часть {part}", { part: recording.part }) : ""].filter(Boolean).join(" · "));
+  // кадр эфира — как на карточке в «Эфирах»: свежий раз в пять минут
+  const thumb = liveThumb(stream.thumbnail);
+  if (thumb && row._img.dataset.src !== thumb) {
+    row._img.dataset.src = thumb;
+    setSrc(row._img, thumb);
+  }
+  // сколько всего будет — неизвестно: полоса просто идёт
+  row._progress.className = "progress indeterminate rec";
+  const speed = (state.recordSpeeds.get(channel.id) || {}).speed;
+  const parts = [t("записано {time}", { time: fmt.duration(Date.now() / 1000 - recording.started) }),
+                 fmt.size(recording.bytes || 0)];
+  if (speed) parts.push(t("{speed}/с", { speed: fmt.size(speed) }));
+  if (recording.chat_messages !== null && recording.chat_messages !== undefined) {
+    parts.push(t("чат {count}", { count: recording.chat_messages }));
+  }
+  setText(row._status, parts.join(" · "));
+  if (row._actions.dataset.key === channel.id) return;
+  row._actions.dataset.key = channel.id;
+  row._actions.replaceChildren(
+    iconButton("play", t("Смотреть"), () => openLive(channel.id)),
+    iconButton("folder", t("Показать в папке"), () => bridge.call("show_in_folder", channel.recording.file).catch(failed)),
+    iconButton("stop", t("Остановить запись"), () => bridge.call("stop_recording", channel.id).catch(failed)));
 }
 
 // сколько примерно осталось: по прошедшему времени и сделанной доле
