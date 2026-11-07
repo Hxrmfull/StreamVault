@@ -30,6 +30,11 @@ versions follow [Semantic Versioning](https://semver.org/).
   of recordings made earlier.
 - The notice about a stream beginning that did not download shows the same
   short reason as its row, not the network error.
+- **Splitting a recording open in the new Windows Media Player** is refused
+  again. The check missed this player and itself made the player drop the
+  file ("can't access local storage"), so the split went ahead. Now the
+  check sees the player without disturbing it, and refuses before the split
+  starts, not after it.
 
 ## 0.8.0 — 2026-11-07
 

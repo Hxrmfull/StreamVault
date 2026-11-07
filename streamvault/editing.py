@@ -314,6 +314,8 @@ class Editor(threading.Thread):
         source = job["source"]
         if not os.path.isfile(source):
             raise EditError(tr("файла уже нет: {name}", name=job["name"]))
+        # открыта в проигрывателе — сказать сразу, а не после всего деления
+        self._refuse_if_open(source)
         duration = probe_duration(ffmpeg, source)
         if not duration:
             raise EditError(tr("не понял, какой длины запись: {name}", name=job["name"]))
@@ -345,11 +347,12 @@ class Editor(threading.Thread):
         # целая запись — в подпапку whole или в корзину. Открыта (проигрыватель,
         # плеер) — не выйдет, и тогда куски не нужны: иначе рядом были бы и целая, и куски
         whole_chat = chat.existing(source)
-        holders = util.file_holders(source)
-        if holders:
+        try:
+            # и ещё раз: могли открыть, пока делилось
+            self._refuse_if_open(source)
+        except EditError:
             self._drop(job["partials"] + chats)
-            raise EditError(tr("запись открыта в {programs} — закрой её и попробуй снова",
-                               programs=", ".join("«%s»" % name for name in holders)))
+            raise
         try:
             if job["keep_whole"]:
                 folder = os.path.join(os.path.dirname(source), util.WHOLE_DIR)
@@ -391,6 +394,13 @@ class Editor(threading.Thread):
                 self._after_split(pieces)
             except Exception:
                 logging.exception(tr("после деления {name}: сбой", name=job["name"]))
+
+    @staticmethod
+    def _refuse_if_open(source):
+        holders = util.file_holders(source)
+        if holders:
+            raise EditError(tr("запись открыта в {programs} — закрой её и попробуй снова",
+                               programs=", ".join("«%s»" % name for name in holders)))
 
     def _split_chat(self, source, pieces, lengths):
         """

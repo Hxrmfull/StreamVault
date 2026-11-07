@@ -401,33 +401,203 @@ def file_users(path):
                     ("AppStatus", wintypes.ULONG), ("TSSessionId", wintypes.DWORD),
                     ("bRestartable", wintypes.BOOL)]
 
-    try:
-        manager = ctypes.WinDLL("rstrtmgr")
-    except OSError:
-        return []
-    session = wintypes.DWORD()
-    key = ctypes.create_unicode_buffer(64)
-    if manager.RmStartSession(ctypes.byref(session), 0, key):
-        return []
-    try:
-        files = (wintypes.LPCWSTR * 1)(os.path.abspath(path))
-        if manager.RmRegisterResources(session, 1, files, 0, None, 0, None):
+    def restart_manager():
+        try:
+            manager = ctypes.WinDLL("rstrtmgr")
+        except OSError:
             return []
-        needed, count, reasons = wintypes.UINT(0), wintypes.UINT(0), wintypes.DWORD()
-        found = (ProcessInfo * 0)()
-        for _ in range(3):
-            result = manager.RmGetList(session, ctypes.byref(needed), ctypes.byref(count), found,
-                                       ctypes.byref(reasons))
-            if result == 234:            # ERROR_MORE_DATA: места мало — ещё раз с нужным
-                found = (ProcessInfo * needed.value)()
-                count = wintypes.UINT(needed.value)
-                continue
-            if result:
+        session = wintypes.DWORD()
+        key = ctypes.create_unicode_buffer(64)
+        if manager.RmStartSession(ctypes.byref(session), 0, key):
+            return []
+        try:
+            files = (wintypes.LPCWSTR * 1)(os.path.abspath(path))
+            if manager.RmRegisterResources(session, 1, files, 0, None, 0, None):
                 return []
-            return [(item.Process.dwProcessId, item.strAppName) for item in found[:count.value]]
+            needed, count, reasons = wintypes.UINT(0), wintypes.UINT(0), wintypes.DWORD()
+            found = (ProcessInfo * 0)()
+            for _ in range(3):
+                result = manager.RmGetList(session, ctypes.byref(needed), ctypes.byref(count), found,
+                                           ctypes.byref(reasons))
+                if result == 234:            # ERROR_MORE_DATA: места мало — ещё раз с нужным
+                    found = (ProcessInfo * needed.value)()
+                    count = wintypes.UINT(needed.value)
+                    continue
+                if result:
+                    return []
+                return [(item.Process.dwProcessId, item.strAppName) for item in found[:count.value]]
+            return []
+        finally:
+            manager.RmEndSession(session)
+
+    # Сначала — открытые дескрипторы: новый «Медиаплеер» держит файл с уступчивой
+    # блокировкой (oplock), Restart Manager его не видит, а сам вопрос ему эту
+    # блокировку ломает — плеер бросает файл с ошибкой 0x80070323. Нашлись
+    # держатели по дескрипторам — Restart Manager уже не нужен
+    users = _handle_users(path)
+    return users or restart_manager()
+
+
+# Права дескрипторов, на которых запрос имени может повиснуть (синхронные
+# каналы с ожидающим чтением) — такие пропускаем, как Process Hacker
+_HANGING_ACCESS = (0x0012019F, 0x001A019F, 0x00120189, 0x00100000, 0x0012008D)
+
+
+def _handle_users(path, timeout=5.0):
+    """
+    Процессы пользователя, у которых открыт этот файл: [(pid, название)].
+    Перебираются дескрипторы всех процессов (NtQuerySystemInformation) — до
+    чужих (служб, системы) не достать, но плееры и редакторы — свои процессы.
+    Сам перебор — в отдельном потоке и с пределом по времени: зависнуть на
+    чужом дескрипторе он не должен, а не успел — что нашёл, то и ответ.
+    """
+    if os.name != "nt":
         return []
+    found, done = [], threading.Event()
+
+    def scan():
+        try:
+            found.extend(_scan_handles(path))
+        except Exception:
+            logging.debug("handles scan failed", exc_info=True)
+        finally:
+            done.set()
+
+    threading.Thread(target=scan, name="file-handles", daemon=True).start()
+    done.wait(timeout)
+    return list(found)
+
+
+def _scan_handles(path):
+    import ctypes
+    from ctypes import wintypes
+
+    class Entry(ctypes.Structure):
+        _fields_ = [("Object", ctypes.c_void_p), ("UniqueProcessId", ctypes.c_size_t),
+                    ("HandleValue", ctypes.c_size_t), ("GrantedAccess", wintypes.ULONG),
+                    ("CreatorBackTraceIndex", wintypes.USHORT), ("ObjectTypeIndex", wintypes.USHORT),
+                    ("HandleAttributes", wintypes.ULONG), ("Reserved", wintypes.ULONG)]
+
+    ntdll = ctypes.WinDLL("ntdll")
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle_t = wintypes.HANDLE
+    kernel32.CreateFileW.restype = handle_t
+    kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+                                     wintypes.DWORD, wintypes.DWORD, handle_t]
+    kernel32.OpenProcess.restype = handle_t
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.GetCurrentProcess.restype = handle_t
+    kernel32.DuplicateHandle.argtypes = [handle_t, handle_t, handle_t, ctypes.POINTER(handle_t),
+                                         wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.GetFileType.argtypes = [handle_t]
+    kernel32.GetFinalPathNameByHandleW.argtypes = [handle_t, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
+    kernel32.CloseHandle.argtypes = [handle_t]
+    kernel32.QueryFullProcessImageNameW.argtypes = [handle_t, wintypes.DWORD, wintypes.LPWSTR,
+                                                    ctypes.POINTER(wintypes.DWORD)]
+
+    def final_name(handle):
+        name = ctypes.create_unicode_buffer(1024)
+        if not kernel32.GetFinalPathNameByHandleW(handle, name, 1024, 0):
+            return None
+        return os.path.normcase(name.value)
+
+    # свой дескриптор на файл: по нему — каноническое имя и номер типа «File».
+    # Только атрибуты — так он не ломает ничью уступчивую блокировку
+    own = kernel32.CreateFileW(os.path.abspath(path), 0x80, 0x7, None, 3, 0x02000000, None)
+    if own in (None, handle_t(-1).value):
+        return []
+    try:
+        target = final_name(own)
+        size = 1 << 22
+        while True:
+            buffer = ctypes.create_string_buffer(size)
+            needed = wintypes.ULONG()
+            status = ntdll.NtQuerySystemInformation(64, buffer, size, ctypes.byref(needed)) & 0xFFFFFFFF
+            if status == 0:
+                break
+            if status != 0xC0000004 or size > 1 << 30:     # STATUS_INFO_LENGTH_MISMATCH
+                return []
+            size = max(size * 2, needed.value + (1 << 20))
+        count = ctypes.c_size_t.from_buffer(buffer).value
+        entries = ctypes.cast(ctypes.addressof(buffer) + 2 * ctypes.sizeof(ctypes.c_size_t), ctypes.POINTER(Entry))
+        me = os.getpid()
+        file_type = next((entries[i].ObjectTypeIndex for i in range(count)
+                          if entries[i].UniqueProcessId == me and entries[i].HandleValue == own), None)
     finally:
-        manager.RmEndSession(session)
+        kernel32.CloseHandle(own)
+    if target is None or file_type is None:
+        return []
+    current = kernel32.GetCurrentProcess()
+    processes, users = {}, {}
+    try:
+        for i in range(count):
+            entry = entries[i]
+            pid = entry.UniqueProcessId
+            if (entry.ObjectTypeIndex != file_type or (pid == me and entry.HandleValue == own) or pid in users
+                    or entry.GrantedAccess in _HANGING_ACCESS):
+                continue
+            if pid not in processes:
+                # PROCESS_DUP_HANDLE | PROCESS_QUERY_LIMITED_INFORMATION; чужой процесс — None
+                processes[pid] = kernel32.OpenProcess(0x0040 | 0x1000, False, pid)
+            process = processes[pid]
+            if not process:
+                continue
+            duplicate = handle_t()
+            if not kernel32.DuplicateHandle(process, entry.HandleValue, current, ctypes.byref(duplicate),
+                                            0, False, 2):        # DUPLICATE_SAME_ACCESS
+                continue
+            try:
+                if kernel32.GetFileType(duplicate) == 1 and final_name(duplicate) == target:   # FILE_TYPE_DISK
+                    image = ctypes.create_unicode_buffer(1024)
+                    length = wintypes.DWORD(1024)
+                    name = image.value if kernel32.QueryFullProcessImageNameW(process, 0, image,
+                                                                            ctypes.byref(length)) else ""
+                    exe = os.path.basename(name)
+                    if exe.lower() in _SHELL_BROKERS:
+                        users[pid] = None          # держит за плеер — плеер и назовётся
+                    elif exe.lower() in HELPERS:
+                        users[pid] = exe           # свои помощники (ffmpeg): их file_holders отсеивает
+                    else:
+                        users[pid] = (tr(_KNOWN_PROGRAMS[exe.lower()]) if exe.lower() in _KNOWN_PROGRAMS
+                                      else _program_title(name) or exe or str(pid))
+            finally:
+                kernel32.CloseHandle(duplicate)
+    finally:
+        for process in processes.values():
+            if process:
+                kernel32.CloseHandle(process)
+    return [(pid, name) for pid, name in users.items() if name]
+
+
+# Процессы оболочки, что держат файл за открывшее его приложение из Store
+# (Shell Infrastructure Host — за «Медиаплеер»): закрыл плеер — отпустили и они
+_SHELL_BROKERS = ("sihost.exe",)
+# У приложений из Store в exe нет понятного названия
+_KNOWN_PROGRAMS = {"microsoft.media.player.exe": "Медиаплеер"}
+
+
+def _program_title(exe):
+    """Название программы из её exe (FileDescription) — «Медиаплеер», а не Microsoft.Media.Player.exe."""
+    if not exe:
+        return ""
+    import ctypes
+    from ctypes import wintypes
+    version = ctypes.WinDLL("version")
+    size = version.GetFileVersionInfoSizeW(exe, None)
+    if not size:
+        return ""
+    data = ctypes.create_string_buffer(size)
+    if not version.GetFileVersionInfoW(exe, 0, size, data):
+        return ""
+    pointer, length = ctypes.c_void_p(), wintypes.UINT()
+    if not version.VerQueryValueW(data, "\\VarFileInfo\\Translation", ctypes.byref(pointer), ctypes.byref(length)) \
+            or length.value < 4:
+        return ""
+    language, codepage = ctypes.cast(pointer, ctypes.POINTER(wintypes.WORD * 2)).contents
+    key = "\\StringFileInfo\\%04x%04x\\FileDescription" % (language, codepage)
+    if not version.VerQueryValueW(data, key, ctypes.byref(pointer), ctypes.byref(length)) or not length.value:
+        return ""
+    return ctypes.wstring_at(pointer, length.value).rstrip("\0").strip()
 
 
 def file_holders(path):

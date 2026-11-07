@@ -206,6 +206,7 @@ STRINGS = {
     'записи эфира на площадке пока нет': "the platform has no recording of the stream yet",
     'не скачалось — подробности в журнале': 'not downloaded — details are in the log',
     'проигрыватель StreamVault': 'the StreamVault player',
+    'Медиаплеер': 'Media Player',
     'запись открыта в {programs} — закрой её и попробуй снова':
         'the recording is open in {programs} — close it and try again',
     'это целая запись, уже поделённая на части: они — в папке канала':
