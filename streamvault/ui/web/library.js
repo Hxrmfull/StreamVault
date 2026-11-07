@@ -3,14 +3,14 @@
  * эфиры из частей одной карточкой, отбор, порядок и место на диске.
  */
 
-import { CONVERT_FORMATS, SPLIT_MODES, showEditsNext, bridge, fillChannelLine, button, channelName, confirmDialog, displayTitle, ensureProfiles, failed, fmt, h, icon, iconButton, openModal, platformName, safeUrl, setSrc, setText, state, syncList, t, toast, tp } from "./common.js";
+import { CONVERT_FORMATS, SPLIT_MODES, showEditsNext, siteInfo, bridge, fillChannelLine, button, channelName, confirmDialog, displayTitle, ensureProfiles, failed, fmt, h, icon, iconButton, openModal, platformName, safeUrl, setSrc, setText, state, syncList, t, toast, tp } from "./common.js";
 import { joiningText } from "./downloads.js";
 import { openWatch } from "./player.js";
 import { openChatSearch, openSummary } from "./summary.js";
 import { view } from "./app.js";
 
 export const LIBRARY_KINDS = [["all", "Всё"], ["record", "Записанные эфиры"], ["download", "Скачанное"]];
-export const VIDEO_KIND_LABELS = { stream: "эфир", vod: "запись", clip: "клип", video: "видео" };
+export const VIDEO_KIND_LABELS = { stream: "эфир", vod: "запись", clip: "клип", video: "видео", chat: "чат" };
 export const LIBRARY_SORTS = [["new", "Сначала новые"], ["old", "Сначала старые"],
                        ["long", "Сначала длинные"], ["big", "Сначала большие"]];
 
@@ -324,13 +324,29 @@ export function createLibraryCard() {
     event.stopPropagation();
     openSplit(card._item);
   });
+  // чата при записи не было (выключен) — взять его из записи эфира на площадке
+  card._chatFetch = iconButton("chat", t("Скачать чат с площадки"), async (event) => {
+    event.stopPropagation();
+    card._chatFetch.disabled = true;
+    toast(t("Ищу запись этого эфира на площадке…"));
+    try {
+      const answer = await bridge.call("recording_chat", card._item.path);
+      // чат качается в «Загрузках» — туда и откроется
+      try { sessionStorage.setItem("downloads-tab", "downloads"); } catch (error) { /* не помним — не беда */ }
+      toast(t("Чат скачивается: частей {count} — ход в «Загрузках»", { count: answer.added }), "ok", "#downloads");
+    } catch (error) {
+      failed(error);
+    } finally {
+      card._chatFetch.disabled = false;
+    }
+  });
   card._summary = iconButton("stats", t("Сводка эфира"), (event) => {
     event.stopPropagation();
     openSummary(card._item);
   });
   // действия — на кадре при наведении: название получает всю ширину карточки
   const actions = h("div", { class: "card-actions overlay corner top-right" }, card._watch, card._summary, card._convert,
-    card._split, card._chatOpen, card._chatVideo, card._overlay,
+    card._split, card._chatOpen, card._chatFetch, card._chatVideo, card._overlay,
     iconButton("folder", t("Показать в папке"), (event) => {
       event.stopPropagation();
       bridge.call("show_in_folder", card._item.path).catch(failed);
@@ -339,8 +355,9 @@ export function createLibraryCard() {
       event.stopPropagation();
       confirmDelete(card._item);
     }));
-  // эфир из частей — с первой, дальше они идут подряд
-  card.addEventListener("click", () => openWatch(partsOf(card._item)[0]));
+  // эфир из частей — с первой, дальше они идут подряд; чат без видео — сразу сводкой
+  card.addEventListener("click", () => (card._item.video_kind === "chat" ? openSummary(card._item)
+                                                                         : openWatch(partsOf(card._item)[0])));
   card.append(
     h("div", { class: "thumb" }, h("div", { class: "placeholder" }, icon("video")), card._img,
       h("div", { class: "corner top-left" }, card._kind, card._whole, card._parts, card._ts, card._gaps, card._join),
@@ -510,6 +527,20 @@ export function updateLibraryCard(card, item) {
   card._overlay.hidden = Boolean(item.edit) || !parts.some((part) => part.chat && part.chat.video && !isSound(part.path));
   card._chatOpen.hidden = !chatFiles.html;
   card._chatVideo.hidden = !chatFiles.video;
+  // чат без видео: смотреть и делить нечего — его открывают, сводка и поиск
+  const onlyChat = item.video_kind === "chat";
+  card._watch.hidden = onlyChat;
+  const placeholder = card.querySelector(".thumb .placeholder");
+  if (placeholder && placeholder.dataset.kind !== (onlyChat ? "chat" : "video")) {
+    placeholder.dataset.kind = onlyChat ? "chat" : "video";
+    placeholder.replaceChildren(icon(onlyChat ? "chat" : "video"));
+  }
+  card.title = onlyChat ? t("Сводка чата: сообщения, зрители, смайлы, всплески") : card.title;
+  // своя запись эфира, у части которой нет чата, — его можно взять с площадки
+  const site = siteInfo(item.platform);
+  const vodChat = Boolean(site) && site.chat_kinds.includes(item.platform === "youtube" ? "video" : "vod");
+  card._chatFetch.hidden = !(item.kind === "record" && !item.edit && vodChat
+    && parts.some((part) => !(part.chat && part.chat.json) && !/ - part00\.[^.]+$/i.test(part.path)));
   // запись, оставленная в .ts (автоконвертация выключена), — сконвертировать по кнопке
   const ts = parts.filter((part) => /\.ts$/i.test(part.path));
   card._convert.hidden = !(item.kind === "record" && ts.length);
@@ -517,7 +548,7 @@ export function updateLibraryCard(card, item) {
   card._convert.disabled = ts.length > 0 && ts.every((part) => state.converting.has(part.path));
   // целую часть можно поделить, пока она не делится прямо сейчас
   const whole = splittable(item);
-  card._split.hidden = !whole.length;
+  card._split.hidden = onlyChat || !whole.length;
   card._split.disabled = whole.every((part) => [...state.edits.values()].some((job) =>
     job.kind === "split" && job.source === part.path && ["queued", "running"].includes(job.state)));
   card._parts.hidden = parts.length < 2;
@@ -567,6 +598,7 @@ export function updateLibraryCard(card, item) {
     setSrc(card._img, item.thumbnail);
     return;
   }
+  if (onlyChat) return;            // у чата без видео кадра нет: значок на месте
   // превью с сайта нет — кадр из самого файла (первой части), когда карточка
   // покажется; у частей эфира — ещё и их длительность
   const key = item.key || item.path;

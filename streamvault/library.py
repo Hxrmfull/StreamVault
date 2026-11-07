@@ -213,6 +213,50 @@ def walk_media(base):
                         yield platform, label, os.path.join(folder, name)
 
 
+def walk_chats(base):
+    """
+    (платформа, канал, путь .chat.html) для чатов, скачанных без видео («только
+    чат»): рядом нет видео с тем же именем.
+    """
+    html, json_suffix = chat.SUFFIXES["html"], chat.SUFFIXES["json"]
+    try:
+        platforms = sorted(os.listdir(base))
+    except OSError:
+        return
+    for platform in platforms:
+        try:
+            labels = sorted(os.listdir(os.path.join(base, platform)))
+        except OSError:
+            continue
+        for label in labels:
+            folder = os.path.join(base, platform, label)
+            try:
+                names = set(os.listdir(folder))
+            except OSError:
+                continue
+            for name in sorted(names):
+                if not name.endswith(html):
+                    continue
+                stem = name[:-len(html)]
+                if stem + json_suffix in names and not any(stem + extension in names for extension in MEDIA_EXTENSIONS):
+                    yield platform, label, os.path.join(folder, name)
+
+
+def chat_only_json(path):
+    """.chat.json чата без видео по его .chat.html; не такой — None."""
+    html = chat.SUFFIXES["html"]
+    return path[:-len(html)] + chat.SUFFIXES["json"] if str(path).endswith(html) else None
+
+
+def chat_length(json_path):
+    """Длина чата (video.length в .chat.json) или None."""
+    try:
+        with open(json_path, encoding="utf-8") as source:
+            return (json.load(source).get("video") or {}).get("length") or None
+    except (OSError, ValueError):
+        return None
+
+
 def delete_with_chat(path):
     """В корзину Windows: случайно удалённое можно вернуть. Чат видео — туда же."""
     for target in [path, *chat.existing(path).values()]:
@@ -290,6 +334,22 @@ class Library:
                 except OSError:
                     continue
                 items.append(self._describe(kind, platform, label, path, stat, jobs))
+        # чаты, скачанные без видео: своей карточкой, со сводкой и поиском
+        for platform, label, path in walk_chats(self.folders()["download"]):
+            try:
+                stat = os.stat(path)
+            except OSError:
+                continue
+            item = self._describe("download", platform, label, path, stat, jobs)
+            stem = path[:-len(chat.SUFFIXES["html"])]
+            files = chat.existing(stem + ".mp4")
+            item.update(video_kind="chat", chat=files,
+                        duration=chat_length(chat_only_json(path)),
+                        # размер — всех файлов чата: HTML сам по себе крошечный
+                        size=sum(os.path.getsize(file) for file in files.values() if os.path.isfile(file)),
+                        title=item["title"] if item["title"] != os.path.basename(stem) + ".chat" else
+                        parse_download_name(os.path.basename(stem)).get("title") or os.path.basename(stem))
+            items.append(item)
         items.sort(key=lambda item: item["timestamp"] or 0, reverse=True)
         return items
 
@@ -432,6 +492,13 @@ class Library:
     # ------------------------------------------------------------ удаление
 
     def delete(self, path):
+        json_path = chat_only_json(path)
+        if json_path is not None:
+            # чат без видео: в корзину — все его файлы
+            for target in chat.existing(json_path[:-len(chat.SUFFIXES["json"])] + ".mp4").values():
+                util.send_to_recycle_bin(target)
+                logging.info(tr("отправлено в корзину: {path}", path=target))
+            return
         delete_with_chat(path)
 
     # ------------------------------------------------------------ кэш

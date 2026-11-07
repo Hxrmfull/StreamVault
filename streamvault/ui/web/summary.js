@@ -31,12 +31,17 @@ export function openSummary(item, options) {
   const modal = openModal({ wide: true, kind: "summary" });
   const body = h("div", { class: "summary" }, h("div", { class: "spinner" }));
   modal.body.append(
-    h("h2", { text: t("Сводка эфира") }),
+    h("h2", { text: item.video_kind === "chat" ? t("Сводка чата") : t("Сводка эфира") }),
     h("div", { class: "muted", text: [displayTitle(item.title) || item.title, channelName(item.channel_id, item.channel),
                                       platformName(item.platform), fmt.date(item.timestamp)].filter(Boolean).join(" · ") }),
     body);
   const jump = (path, seconds) => {
     modal.close();
+    // чат без видео: перейти некуда — открывается сам чат
+    if (item.video_kind === "chat") {
+      bridge.call("open_file", (item.chat || {}).html || item.path).catch(failed);
+      return;
+    }
     if (options.jump) {
       options.jump(path, seconds);
       return;
@@ -100,6 +105,14 @@ export function openSummary(item, options) {
         summary.top_emotes.length ? top(t("Частые смайлы"), summary.top_emotes) : h("div")));
     }
     if (!summary.messages) sections.push(h("div", { class: "muted field-gap", text: t("Чата у этой записи нет.") }));
+    // поиск по слову и нику — в этом чате: тот же поиск, что по всем, с подсказкой
+    if (summary.chat_only) {
+      sections.push(h("div", { class: "toolbar field-gap" },
+        button(t("Открыть чат"), { icon: "chat", onclick: () => bridge.call("open_file", (item.chat || {}).html || item.path).catch(failed) }),
+        button(t("Поиск по слову или нику"), { icon: "search", onclick: () => { modal.close(); openChatSearch([item]); } })));
+      body.replaceChildren(...sections);
+      return;
+    }
 
     // пропуски: у записей эфиров ищутся сами при конвертации, у прочего — по кнопке
     sections.push(h("h3", { class: "subhead", text: t("Пропуски в записи") }),
@@ -198,7 +211,9 @@ export function openChatSearch(items) {
             h("span", { class: "chat-name", text: name }), ": ", text);
           line.addEventListener("click", () => {
             modal.close();
-            openWatch(item, { start: Math.max(0, offset - 2) });
+            // чат без видео — открывается сам чат: видео, к месту которого перейти, нет
+            if (item.video_kind === "chat") bridge.call("open_file", (item.chat || {}).html || item.path).catch(failed);
+            else openWatch(item, { start: Math.max(0, offset - 2) });
           });
           return line;
         }));

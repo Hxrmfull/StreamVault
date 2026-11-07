@@ -577,6 +577,13 @@ STRINGS = {
     'у этого видео чата не бывает': 'this video has no chat',
     'чат не скачался': 'the chat was not downloaded',
     'HTML чата не сделан: {error}': 'the chat HTML was not made: {error}',
+    'чат не сдвинулся: {error}': 'the chat could not be shifted: {error}',
+    'чат к этой записи не взять: площадка не отдаёт чат прошедших эфиров':
+        "no chat for this recording: the platform does not give the chat of past streams",
+    'не понять, когда шла запись: время — из имени файла': 'cannot tell when the recording was made: the time comes from the file name',
+    'чат у всех частей этой записи уже есть': 'all parts of this recording already have a chat',
+    'запись этого эфира на площадке не нашлась — без неё чат не взять':
+        "the platform's recording of this stream was not found — the chat cannot be taken without it",
     'чат начала эфира вклеен в чат записи: {name}': "the stream beginning's chat is joined into the recording's chat: {name}",
     'у этой площадки чата записей нет': 'this platform has no chat for recordings',
     'чат не сохранился: {error}': 'the chat was not saved: {error}',

@@ -112,7 +112,7 @@ class Api:
         "ffmpeg_status", "install_ffmpeg", "cancel_ffmpeg_install", "choose_ffmpeg",
         "check_ffmpeg", "ytdlp_status", "update_ytdlp", "cancel_ytdlp_update",
         "twitchdownloader_status", "install_twitchdownloader", "cancel_twitchdownloader_install",
-        "download_chat", "convert_recording",
+        "download_chat", "recording_chat", "convert_recording",
         "app_update_status", "check_app_update", "install_app_update", "cancel_app_update",
         "apply_app_update",
         "get_settings", "save_settings", "choose_folder", "quit",
@@ -422,6 +422,39 @@ class Api:
         """Чат к уже скачанной записи или клипу."""
         self._downloads.fetch_chat(str(job_id), mode if mode in chat.MODES else None)
 
+    def recording_chat(self, path):
+        """
+        Чат своей записи эфира, если при записи его не было: из записи этого
+        эфира на площадке, для каждой части без чата. Ищет запись эфира — это
+        секунды: окно ждёт. {"added": сколько частей встало в загрузки}.
+        """
+        from ..library import parse_recording_name
+        path = self._media(path)
+        platform, label = util.recording_channel(self._settings["root_path"], path)
+        if not platform or not sites.recording_chat(platform, "video" if platform == "youtube" else "vod"):
+            raise ValueError(tr("чат к этой записи не взять: площадка не отдаёт чат прошедших эфиров"))
+        # части после обрывов и куски поделённой записи — подряд, как в проигрывателе
+        parts = [part for _, part in broadcast_parts(path)]
+        # начало эфира, ещё не склеенное с записью, качается со своим чатом
+        parts = [part for part in parts if not os.path.splitext(part)[0].endswith(dl.PART00)]
+        if not parts:
+            raise ValueError(tr("чат к этой записи не взять: площадка не отдаёт чат прошедших эфиров"))
+        moment = parse_recording_name(os.path.splitext(os.path.basename(parts[0]))[0]).get("timestamp")
+        if not moment:
+            raise ValueError(tr("не понять, когда шла запись: время — из имени файла"))
+        ffmpeg = self._ffmpeg.path() if self._ffmpeg else None
+        lengths = [(part, probe_duration(ffmpeg, part)) for part in parts]
+        # склеенная с началом эфира запись начинается с начала эфира, а не с времени в имени
+        joined = {os.path.normcase(job["file"]) for job in self._downloads.snapshot()["jobs"]
+                  if job.get("joined") and job.get("file")}
+        from_start = os.path.normcase(parts[0]) in joined
+        added, _ = self._downloads.chat_for_recording(platform, label, lengths, moment, from_start,
+                                                      self._settings["chat_mode"] if self._settings["chat_mode"]
+                                                      != chat.NONE else chat.TEXT)
+        if not added:
+            raise ValueError(tr("чат у всех частей этой записи уже есть"))
+        return {"added": added}
+
     @staticmethod
     def _clean_meta(meta):
         """Из сведений о видео — только известные поля нужного типа."""
@@ -582,11 +615,17 @@ class Api:
         Сводка эфира по всем его частям: чат (сообщений, зрителей, самые
         активные, смайлы, всплески — с частью и временем) и пропуски каждой части.
         """
+        from ..library import chat_length, chat_only_json
         path = self._media(path)
-        parts = [part["path"] for part in self._parts(path)]
-        durations = [self._library.preview(part).get("duration") if self._library is not None else None
-                     for part in parts]
-        chats = [chat.chat_paths(part)["json"] for part in parts]
+        only_chat = chat_only_json(path)
+        if only_chat is not None:
+            # чат, скачанный без видео: одна «часть» — сам чат, длина — из него
+            parts, durations, chats = [path], [chat_length(only_chat)], [only_chat]
+        else:
+            parts = [part["path"] for part in self._parts(path)]
+            durations = [self._library.preview(part).get("duration") if self._library is not None else None
+                         for part in parts]
+            chats = [chat.chat_paths(part)["json"] for part in parts]
         result = self._need_chat_index().summary([json for json in chats if os.path.isfile(json)],
                                                  [duration for json, duration in zip(chats, durations)
                                                   if os.path.isfile(json)])
@@ -595,10 +634,12 @@ class Api:
         for moment in result["moments"]:
             moment["part"] = with_chat[moment["part"]]
         messages = dict(zip(with_chat, (part["messages"] for part in result["parts"])))
-        result["parts"] = [{"path": part, "duration": duration, "size": os.path.getsize(part),
+        result["parts"] = [{"path": part, "duration": duration,
+                            "size": os.path.getsize(json if only_chat else part),
                             "chat": os.path.isfile(json), "messages": messages.get(index, 0),
-                            "gaps": self._gaps(part)}
+                            "gaps": None if only_chat else self._gaps(part)}
                            for index, (part, duration, json) in enumerate(zip(parts, durations, chats))]
+        result["chat_only"] = only_chat is not None
         return result
 
     # ------------------------------------------------------------ идущая запись

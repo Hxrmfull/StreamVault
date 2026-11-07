@@ -16,6 +16,13 @@ versions follow [Semantic Versioning](https://semver.org/).
 - **The chat of a stream beginning can be fetched after joining:** "Get the
   beginning's chat" on its Downloads row. The chat goes into the recording's
   chat before the seam; the live chat stays.
+- **Chat for your own recording** if the chat was off while recording: "Get the
+  chat from the platform" on the library card finds the platform's recording
+  of that stream (by time, then by title) and gets the chat of exactly the
+  recorded stretch, for each part without a chat.
+- **A chat downloaded without video is in the library** as a "chat" card:
+  a click opens its summary (messages, viewers, most active, emotes, peaks),
+  with "Open chat" and search by word or name. "Search chats" finds it too.
 
 ### Fixed
 

@@ -43,6 +43,45 @@ UNFINISHED = (QUEUED, DOWNLOADING, PROCESSING, PAUSED, FAILED)
 
 # Качество «только чат»: видео не качается, только чат записи эфира или клипа.
 CHAT_ONLY = "chat"
+
+# Поиск записи эфира к своей записи (чат к ней): столько записей с вкладки
+# канала, у стольких из них спросить время и длину, если в списке их нет, и
+# насколько время записи может расходиться с её началом и концом, секунды
+VOD_SEARCH_PAGE = 24
+VOD_SEARCH_INSPECT = 6
+VOD_SLACK = 300
+
+
+def _shift_chat(path, begin, length):
+    """
+    Чат отрезка записи эфира — со временем от начала отрезка. TwitchDownloader
+    оставляет время от начала записи эфира (и пишет начало отрезка в video.start),
+    свой загрузчик чата уже считает от начала отрезка: сдвигается только первое.
+    """
+    with open(path, encoding="utf-8") as source:
+        data = json.load(source)
+    comments = data.get("comments") or []
+    video = data.get("video") or {}
+    offsets = [float(comment.get("content_offset_seconds", 0)) for comment in comments]
+    absolute = (float(video.get("start") or 0) >= begin - 1) or (offsets and min(offsets) >= begin - 5)
+    if absolute:
+        kept = []
+        for comment in comments:
+            moment = float(comment.get("content_offset_seconds", 0)) - begin
+            if -1 <= moment <= length + 1:
+                comment = dict(comment, content_offset_seconds=round(max(0.0, moment), 3))
+                kept.append(comment)
+        data["comments"] = kept
+    data["video"] = dict(video, start=0, end=round(length), length=round(length))
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as output:
+        json.dump(data, output, ensure_ascii=False)
+    os.replace(temporary, path)
+
+
+def _plain_title(title):
+    """Название для сравнения: без регистра, лишних пробелов и знаков, которых нет в имени файла."""
+    return re.sub(r"\s+", " ", re.sub(r'[\\/:*?"<>|]', "", str(title or ""))).strip().casefold()
 ACTIVE = (DOWNLOADING, PROCESSING)
 
 # Как часто слать в шину событие о прогрессе одной загрузки, секунды.
@@ -299,6 +338,65 @@ class DownloadManager:
         sites.enrich_listing(platform, channel, kind, result)
         return result
 
+    def find_vod(self, platform, channel, moment, title=""):
+        """
+        Запись эфира на площадке, которая шла в момент moment (секунды): сведения
+        о ней ({url, timestamp, duration, …}) или None. Берётся первая страница
+        вкладки записей; где у списка нет времени или длины, видео спрашиваются
+        по одному (первые несколько). Не нашлось по времени — по названию.
+        """
+        entries = self.list_channel(platform, channel, "vods", limit=VOD_SEARCH_PAGE).get("entries") or []
+        asked = 0
+        for entry in entries:
+            if (not entry.get("timestamp") or not entry.get("duration")) and asked < VOD_SEARCH_INSPECT:
+                asked += 1
+                try:
+                    full = self.inspect(entry["url"])
+                except ytdlp.YtdlpError:
+                    continue
+                for key in ("timestamp", "duration", "title", "id", "kind", "live_status"):
+                    entry[key] = entry.get(key) or full.get(key)
+        covering = [entry for entry in entries if entry.get("timestamp") and entry.get("duration")
+                    and entry["timestamp"] - VOD_SLACK <= moment <= entry["timestamp"] + entry["duration"] + VOD_SLACK]
+        if covering:
+            return min(covering, key=lambda entry: abs(moment - entry["timestamp"]))
+        # время не сошлось (у YouTube в списке бывает время выкладки) — то же название эфира
+        wanted = _plain_title(title)
+        named = [entry for entry in entries if wanted and _plain_title(entry.get("title")) == wanted]
+        return min(named, key=lambda entry: abs(moment - (entry.get("timestamp") or moment))) if named else None
+
+    def chat_for_recording(self, platform, channel, parts, moment, from_start=False, chat_mode=None):
+        """
+        Чат своей записи эфира, если при записи его не было: parts —
+        [(путь части, её длина)] по порядку, moment — когда началась запись
+        (время из имени файла), from_start — первая часть начинается с начала
+        эфира (склеена с ним). Следующие части идут за первой подряд. Для каждой
+        части без чата — загрузка «только чат» отрезка записи эфира на площадке;
+        чат ложится рядом с частью, со временем от её начала. Возвращает
+        (сколько поставлено, ссылка на запись эфира).
+        """
+        if not parts:
+            return 0, None
+        from ..library import parse_recording_name
+        title = parse_recording_name(os.path.splitext(os.path.basename(parts[0][0]))[0]).get("title") or ""
+        vod = self.find_vod(platform, channel, moment, title)
+        if vod is None:
+            raise ValueError(tr("запись этого эфира на площадке не нашлась — без неё чат не взять"))
+        added = 0
+        begin = 0.0 if from_start else max(0.0, moment - (vod.get("timestamp") or moment))
+        for path, length in parts:
+            start, begin = begin, begin + (length or 0)
+            if chat.existing(path).get("json") or not length:
+                continue
+            begin_here = start
+            meta = {key: vod.get(key) for key in ("id", "title", "channel", "folder", "platform", "kind",
+                                                  "duration", "thumbnail", "timestamp", "live_status")}
+            meta["platform"] = meta["platform"] or platform
+            self.add(vod["url"], quality=CHAT_ONLY, section=(begin_here, begin_here + length), meta=meta,
+                     chat_mode=chat_mode or chat.TEXT, target=os.path.splitext(path)[0], chat_shift=begin_here)
+            added += 1
+        return added, vod["url"]
+
     def known_videos(self):
         """
         Что с площадок уже есть: id видео и ссылки из очереди (кроме отменённых)
@@ -366,7 +464,8 @@ class DownloadManager:
 
     # ------------------------------------------------------------ управление
 
-    def add(self, url, quality=None, section=None, meta=None, force=False, chat_mode=None, target=None):
+    def add(self, url, quality=None, section=None, meta=None, force=False, chat_mode=None, target=None,
+            chat_shift=None):
         """
         Ставит ссылку в очередь. Возвращает id загрузки.
 
@@ -414,7 +513,7 @@ class DownloadManager:
                     existing = job["id"]
                     break
             if existing is None:
-                snapshot = self._new_job(url, quality, section, meta, chat_mode, target)
+                snapshot = self._new_job(url, quality, section, meta, chat_mode, target, chat_shift)
         if existing is not None:
             self._emit(existing)
             return existing
@@ -423,10 +522,13 @@ class DownloadManager:
             self._bus.emit("download", job=snapshot)
         return snapshot["id"]
 
-    def _new_job(self, url, quality, section, meta, chat_mode, target=None):
+    def _new_job(self, url, quality, section, meta, chat_mode, target=None, chat_shift=None):
         """Новая загрузка в очереди. Возвращает её снимок для окна."""
         with self._lock:
             job = {
+                # «только чат» к своей записи: на столько сдвинуть время чата
+                # (отрезок записи эфира на площадке начинается позже её начала)
+                "chat_shift": chat_shift or 0,
                 "id": uuid.uuid4().hex[:12],
                 "url": url,
                 "quality": quality,
@@ -897,8 +999,35 @@ class DownloadManager:
         if not files.get("json"):
             return self._finish(job_id, runtime, FAILED, chat_progress=None,
                                 error=result.get("chat_error") or tr("чат не скачался"))
+        notes = [result.get("chat_error") or ""]
+        if job.get("chat_shift"):
+            # чат к своей записи: время — от начала записи, а не от начала эфира на площадке
+            try:
+                _shift_chat(files["json"], job["chat_shift"], (job["section"] or [0, 0])[1] - job["chat_shift"])
+            except (OSError, ValueError) as error:
+                return self._finish(job_id, runtime, FAILED, chat_progress=None,
+                                    error=tr("чат не сдвинулся: {error}", error=error))
+            notes.append(self._remake_chat_html(job, named))
+            files = chat.existing(named)
         return self._finish(job_id, runtime, DONE, file=files.get("html") or files["json"], chat_files=files,
-                            chat_error=result.get("chat_error") or "", chat_progress=None)
+                            chat_error="; ".join(filter(None, notes)), chat_progress=None)
+
+    def _remake_chat_html(self, job, named):
+        """HTML (и видео) чата заново, по поправленному .chat.json. Возвращает примечание или ""."""
+        paths = chat.chat_paths(named)
+        for key in ("html", "video"):
+            util.remove_quietly(paths[key])
+        cli = self._twitchdownloader.command()
+        if not cli:
+            return ""
+        mode = job["chat"] if job["chat"] != chat.NONE else chat.TEXT
+        temp_dir = os.path.join(os.path.dirname(os.path.abspath(self._settings.path)), "cache", "twitchdownloader")
+        size = (self._settings["chat_width"], self._settings["chat_height"], self._settings["chat_font_size"])
+        try:
+            chat.run(chat.finishing(cli, named, mode, self._ffmpeg.path(), size, temp_dir, embedded=True))
+        except (chat.ChatError, chat.ChatStopped) as error:
+            return tr("HTML чата не сделан: {error}", error=error)
+        return ""
 
     def _beginning_chat_later(self, job_id, runtime, job):
         """

@@ -46,11 +46,16 @@ def _key(path):
 
 
 def video_of(json_path):
-    """Видео чата: рядом, с тем же именем без .chat.json."""
+    """
+    Видео чата: рядом, с тем же именем без .chat.json. Чат скачан без видео —
+    его .chat.html: так его находит библиотека (карточка «чат»).
+    """
     base = json_path[:-len(chat.SUFFIXES["json"])]
     for extension in VIDEO_EXTENSIONS:
         if os.path.exists(base + extension):
             return base + extension
+    if os.path.exists(base + chat.SUFFIXES["html"]):
+        return base + chat.SUFFIXES["html"]
     return ""
 
 
