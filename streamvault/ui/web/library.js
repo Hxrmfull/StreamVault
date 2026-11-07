@@ -4,6 +4,7 @@
  */
 
 import { CONVERT_FORMATS, SPLIT_MODES, showEditsNext, bridge, fillChannelLine, button, channelName, confirmDialog, displayTitle, ensureProfiles, failed, fmt, h, icon, iconButton, openModal, platformName, safeUrl, setSrc, setText, state, syncList, t, toast, tp } from "./common.js";
+import { joiningText } from "./downloads.js";
 import { openWatch } from "./player.js";
 import { openChatSearch, openSummary } from "./summary.js";
 import { view } from "./app.js";
@@ -292,6 +293,8 @@ export function createLibraryCard() {
   card._gaps = h("span", { class: "badge warn" });
   // склейка начала эфира с записью: идёт или не вышла — видно прямо на карточке
   card._join = h("span", { class: "badge dark" });
+  card._joinBar = h("div", { class: "progress join card-join-bar" }, h("div", { class: "bar" }));
+  card._joinBar.hidden = true;
   card._title = h("div", { class: "card-title" });
   card._sub = h("div", { class: "card-sub" });
   // значок «играть» — проигрыватель Windows; щелчок по карточке — проигрыватель в окне
@@ -343,7 +346,7 @@ export function createLibraryCard() {
       h("div", { class: "corner top-left" }, card._kind, card._whole, card._parts, card._ts, card._gaps, card._join),
       actions,
       h("div", { class: "corner bottom-left" }, card._duration),
-      h("div", { class: "corner bottom-right" }, card._size)),
+      h("div", { class: "corner bottom-right" }, card._size), card._joinBar),
     h("div", { class: "card-body" }, h("div", { class: "card-text" }, card._title, card._sub)));
   return card;
 }
@@ -524,12 +527,20 @@ export function updateLibraryCard(card, item) {
   card._gaps.hidden = !gapCount;
   const join = parts.map((part) => state.joins.get(part.path)).find((event) => event && event.state !== "done");
   card._join.hidden = !join;
+  // идущая склейка — яркой меткой, которая заполняется по ходу, и полосой по низу кадра
+  const joining = join && join.state === "joining";
+  card._joinBar.hidden = !joining;
   if (join) {
-    card._join.className = "badge " + (join.state === "failed" ? "warn" : "dark");
+    const percent = join.waiting ? 100 : join.percent || 0;
+    card._join.className = "badge " + (join.state === "failed" ? "warn" : "joining");
+    card._join.style.setProperty("--fill", (joining && !join.stage ? percent : 0) + "%");
     setText(card._join, join.state === "failed" ? t("не склеено")
-      : join.stage === "repack" ? t("готовлю к склейке…") : t("склеивается {percent}%", { percent: join.percent || 0 }));
+      : join.waiting ? t("жду, пока закроешь")
+      : join.stage === "repack" ? t("готовлю к склейке…") : t("склеивается {percent}%", { percent: percent }));
     card._join.title = join.state === "failed" ? t("Начало эфира не склеено с записью: {reason}", { reason: join.reason || "?" })
-      : t("Начало эфира склеивается с записью");
+      : joiningText(join);
+    card._joinBar.firstChild.style.width = percent + "%";
+    card._joinBar.classList.toggle("indeterminate", join.stage === "repack");
   }
   setText(card._gaps, gapCount + " " + tp(gapCount, t("пропуск|пропуска|пропусков")));
   card._gaps.title = lost ? t("В записи пропущены отрезки эфира: пропало {length}", { length: fmt.duration(lost) })

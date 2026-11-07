@@ -13,8 +13,18 @@ versions follow [Semantic Versioning](https://semver.org/).
   section of the settings (everything there except the folder), and "Same as
   general settings" in a channel's recording settings. Both only fill in the
   fields: nothing changes until "Save".
+- **Joining is easy to see:** a bright badge that fills up on the library
+  card with a bar along the frame, and its own line with a bar and time left
+  in Downloads. While the joined file waits for a player to let go of the
+  recording, the line says so.
+- A download row is laid out in parts: "Done · size", the joining result as a
+  label, and the chat note on its own muted line. A stream beginning without
+  a platform picture shows a frame of the file (or of the live stream).
 
 ### Fixed
+
+- Joining percentages no longer "stick" at about 85%: the second pass, which
+  rewrites everything, now gets its fair share.
 
 - **A recording that is still being written could not be watched in the
   window** (and "To live" did nothing) when Twitch sends the stream as MP4

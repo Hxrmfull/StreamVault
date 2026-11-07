@@ -328,6 +328,7 @@ export const state = {
   problems: [],
   listings: new Map(),
   edits: new Map(),        // правки записей: клипы и видео с чатом поверх
+  joinTimes: new Map(),    // начало эфира -> {at, percent}: первый замер склейки, для «осталось»
   converting: new Set(),   // записи .ts, которые конвертируются по кнопке в библиотеке
   recordBusy: new Set(),   // каналы, которым только что нажали «Записать» или «Остановить»
   recordStarting: new Map(), // «Записать» нажали, запись ещё не пошла: id канала → когда нажали

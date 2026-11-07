@@ -295,12 +295,27 @@ export function joinText(job) {
   if (job.joined) return t("склеено с записью");
   const join = job.file && state.joins.get(job.file);
   if (!join) return "";
-  if (join.state === "joining") {
-    return join.stage === "repack" ? t("готовлю запись к склейке…")
-      : t("склеивается с записью: {percent}%", { percent: join.percent || 0 });
-  }
+  if (join.state === "joining") return joiningText(join);
   if (join.state === "done") return t("склеено с записью");
   return t("не склеено с записью: {reason}", { reason: join.reason || "?" });
+}
+
+// идущая склейка: этап, проценты, сколько осталось, а дописана — кого ждёт
+export function joiningText(join) {
+  if (join.waiting) return t("склеено — жду, пока закроешь запись в «{programs}»", { programs: join.waiting });
+  if (join.stage === "repack") return t("готовлю запись к склейке…");
+  const left = joinTimeLeft(join);
+  return t("склеивается с записью: {percent}%", { percent: join.percent || 0 }) + (left ? " · " + left : "");
+}
+
+// сколько примерно осталось: по скорости с первого замера этой склейки
+function joinTimeLeft(join) {
+  const seen = state.joinTimes.get(join.head);
+  const percent = join.percent || 0;
+  if (!seen || percent - seen.percent < 3 || percent >= 100) return "";
+  const passed = (Date.now() - seen.at) / 1000;
+  if (passed < 10) return "";
+  return t("осталось {time}", { time: fmt.duration(Math.max(1, passed * (100 - percent) / (percent - seen.percent))) });
 }
 
 // размер скачанного — из последнего прогресса загрузки
@@ -311,7 +326,19 @@ export function doneSize(job) {
 }
 
 export function updateJobRow(row, job) {
-  setSrc(row._img, job.thumbnail);
+  // картинки с площадки нет (начало эфира заводит сама программа) — кадр из
+  // скачанного файла, а пока он качается — из идущего эфира канала
+  if (job.thumbnail) setSrc(row._img, job.thumbnail);
+  else if (job.state === "done" && job.file && row._framed !== job.file) {
+    row._framed = job.file;
+    requestPreview(job.file, (preview) => {
+      if (row._framed === job.file && preview && preview.thumbnail) setSrc(row._img, preview.thumbnail);
+    });
+  } else if (!row._framed) {
+    const channel = state.channels.get(jobChannelId(job));
+    const live = channel && channel.stream && liveThumb(channel.stream.thumbnail);
+    if (live) setSrc(row._img, live);
+  }
   setText(row._title, job.title || job.url);
   row._title.title = job.title || job.url;
   fillChannelLine(row._sub, jobChannelId(job), job.channel,
@@ -327,6 +354,22 @@ export function updateJobRow(row, job) {
     : (percent !== null && percent !== undefined && (job.state !== "processing" || chatProgress) ? percent + "%" : "");
   // у готовой загрузки полоса ничего не сообщает
   row._progress.hidden = job.state === "cancelled" || job.state === "done";
+  // склейка начала эфира с записью — своей заметной строкой с полосой, а не
+  // словами в конце «Готово · …», где её было не разглядеть
+  const join = job.state === "done" && !job.joined && job.file && state.joins.get(job.file);
+  const joining = join && join.state === "joining";
+  if (!row._joinLine) {
+    row._joinText = h("span", { class: "join-line-text" });
+    row._joinBar = h("div", { class: "bar" });
+    row._joinLine = h("div", { class: "join-line" }, row._joinText, h("div", { class: "progress join" }, row._joinBar));
+    row._status.after(row._joinLine);
+  }
+  row._joinLine.hidden = !joining;
+  if (joining) {
+    setText(row._joinText, joiningText(join));
+    row._joinBar.parentNode.className = "progress join" + (join.stage === "repack" ? " indeterminate" : "");
+    row._joinBar.style.width = (join.waiting ? 100 : join.percent || 0) + "%";
+  }
 
   const statusText = {
     // начало эфира не скачалось — программа повторит сама
@@ -341,17 +384,27 @@ export function updateJobRow(row, job) {
       : job.chat_only ? t("скачиваю чат…") : t("склеиваю и перепаковываю…"),
     paused: t("на паузе") + (percent ? " · " + Math.floor(percent) + "%" : "")
             + " — " + t("продолжится с того же места"),
-    done: [t("Готово"), doneSize(job), joinText(job),
-           job.chat_error ? t("чат: {error}", { error: job.chat_error }) : ""].filter(Boolean).join(" · "),
+    done: [t("Готово"), doneSize(job)].filter(Boolean).join(" · "),
     // начало эфира: почему не взять — коротко; текст ошибки — в журнале
     failed: job.reason ? t("начало эфира не скачать: {reason}", { reason: job.reason })
                        : t("ошибка: {error}", { error: job.error || t("неизвестная") }),
     cancelled: t("отменено"),
   }[job.state] || job.state;
-  setText(row._status, statusText);
-  row._status.title = job.reason && job.error ? job.error : "";
-  row._status.title = job.state === "done" && job.file ? job.file : "";
+  // готовое — не одной строкой через точки: «Готово · размер», рядом — итог склейки
+  // меткой, а примечание про чат — своей строкой ниже, приглушённо
+  const joinedText = job.state === "done" && !joining ? joinText(job) : "";
+  const joinFailed = joinedText && job.file && (state.joins.get(job.file) || {}).state === "failed";
+  row._status.replaceChildren(statusText,
+    ...(joinedText ? [h("span", { class: "status-chip" + (joinFailed ? " warn" : " ok"), text: joinedText })] : []));
+  row._status.title = job.state === "done" && job.file ? job.file : job.reason && job.error ? job.error : "";
   row._status.className = "job-status" + (job.state === "failed" ? " error" : job.state === "done" ? " ok-text" : "");
+  if (!row._note) {
+    row._note = h("div", { class: "job-note" });
+    (row._joinLine || row._status).after(row._note);
+  }
+  const note = job.state === "done" && job.chat_error ? t("Чат: {error}", { error: job.chat_error }) : "";
+  row._note.hidden = !note;
+  setText(row._note, note);
 
   const chatFiles = job.chat_files || {};
   const actionsKey = [job.state, job.chat_only, chatFiles.html, chatFiles.video].join("|");

@@ -340,10 +340,13 @@ def join_video(ffmpeg, head, cut, tail, output, progress=None, tail_length=None)
     trim = "outpoint %.6f\nduration %.6f\n" % (outpoint, cut)
     cut_head = output + ".head" + os.path.splitext(tail)[1]
     listings = []
-    # доля склейки: начало — его секунды, остальное — вся запись целиком
+    # доля склейки — по переписанным секундам: первый проход переписывает начало
+    # (cut), второй — всё заново (cut + запись). Раньше второму отводился только
+    # хвост, и на нём проценты «вставали» у 85%: он переписывает больше всех
     total = cut + (tail_length or 0)
-    first = (lambda share: progress(share * cut / total)) if progress and total else None
-    second = (lambda share: progress((cut + share * (total - cut)) / total)) if progress and total else None
+    work = cut + total
+    first = (lambda share: progress(share * cut / work)) if progress and total else None
+    second = (lambda share: progress((cut + share * total) / work)) if progress and total else None
     try:
         listings.append(_listing("%s\n%s" % (_concat_line(head), trim)))
         _run(join_command(ffmpeg, listings[-1], cut_head, maps, timescale), first, cut)
@@ -512,19 +515,25 @@ class Joiner(threading.Thread):
             if not joined:
                 self._failed.add((head, main))
 
-    def _when_free(self, action, path=None):
+    def _when_free(self, action, path=None, on_wait=None):
         """
         action() — подмена или удаление файла path. Пока файл открыт в другой
         программе, Windows этого не даёт: попытки раз в REPLACE_STEP секунд,
         до REPLACE_WAIT. Бывает, что даёт — новый «Медиаплеер» разрешает
         удалить открытый файл, и подмена оборвала бы просмотр: поэтому сначала
-        спрашивается, кто держит path. True — вышло; False — нет или программа
-        закрывается.
+        спрашивается, кто держит path. on_wait(программы) — один раз, когда
+        пришлось ждать: окно скажет, что закрыть. True — вышло; False — нет или
+        программа закрывается.
         """
         waited = 0
+        told = False
         while True:
             try:
-                if path is not None and util.file_holders(path):
+                holders = util.file_holders(path) if path is not None else []
+                if holders:
+                    if on_wait is not None and not told:
+                        told = True
+                        on_wait(holders)
                     raise PermissionError(path)
                 action()
                 return True
@@ -630,7 +639,8 @@ class Joiner(threading.Thread):
             util.remove_quietly(output)
             return self._refuse(head, main, tr("чат не склеился: {error}", error=error), kept=False, error=True)
         # запись смотрят — склейка ждёт, пока её закроют, а не начинается заново через минуту
-        if not self._when_free(lambda: os.replace(output, target), main):
+        waiting = lambda holders: self._report(head, main, "joining", percent=100, waiting=", ".join(holders))
+        if not self._when_free(lambda: os.replace(output, target), main, waiting):
             util.remove_quietly(output)
             util.remove_quietly(main_chat["json"] + ".joined")
             return self._refuse(head, main, tr("запись открыта в другой программе"))

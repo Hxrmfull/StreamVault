@@ -45,6 +45,13 @@ export function receive(batch) {
       case "joining":
         noticeJoin(event);
         state.joins.set(event.head, event);
+        // первый замер склейки (и после перепаковки — заново): по нему считается «осталось»
+        if (event.state === "joining" && !event.stage && !event.waiting) {
+          const seen = state.joinTimes.get(event.head);
+          if (!seen || (event.percent || 0) < seen.percent) {
+            state.joinTimes.set(event.head, { at: Date.now(), percent: event.percent || 0 });
+          }
+        }
         jobsChanged = true;
         // ход склейки — и на карточке эфира в библиотеке
         if (state.route.name === "library") showLibrary();
