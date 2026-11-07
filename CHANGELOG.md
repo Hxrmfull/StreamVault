@@ -20,6 +20,8 @@ versions follow [Semantic Versioning](https://semver.org/).
 - A download row is laid out in parts: "Done · size", the joining result as a
   label, and the chat note on its own muted line. A stream beginning without
   a platform picture shows a frame of the file (or of the live stream).
+- While the timeline frames are being made, the player shows how far along
+  they are: "frames are being made… 40%".
 
 ### Fixed
 

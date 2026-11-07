@@ -305,7 +305,8 @@ export function openWatch(item, options) {
     const gap = gapAt(at.seconds);
     // у длинной записи кадры делаются с минуту: пусть видно, что они будут
     setText(seekTip, fmt.duration(at.seconds) + (gap ? " · " + gapText(gap) : "")
-      + (boardWorking && !shown ? " · " + t("кадры готовятся…") : ""));
+      + (boardWorking && !shown ? " · " + (boardPercent ? t("кадры готовятся… {percent}%", { percent: boardPercent })
+                                                        : t("кадры готовятся…")) : ""));
     if (dragging !== null) {
       dragging = at.seconds;
       update();
@@ -684,6 +685,7 @@ export function openWatch(item, options) {
 
   let board = null;           // раскадровка: {interval, columns, rows, sheets, width, height}
   let boardWorking = false;   // кадры ещё делаются — подпись над шкалой так и скажет
+  let boardPercent = 0;       // и сколько записи уже пройдено
   let gaps = [];              // пропуски в записи: [{at, length, kept}]
 
   function loadStoryboard(attempt) {
@@ -691,6 +693,7 @@ export function openWatch(item, options) {
     bridge.call("storyboard", item.path).then((answer) => {
       if (closed) return;
       boardWorking = answer.state === "working" && attempt < 120;
+      boardPercent = answer.percent || 0;
       if (boardWorking) {
         setTimeout(() => loadStoryboard(attempt + 1), STORYBOARD_RETRY);
         return;

@@ -16,6 +16,7 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -42,10 +43,15 @@ def storyboard_command(ffmpeg, path, interval, pattern):
     # Плитка k — первый ключевой кадр не раньше k·interval: проигрыватель показывает её
     # на отрезке [k·interval, (k+1)·interval). Фильтр fps брал последний кадр своего
     # отрезка ±interval/2, и плитка опережала место под мышью на 6–8 секунд.
-    return [ffmpeg, "-hide_banner", "-nostdin", "-v", "error", "-skip_frame", "nokey", "-i", path,
-            "-an", "-sn", "-dn", "-vf", "select=gte(t\\,selected_n*%d),scale=%d:-2,tile=%dx%d"
+    # showinfo пишет время каждого отобранного кадра — по нему виден ход (листы
+    # выходят по сто кадров, и по ним проценты шли бы рывками по 20)
+    return [ffmpeg, "-hide_banner", "-nostdin", "-nostats", "-v", "info", "-skip_frame", "nokey", "-i", path,
+            "-an", "-sn", "-dn", "-vf", "select=gte(t\\,selected_n*%d),showinfo,scale=%d:-2,tile=%dx%d"
             % (interval, TILE_WIDTH, COLUMNS, ROWS),
             "-fps_mode", "passthrough", "-q:v", "6", pattern]
+
+
+_SHOWN_AT = re.compile(r"\bpts_time:\s*(-?[\d.]+)")
 
 
 class Storyboards:
@@ -60,6 +66,7 @@ class Storyboards:
         self._ffmpeg = ffmpeg
         self._lock = threading.Lock()
         self._working = set()
+        self._progress = {}      # папка -> сколько процентов записи уже пройдено
         self._worker = threading.Semaphore(1)
 
     def _folder(self, path):
@@ -70,8 +77,8 @@ class Storyboards:
     def get(self, path, duration):
         """
         {"state": "ready", "interval", "columns", "rows", "sheets": [пути листов]},
-        {"state": "working"} или {"state": "none"} — без ffmpeg, у файла
-        только со звуком, ffmpeg не справился.
+        {"state": "working", "percent": сколько записи пройдено} или
+        {"state": "none"} — без ffmpeg, у файла только со звуком, ffmpeg не справился.
         """
         try:
             folder = self._folder(path)
@@ -99,7 +106,8 @@ class Storyboards:
                 self._working.add(folder)
                 threading.Thread(target=self._make, args=(ffmpeg, path, duration, folder),
                                  name="storyboard", daemon=True).start()
-        return {"state": "working"}
+            percent = self._progress.get(folder, 0)
+        return {"state": "working", "percent": percent}
 
     def _make(self, ffmpeg, path, duration, folder):
         try:
@@ -110,6 +118,7 @@ class Storyboards:
         finally:
             with self._lock:
                 self._working.discard(folder)
+                self._progress.pop(folder, None)
 
     def _build(self, ffmpeg, path, duration, folder):
         # листы — во временную папку: недоделанная раскадровка не выдаётся за готовую
@@ -119,13 +128,13 @@ class Storyboards:
         interval = interval_for(duration)
         sheets = []
         try:
-            result = subprocess.run(storyboard_command(ffmpeg, path, interval, os.path.join(temporary, "%03d.jpg")),
-                                    capture_output=True, timeout=TIMEOUT, creationflags=util.subprocess_flags())
-            if result.returncode == 0:
+            returncode, tail = self._run(storyboard_command(ffmpeg, path, interval, os.path.join(temporary, "%03d.jpg")),
+                                         duration, folder)
+            if returncode == 0:
                 sheets = sorted(name for name in os.listdir(temporary) if name.endswith(".jpg"))
             else:
-                logging.debug("раскадровка %s: ffmpeg %s", path, result.stderr.decode("utf-8", "replace")[-300:])
-        except (OSError, subprocess.TimeoutExpired) as error:
+                logging.debug("раскадровка %s: ffmpeg %s", path, tail)
+        except OSError as error:
             logging.debug("раскадровка %s не сделана: %s", path, error)
         # и неудача запоминается: у файла только со звуком кадров не будет и потом
         with open(os.path.join(temporary, META), "w", encoding="utf-8") as target:
@@ -133,6 +142,34 @@ class Storyboards:
         shutil.rmtree(folder, ignore_errors=True)
         os.replace(temporary, folder)
         self._prune()
+
+    def _run(self, command, duration, folder):
+        """ffmpeg с ходом работы по времени отобранных кадров; дольше TIMEOUT — снимается. (код, хвост ошибок)."""
+        process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                   stdin=subprocess.DEVNULL, creationflags=util.subprocess_flags())
+        timer = threading.Timer(TIMEOUT, process.kill)
+        timer.daemon = True
+        timer.start()
+        last = []
+        first = None             # время в файле бывает не с нуля (у Twitch — от начала трансляции)
+        try:
+            for raw in process.stderr:
+                line = raw.decode("utf-8", "replace")
+                found = _SHOWN_AT.search(line)
+                if found:
+                    moment = float(found.group(1))
+                    first = moment if first is None else first
+                    percent = max(0, min(99, int((moment - first) / duration * 100)))
+                    with self._lock:
+                        self._progress[folder] = max(percent, self._progress.get(folder, 0))
+                elif line.strip():
+                    last = (last + [line.strip()])[-5:]
+            return process.wait(), " ".join(last)[-300:]
+        finally:
+            timer.cancel()
+            if process.poll() is None:
+                process.kill()
+                process.wait()
 
     def _prune(self):
         """Старые раскадровки — прочь: держим MAX_KEPT последних."""
