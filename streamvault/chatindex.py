@@ -21,6 +21,7 @@ import sqlite3
 import threading
 import time
 
+from . import util
 from .archive import chat
 from .chatreplay import ChatReplay, activity, activity_bucket, peaks
 
@@ -92,6 +93,9 @@ class ChatIndex:
         found = []
         for folder in self._folders():
             for root, _, names in os.walk(folder):
+                # целая запись рядом с кусками: её сообщения уже есть в чатах кусков
+                if os.path.basename(root) == util.WHOLE_DIR:
+                    continue
                 found.extend(os.path.join(root, name) for name in names
                              if name.endswith(chat.SUFFIXES["json"]))
         return found

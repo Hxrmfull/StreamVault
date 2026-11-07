@@ -697,7 +697,8 @@ class Api:
     def split_recording(self, path, split):
         """
         Готовую запись или видео — на куски того же формата (кнопка
-        «Разделить» в библиотеке). split — {mode, size_gb, minutes, count}.
+        «Разделить» в библиотеке). split — {mode, size_gb, minutes, count,
+        keep_whole}: keep_whole (по умолчанию да) — целую оставить в подпапке whole.
         Возвращает id правки.
         """
         path = self._media(path)
@@ -710,11 +711,15 @@ class Api:
         busy = getattr(self._live, "chat_busy", None)
         if busy is not None and busy(path):
             raise ValueError(tr("чат записи ещё доделывается — попробуй через минуту"))
+        keep = split.get("keep_whole", True)
+        if not isinstance(keep, bool):
+            raise ValueError(tr("оставить целую запись — да или нет"))
         return self._need_editor().split(
             path, split["mode"],
             channel_option_value("split_size_gb", split.get("size_gb", self._settings["split_size_gb"])),
             channel_option_value("split_minutes", split.get("minutes", self._settings["split_minutes"])),
-            channel_option_value("split_count", split.get("count", self._settings["split_count"])))
+            channel_option_value("split_count", split.get("count", self._settings["split_count"])),
+            keep_whole=keep)
 
     def cancel_edit(self, job_id):
         self._need_editor().cancel(str(job_id))

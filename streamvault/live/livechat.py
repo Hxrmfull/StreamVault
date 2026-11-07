@@ -679,7 +679,7 @@ class ChatFinisher(threading.Thread):
                     self._enqueue(piece)
                 begin += length
         except (OSError, ValueError) as error:
-            logging.error(tr("чат не поделился по кускам записи: {error}", error=error))
+            logging.error(tr("чат не поделился по частям записи: {error}", error=error))
         finally:
             remove_quietly(whole)
 

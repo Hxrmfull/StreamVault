@@ -13,8 +13,9 @@
 - Деление на куски: готовая запись любого формата — на куски того же
   формата, без перекодирования, по ключевым кадрам, как при конвертации
   (live/processing.py: split_points). У каждого куска свой чат. Целая
-  запись и её чат уходят в корзину: куски — те же кадры, а целая рядом с
-  ними играла бы в библиотеке вперемешку с ними.
+  запись с чатом переезжает в подпапку whole (отдельная карточка в
+  библиотеке: в одной папке с кусками она играла бы вперемешку с ними) —
+  или, если её оставлять не нужно, уходит в корзину.
 
 Результат ложится рядом с записью, с меткой в имени — «[clip 01h02m03s-01h05m00s]»
 или «[chat]»: по ней библиотека отличает его от частей эфира и от скачанного
@@ -199,9 +200,12 @@ class Editor(threading.Thread):
             raise ValueError(tr("у записи нет видео чата — сделай его кнопкой «чат + видео чата»"))
         return self._add(OVERLAY, source, side=side)
 
-    def split(self, source, mode, size_gb=0, minutes=0, count=0):
-        """Запись source — на куски того же формата. Возвращает id правки."""
-        from .library import piece_mark
+    def split(self, source, mode, size_gb=0, minutes=0, count=0, keep_whole=True):
+        """
+        Запись source — на куски того же формата. keep_whole — целую оставить
+        (в подпапке whole), иначе — в корзину. Возвращает id правки.
+        """
+        from .library import is_whole, piece_mark
         if mode not in SPLIT_MODES:
             raise ValueError(tr("как делить: size, duration или count"))
         if os.path.splitext(source)[1].lower() not in SEGMENT_FORMATS:
@@ -212,13 +216,15 @@ class Editor(threading.Thread):
             # имя куска клипа библиотека приняла бы за часть эфира
             raise ValueError(tr("клип и видео с чатом поверх не делятся"))
         if piece_mark(stem):
-            raise ValueError(tr("это уже кусок поделённой записи: {name}", name=os.path.basename(source)))
+            raise ValueError(tr("это уже часть поделённой записи: {name}", name=os.path.basename(source)))
+        if is_whole(source):
+            raise ValueError(tr("это целая запись, уже поделённая на части: они — в папке канала"))
         with self._lock:
             if any(job["kind"] == SPLIT and job["source"] == source and job["state"] in (QUEUED, RUNNING)
                    for job in self._jobs):
                 raise ValueError(tr("эта запись уже делится: {name}", name=os.path.basename(source)))
         return self._add(SPLIT, source, mode=mode, size_gb=float(size_gb or 0), minutes=int(minutes or 0),
-                         count=int(count or 0), pieces=[])
+                         count=int(count or 0), pieces=[], keep_whole=bool(keep_whole), whole="")
 
     def cancel(self, job_id):
         with self._lock:
@@ -314,7 +320,7 @@ class Editor(threading.Thread):
         points = split_points(job["mode"], duration, os.path.getsize(source), job["size_gb"],
                               job["minutes"], job["count"])
         if not points:
-            raise EditError(tr("делить нечего: запись не больше одного куска (или короче {minutes} мин)",
+            raise EditError(tr("делить нечего: запись не больше одной части (или короче {minutes} мин)",
                                minutes=2 * MIN_PIECE // 60))
         stem, extension = os.path.splitext(source)
         # в шаблоне ffmpeg «%» — служебный: в имени файла он удваивается
@@ -322,7 +328,7 @@ class Editor(threading.Thread):
         job["partials"] = [stem + " - piece %d" % number + extension + util.PARTIAL_SUFFIX
                            for number in range(1, len(points) + 2)]
         job["partial"] = job["partials"][0]
-        logging.info(tr("делю на куски ({count}): {name}", count=len(points) + 1, name=job["name"]))
+        logging.info(tr("делю на части ({count}): {name}", count=len(points) + 1, name=job["name"]))
         self._run(job, split_command(ffmpeg, source, points, pattern), duration)
         if job["state"] == CANCELLED:
             return
@@ -335,24 +341,41 @@ class Editor(threading.Thread):
         pieces = [util.unique_path(piece_name(source, number, len(produced)))
                   for number in range(1, len(produced) + 1)]
         chats = self._split_chat(source, pieces, lengths)
-        # целая запись — в корзину. Открыта (проигрыватель, плеер) — не выйдет,
-        # и тогда куски не нужны: иначе в библиотеке были бы и целая, и куски
+        # целая запись — в подпапку whole или в корзину. Открыта (проигрыватель,
+        # плеер) — не выйдет, и тогда куски не нужны: иначе рядом были бы и целая, и куски
+        whole_chat = chat.existing(source)
         try:
-            util.send_to_recycle_bin(source)
+            if job["keep_whole"]:
+                folder = os.path.join(os.path.dirname(source), util.WHOLE_DIR)
+                os.makedirs(folder, exist_ok=True)
+                whole = util.unique_path(os.path.join(folder, os.path.basename(source)))
+                os.replace(source, whole)
+            else:
+                util.send_to_recycle_bin(source)
         except OSError as error:
             self._drop(job["partials"] + chats)
             logging.warning("%s", error)
             raise EditError(tr("запись открыта в другой программе (или в проигрывателе окна) — "
                                "закрой её и попробуй снова"))
-        logging.info(tr("отправлено в корзину: {path}", path=source))
-        for path in chat.existing(source).values():
+        if job["keep_whole"]:
+            logging.info(tr("целая запись оставлена: {path}", path=whole))
+            job["whole"] = whole
+        else:
+            logging.info(tr("отправлено в корзину: {path}", path=source))
+        for key, path in whole_chat.items():
             try:
-                util.send_to_recycle_bin(path)
+                if job["keep_whole"]:
+                    os.replace(path, chat.chat_paths(whole)[key])
+                else:
+                    util.send_to_recycle_bin(path)
             except OSError as error:
                 logging.warning("%s", error)
         for partial, piece in zip(produced, pieces):
             os.replace(partial, piece)
         self._split_gaps(source, job.get("checked"), pieces, lengths)
+        if job["keep_whole"] and self._integrity is not None and job.get("checked") is not None:
+            # пропуски целой — при ней же: путь сменился
+            self._integrity.put(whole, job["checked"]["gaps"], job["checked"].get("duration"))
         job["pieces"] = pieces
         job["target"] = pieces[0]
         logging.info(tr("готово: {name}", name=", ".join(os.path.basename(piece) for piece in pieces)))
@@ -382,7 +405,7 @@ class Editor(threading.Thread):
                     written.append(target)
                 begin += length
         except (OSError, ValueError) as error:
-            logging.error(tr("чат не поделился по кускам записи: {error}", error=error))
+            logging.error(tr("чат не поделился по частям записи: {error}", error=error))
         return written
 
     def _split_gaps(self, source, checked, pieces, lengths):

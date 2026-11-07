@@ -281,10 +281,10 @@ class LiveService:
             raise ValueError(tr("конвертация недоступна: запись эфиров не запущена"))
         if not path.lower().endswith(".ts"):
             raise ValueError(tr("конвертируются только записи .ts"))
-        from ..library import piece_mark
+        from ..library import is_whole, piece_mark
         # кусок поделённой записи ещё раз не делится: имя «piece 1 of 3 - piece 1 of 2»
-        # библиотека не разберёт
-        if piece_mark(os.path.splitext(os.path.basename(path))[0]):
+        # библиотека не разберёт; целая, оставленная рядом с кусками, — тем более
+        if piece_mark(os.path.splitext(os.path.basename(path))[0]) or is_whole(path):
             split = ("off", 0, 0, 0)
         processing.submit(path, path, trusted=True, convert=True, split=split, fmt=fmt)
 

@@ -285,6 +285,9 @@ export function createLibraryCard() {
   card._duration = h("span", { class: "badge dark" });
   card._size = h("span", { class: "badge dark" });
   card._parts = h("span", { class: "badge dark" });
+  // целая запись, оставленная рядом с кусками после «Разделить»
+  card._whole = h("span", { class: "badge dark", text: t("целая"),
+                            title: t("Целая запись: её части — отдельной карточкой рядом") });
   // в записи нашлись пропуски — видно сразу, подробности в сводке
   card._gaps = h("span", { class: "badge warn" });
   card._title = h("div", { class: "card-title" });
@@ -312,7 +315,7 @@ export function createLibraryCard() {
     openConvert(card);
   });
   // на куски того же формата — в любой момент, хоть .ts, хоть mp4
-  card._split = iconButton("scissors", t("Разделить на куски"), (event) => {
+  card._split = iconButton("scissors", t("Разделить на части"), (event) => {
     event.stopPropagation();
     openSplit(card._item);
   });
@@ -335,7 +338,7 @@ export function createLibraryCard() {
   card.addEventListener("click", () => openWatch(partsOf(card._item)[0]));
   card.append(
     h("div", { class: "thumb" }, h("div", { class: "placeholder" }, icon("video")), card._img,
-      h("div", { class: "corner top-left" }, card._kind, card._parts, card._ts, card._gaps),
+      h("div", { class: "corner top-left" }, card._kind, card._whole, card._parts, card._ts, card._gaps),
       actions,
       h("div", { class: "corner bottom-left" }, card._duration),
       h("div", { class: "corner bottom-right" }, card._size)),
@@ -364,8 +367,8 @@ function splitControls(item, withOff) {
   const numbers = { size: number("split_size_gb", "0.1", "0.1"), duration: number("split_minutes", "5"),
                     count: number("split_count", "2") };
   const numberFields = {
-    size: field(t("Кусок не больше, ГБ"), numbers.size),
-    duration: field(t("Кусок длиной, минут"), numbers.duration),
+    size: field(t("Часть не больше, ГБ"), numbers.size),
+    duration: field(t("Часть длиной, минут"), numbers.duration),
     count: field(t("На сколько частей"), numbers.count),
   };
   const showNumbers = () => {
@@ -374,7 +377,7 @@ function splitControls(item, withOff) {
   mode.addEventListener("change", showNumbers);
   showNumbers();
   return {
-    fields: [field(t("Делить на куски"), mode), numberFields.size, numberFields.duration, numberFields.count],
+    fields: [field(t("Делить на части"), mode), numberFields.size, numberFields.duration, numberFields.count],
     value: () => ({ mode: mode.value, size_gb: Number(numbers.size.value.replace(",", ".")),
                     minutes: Number(numbers.duration.value), count: Number(numbers.count.value) }),
   };
@@ -384,39 +387,51 @@ function field(label, control) {
   return h("div", { class: "field" }, h("label", { text: label }), control);
 }
 
-// что можно разделить: не клип, не видео с чатом поверх и не кусок уже поделённого
+// что можно разделить: не клип, не видео с чатом поверх, не кусок уже поделённого
+// и не целая запись, оставленная рядом с кусками
 function splittable(item) {
-  return item.edit ? [] : partsOf(item).filter((part) => !part.piece);
+  return item.edit ? [] : partsOf(item).filter((part) => !part.piece && !part.whole);
 }
 
-// «Разделить»: каждая целая часть — на куски того же формата, целая — в корзину
+// «Разделить»: каждая целая часть — на куски того же формата; целая остаётся
+// в подпапке whole (галочка, по умолчанию включена) или уходит в корзину
 function openSplit(item) {
   const parts = splittable(item);
   if (!parts.length) return;
   const controls = splitControls(item, false);
+  const keep = h("input", { type: "checkbox" });
+  keep.checked = true;
+  const keepHint = h("div", { class: "hint" });
+  const showKeep = () => setText(keepHint, keep.checked
+    ? t("Целая запись с чатом переедет в папку whole рядом с частями и будет в библиотеке отдельной карточкой.")
+    : t("Целая запись с чатом уйдёт в корзину Windows. Файл больше корзины Windows удаляет насовсем."));
+  keep.addEventListener("change", showKeep);
+  showKeep();
   const modal = openModal();
   const start = button(t("Разделить"), { kind: "primary", onclick: async () => {
     start.disabled = true;
     let started = 0;
     for (const part of parts) {
       try {
-        await bridge.call("split_recording", part.path, controls.value());
+        await bridge.call("split_recording", part.path, Object.assign(controls.value(), { keep_whole: keep.checked }));
         started++;
       } catch (error) {
         failed(error);
       }
     }
     modal.close();
-    if (started) toast(t("Делю на куски — ход виден в «Загрузках»"), "ok", "#downloads");
+    if (started) toast(t("Делю на части — ход виден в «Загрузках»"), "ok", "#downloads");
   } });
   const skipped = partsOf(item).length - parts.length;
   modal.body.append(
-    h("h2", { text: t("Разделить на куски") }),
+    h("h2", { text: t("Разделить на части") }),
     h("div", { class: "muted field-gap", text: (parts.length > 1
       ? t("Частей эфира: {count}. Каждая поделится так, как выбрано.", { count: parts.length }) + " " : "")
-      + t("Без перекодирования, по ключевым кадрам: куски выходят примерно такими. Формат тот же, у каждого куска свой чат. Целая запись уйдёт в корзину.")
-      + (skipped ? " " + t("Уже поделённые куски ({count}) не трогаются.", { count: skipped }) : "") }),
+      + t("Без перекодирования, по ключевым кадрам: части выходят примерно такими. Формат тот же, у каждой части свой чат.")
+      + (skipped ? " " + t("Уже поделённые части ({count}) не трогаются.", { count: skipped }) : "") }),
     ...controls.fields,
+    h("div", { class: "field" }, h("label", { class: "switch" }, keep, h("span", { class: "track" }),
+      t("Оставить целую запись")), keepHint),
     h("div", { class: "actions" }, button(t("Отмена"), { onclick: () => modal.close() }), start));
 }
 
@@ -454,10 +469,10 @@ function openConvert(card) {
   modal.body.append(
     h("h2", { text: t("Конвертировать запись") }),
     h("div", { class: "muted field-gap", text: pieces
-      ? t("Куски перепишутся в выбранный формат без перекодирования, каждый со своим чатом. Файлы .ts после этого удалятся.")
+      ? t("Части перепишутся в выбранный формат без перекодирования, каждая со своим чатом. Файлы .ts после этого удалятся.")
       : parts.length > 1
       ? t("Частей эфира в .ts: {count}. Каждая перепишется в выбранный формат и поделится так, как выбрано; чат — вместе с ней.", { count: parts.length })
-      : t("Запись перепишется в выбранный формат без перекодирования и поделится так, как выбрано; у каждого куска свой чат. Файл .ts после этого удалится.") }),
+      : t("Запись перепишется в выбранный формат без перекодирования и поделится так, как выбрано; у каждой части свой чат. Файл .ts после этого удалится.") }),
     field(t("Во что"), format),
     ...(pieces ? [] : controls.fields),
     h("div", { class: "actions" }, button(t("Отмена"), { onclick: () => modal.close() }), start));
@@ -497,6 +512,7 @@ export function updateLibraryCard(card, item) {
   card._gaps.title = lost ? t("В записи нет кусков эфира: пропало {length}", { length: fmt.duration(lost) })
                           : t("В записи нет кусков эфира");
   setText(card._parts, parts.length + " " + tp(parts.length, t("часть|части|частей")));
+  card._whole.hidden = !item.whole;
   setText(card._kind, item.edit === "chat" ? t("с чатом поверх")
                                             : t(VIDEO_KIND_LABELS[item.video_kind] || t("скачано")));
   setText(card._size, fmt.size(item.size));

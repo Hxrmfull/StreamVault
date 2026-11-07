@@ -13,6 +13,15 @@ versions follow [Semantic Versioning](https://semver.org/).
   program runs: if it stays in the tray for days, the "Update" button still
   appears without a restart.
 
+### Changed
+
+- **"Split into pieces" keeps the whole recording** by default: it moves
+  with its chat to the `whole` folder next to the pieces and stays a
+  separate card in the library. Untick "Keep the whole recording" to send
+  it to the Recycle Bin as before.
+- The progress line of splitting shows the percentage and the time left;
+  edit rows in "Downloads" show a frame of the recording.
+
 ## 0.5.0 — 2026-11-07
 
 ### Added

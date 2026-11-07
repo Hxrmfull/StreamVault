@@ -5,6 +5,7 @@
 import { CHAT_STAGES, DOWNLOAD_QUALITIES, bridge, button, chatSupported, failed, fmt, h, icon, iconButton, platformName, setSrc, setText, state, syncList, t } from "./common.js";
 import { INSTALLING, ytdlpBlock } from "./settings.js";
 import { view } from "./app.js";
+import { requestPreview } from "./library.js";
 
 export function renderDownloads(main) {
   view.jobs = h("div", { class: "jobs" });
@@ -66,14 +67,31 @@ export function createJobRow() {
   return row;
 }
 
+// сколько примерно осталось: по прошедшему времени и сделанной доле
+function editTimeLeft(job) {
+  const percent = job.progress || 0;
+  const passed = Date.now() / 1000 - (job.started || 0);
+  if (!job.started || percent < 2 || percent >= 100 || passed < 5) return "";
+  return t("осталось {time}", { time: fmt.duration(Math.max(1, passed * (100 - percent) / percent)) });
+}
+
 // строка правки: клип, видео с чатом поверх или деление на куски
 export function updateEditRow(row, job) {
+  // кадр — из записи, а когда готово — из результата (у поделённой — первый кусок):
+  // исходника к тому времени на месте может уже не быть
+  const framed = job.state === "done" ? job.target : job.source;
+  if (framed && row._framed !== framed) {
+    row._framed = framed;
+    requestPreview(framed, (preview) => {
+      if (row._framed === framed && preview && preview.thumbnail) setSrc(row._img, preview.thumbnail);
+    });
+  }
   setText(row._title, job.name);
   row._title.title = job.target;
   setText(row._sub, job.kind === "clip"
     ? [t("клип {start}–{end}", { start: fmt.duration(job.start), end: fmt.duration(job.end) }),
        job.with_chat ? t("с чатом") : ""].filter(Boolean).join(" · ")
-    : job.kind === "split" ? t("деление на куски")
+    : job.kind === "split" ? t("деление на части")
     : t("видео чата поверх записи"));
   row._progress.className = "progress" + (job.state === "running" && job.kind === "clip" ? " indeterminate" : "")
     + (job.state === "failed" ? " failed" : "");
@@ -82,10 +100,10 @@ export function updateEditRow(row, job) {
   setText(row._status, {
     queued: t("в очереди"),
     running: job.kind === "clip" ? t("вырезаю…")
-      : job.kind === "split" ? t("делю · {percent}%", { percent: job.progress || 0 })
-      : t("накладываю чат · {percent}%", { percent: job.progress || 0 }),
+      : [job.kind === "split" ? (job.progress || 0) + "%"
+         : t("накладываю чат · {percent}%", { percent: job.progress || 0 }), editTimeLeft(job)].filter(Boolean).join(" · "),
     done: job.kind === "split" && (job.pieces || []).length
-      ? t("Готово · кусков: {count}", { count: job.pieces.length })
+      ? t("Готово · частей: {count}", { count: job.pieces.length })
       : job.chat_messages ? t("Готово · чат: {count}", { count: job.chat_messages }) : t("Готово"),
     failed: t("ошибка: {error}", { error: job.error || t("неизвестная") }),
     cancelled: t("отменено"),

@@ -518,7 +518,7 @@ class ProcessingQueue(threading.Thread):
         faststart = self._wants_faststart(recorded)
         muxer = FORMATS[fmt][1]
         logging.info(tr("конвертирую в {format} и делю на {count} {pieces}: {name}", format=_format_label(fmt),
-                        count=planned, pieces=plural(planned, "кусок|куска|кусков"), name=os.path.basename(recorded)))
+                        count=planned, pieces=plural(planned, "часть|части|частей"), name=os.path.basename(recorded)))
         # первые видео и звук: служебные дорожки .ts кускам не нужны
         if fmt == "audio":
             variants = None

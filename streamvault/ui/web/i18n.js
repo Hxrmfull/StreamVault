@@ -89,10 +89,10 @@
       "Chat: for the browser (HTML) and, optionally, as a video",
     "Склеивать начало эфира с записью": "Join the stream beginning with the recording",
     "Конвертировать": "Convert",
-    "Делить на куски": "Split into pieces",
+    "Делить на части": "Split into pieces",
     "Частей эфира в .ts: {count}. Каждая перепишется в выбранный формат и поделится так, как выбрано; чат — вместе с ней.":
       "Stream parts in .ts: {count}. Each is rewritten to the chosen format and split as chosen; the chat goes along.",
-    "Запись перепишется в выбранный формат без перекодирования и поделится так, как выбрано; у каждого куска свой чат. Файл .ts после этого удалится.":
+    "Запись перепишется в выбранный формат без перекодирования и поделится так, как выбрано; у каждой части свой чат. Файл .ts после этого удалится.":
       "The recording is rewritten to the chosen format without re-encoding and split as chosen; each piece gets its own chat. The .ts file is deleted afterwards.",
     "Включено — когда начало скачано и запись обработана, они склеиваются в один файл без перекодирования: стык ищется по кадрам, без повтора и дыры, чат тоже склеивается, а части удаляются. Выключено — начало и запись остаются двумя файлами и играют в окне подряд.":
       "On — once the beginning is downloaded and the recording is processed, they are joined into one file without re-encoding: the seam is found by frames, with no repeat or gap, the chat is joined too, and the parts are deleted. Off — the beginning and the recording stay two files and play one after the other in the window.",
@@ -112,7 +112,7 @@
       "the platform has no recording of the stream",
     "Качество записи": "Recording quality",
     "Настройки записи": "Recording settings",
-    "Качество, чат, начало эфира, конвертация, деление на куски и срок хранения записей этого канала":
+    "Качество, чат, начало эфира, конвертация, деление на части и срок хранения записей этого канала":
       "Quality, chat, stream start, conversion, splitting into pieces and how long this channel's recordings are kept",
     "Хранить записи": "Keep recordings",
     "идёт запись": "recording",
@@ -592,18 +592,24 @@
       "The chat video is laid over the recording — as a new file next to it; the recording itself is not changed. The whole video is re-encoded: an hour of recording takes from a few minutes to half an hour, depending on the computer.",
     "Вырезаю клип — он ляжет рядом с записью": "Cutting the clip — it will be saved next to the recording",
     "Готово · чат: {count}": "Done · chat: {count}",
-    "Готово · кусков: {count}": "Done · pieces: {count}",
-    "деление на куски": "splitting into pieces",
-    "делю · {percent}%": "splitting · {percent}%",
+    "Готово · частей: {count}": "Done · pieces: {count}",
+    "деление на части": "splitting into pieces",
     "Разделить": "Split",
-    "Разделить на куски": "Split into pieces",
-    "Делю на куски — ход виден в «Загрузках»": "Splitting into pieces — progress is in Downloads",
+    "Разделить на части": "Split into pieces",
+    "Делю на части — ход виден в «Загрузках»": "Splitting into pieces — progress is in Downloads",
     "Частей эфира: {count}. Каждая поделится так, как выбрано.":
       "Stream parts: {count}. Each is split as chosen.",
-    "Без перекодирования, по ключевым кадрам: куски выходят примерно такими. Формат тот же, у каждого куска свой чат. Целая запись уйдёт в корзину.":
-      "Without re-encoding, at keyframes: the pieces come out about this size. Same format, each piece gets its own chat. The whole recording goes to the Recycle Bin.",
-    "Уже поделённые куски ({count}) не трогаются.": "Pieces that are already split ({count}) are left as they are.",
-    "Куски перепишутся в выбранный формат без перекодирования, каждый со своим чатом. Файлы .ts после этого удалятся.":
+    "Без перекодирования, по ключевым кадрам: части выходят примерно такими. Формат тот же, у каждой части свой чат.":
+      "Without re-encoding, at keyframes: the pieces come out about this size. Same format, each piece gets its own chat.",
+    "Оставить целую запись": "Keep the whole recording",
+    "Целая запись с чатом переедет в папку whole рядом с частями и будет в библиотеке отдельной карточкой.":
+      "The whole recording with its chat moves to the whole folder next to the pieces and stays a separate card in the library.",
+    "Целая запись с чатом уйдёт в корзину Windows. Файл больше корзины Windows удаляет насовсем.":
+      "The whole recording with its chat goes to the Windows Recycle Bin. Windows deletes a file larger than the bin for good.",
+    "целая": "whole",
+    "Целая запись: её части — отдельной карточкой рядом": "The whole recording: its pieces are a separate card next to it",
+    "Уже поделённые части ({count}) не трогаются.": "Pieces that are already split ({count}) are left as they are.",
+    "Части перепишутся в выбранный формат без перекодирования, каждая со своим чатом. Файлы .ts после этого удалятся.":
       "The pieces are rewritten to the chosen format without re-encoding, each with its own chat. The .ts files are deleted afterwards.",
     "Готово: {name}": "Done: {name}",
     "Конец": "End",
@@ -635,13 +641,13 @@
     "Эфир закончился — запись появится в библиотеке, когда обработается":
       "The stream has ended — the recording will appear in the library once processed",
     "чат пишется вместе с записью": "the chat is saved along with the recording",
-    "Делится при конвертации, без перекодирования, по ключевым кадрам — куски выходят примерно такими. Чат делится вместе с записью, в библиотеке куски — одной карточкой и смотрятся подряд. Части эфира после обрывов делятся каждая отдельно.":
+    "Делится при конвертации, без перекодирования, по ключевым кадрам — части выходят примерно такими. Чат делится вместе с записью, в библиотеке части — одной карточкой и смотрятся подряд. Части эфира после обрывов делятся каждая отдельно.":
       "Split while converting, without re-encoding, at keyframes — the pieces come out about this size. The chat is split along with the recording; in the library the pieces are one card and play one after another. Stream parts after drops are split separately.",
-    "Делить запись на куски": "Split recordings into pieces",
-    "Запись делится на равные куски, каждый не больше этого: 4,1 ГБ при 2 ГБ — три куска по 1,4 ГБ, а не 2 + 2 + 0,1.":
+    "Делить запись на части": "Split recordings into pieces",
+    "Запись делится на равные части, каждая не больше этого: 4,1 ГБ при 2 ГБ — три части по 1,4 ГБ, а не 2 + 2 + 0,1.":
       "The recording is split into equal pieces, each no larger than this: 4.1 GB with 2 GB gives three pieces of 1.4 GB, not 2 + 2 + 0.1.",
-    "Кусок длиной, минут": "Piece length, minutes",
-    "Кусок не больше, ГБ": "Piece no larger than, GB",
+    "Часть длиной, минут": "Piece length, minutes",
+    "Часть не больше, ГБ": "Piece no larger than, GB",
     "На сколько частей": "Number of parts",
     "на равные части": "into equal parts",
     "не делить": "don't split",

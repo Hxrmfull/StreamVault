@@ -187,6 +187,10 @@ STRINGS = {
         'Twitch token: unreadable answer, retrying in {delay} s',
     'конвертирую в {format}: {name}': 'converting to {format}: {name}',
     'готово: {name}': 'done: {name}',
+    'это целая запись, уже поделённая на части: они — в папке канала':
+        'this is the whole recording that was already split: the pieces are in the channel folder',
+    'целая запись оставлена: {path}': 'whole recording kept: {path}',
+    'оставить целую запись — да или нет': 'keep the whole recording — yes or no',
     'стык начала и записи не найден (совпадение звука {score})':
         'no seam between the beginning and the recording (sound match {score})',
     'стык начала и записи не найден: в начале записи тишина':
@@ -195,15 +199,15 @@ STRINGS = {
         'the sound does not fit into m4a as is — re-encoding to AAC: {name}',
     'формат после записи: {formats}': 'format after recording: {formats}',
     'конвертируются только записи .ts': 'only .ts recordings are converted',
-    'делить нечего: запись не больше одного куска (или короче {minutes} мин)':
+    'делить нечего: запись не больше одной части (или короче {minutes} мин)':
         'nothing to split: the recording fits in one piece (or is shorter than {minutes} min)',
-    'это уже кусок поделённой записи: {name}': 'this is already a piece of a split recording: {name}',
+    'это уже часть поделённой записи: {name}': 'this is already a piece of a split recording: {name}',
     'после деления {name}: сбой': 'after splitting {name}: failure',
     'как делить: size, duration или count': 'how to split: size, duration or count',
     'такой формат не делится: {name}': 'this format cannot be split: {name}',
     'чат записи ещё доделывается — попробуй через минуту':
         "the recording's chat is still being finished — try again in a minute",
-    'делю на куски ({count}): {name}': 'splitting into pieces ({count}): {name}',
+    'делю на части ({count}): {name}': 'splitting into pieces ({count}): {name}',
     'эта запись уже делится: {name}': 'this recording is already being split: {name}',
     'начало эфира ещё не склеено с этой записью — подожди склейки или выключи её у канала':
         "the stream beginning is not joined with this recording yet — wait for the join or turn it off for the channel",
@@ -615,8 +619,8 @@ STRINGS = {
     'деление записи: {modes}': 'splitting recordings: {modes}',
     'конвертирую в {format} и делю на {count} {pieces}: {name}':
         'converting to {format} and splitting into {count} {pieces}: {name}',
-    'кусок|куска|кусков': 'piece|pieces',
-    'чат не поделился по кускам записи: {error}':
+    'часть|части|частей': 'piece|pieces',
+    'чат не поделился по частям записи: {error}':
         'the chat was not split along with the recording: {error}',
     '{key} задан непонятно: {value}':
         '{key} is set to something unclear: {value}',

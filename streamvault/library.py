@@ -53,6 +53,11 @@ EDIT_MARK = re.compile(r" \[(?:clip (\d\d)h(\d\d)m(\d\d)s-(\d\d)h(\d\d)m(\d\d)s|
 PIECE_MARK = re.compile(r" - piece (\d+) of (\d+)(?: \(\d+\))?$")
 
 
+def is_whole(path):
+    """Целая запись, оставленная после «Разделить»: лежит в подпапке whole."""
+    return os.path.basename(os.path.dirname(os.path.abspath(path))) == util.WHOLE_DIR
+
+
 def piece_mark(stem):
     """Метка куска в имени файла (match: номер, сколько всего) или None."""
     return PIECE_MARK.search(stem)
@@ -176,7 +181,10 @@ def parse_download_name(stem):
 
 
 def walk_media(base):
-    """(платформа, канал, путь) для каждого готового видео в base/<платформа>/<канал>."""
+    """
+    (платформа, канал, путь) для каждого готового видео в base/<платформа>/<канал>
+    и в его подпапке whole — там целые записи, оставленные после «Разделить».
+    """
     try:
         platforms = sorted(os.listdir(base))
     except OSError:
@@ -193,15 +201,16 @@ def walk_media(base):
             channel_dir = os.path.join(platform_dir, label)
             if not os.path.isdir(channel_dir):
                 continue
-            try:
-                names = os.listdir(channel_dir)
-            except OSError:
-                continue
-            for name in names:
-                # видео чата — не отдельная запись, а часть своего видео
-                if name.lower().endswith(MEDIA_EXTENSIONS) and not _UNFINISHED.search(name) \
-                        and not name.lower().endswith(chat.SUFFIXES["video"]):
-                    yield platform, label, os.path.join(channel_dir, name)
+            for folder in (channel_dir, os.path.join(channel_dir, util.WHOLE_DIR)):
+                try:
+                    names = os.listdir(folder)
+                except OSError:
+                    continue
+                for name in names:
+                    # видео чата — не отдельная запись, а часть своего видео
+                    if name.lower().endswith(MEDIA_EXTENSIONS) and not _UNFINISHED.search(name) \
+                            and not name.lower().endswith(chat.SUFFIXES["video"]):
+                        yield platform, label, os.path.join(folder, name)
 
 
 def delete_with_chat(path):
@@ -305,6 +314,7 @@ class Library:
             "broadcast": "",               # ключ эфира: у его частей он общий
             "edit": "",                    # clip или chat — сделано в окне из другой записи
             "gaps": None,                  # пропуски: {"count", "lost"}; None — не проверялась
+            "whole": is_whole(path),       # целая запись, оставленная рядом с кусками
         }
         checked = self._integrity.get(path) if self._integrity is not None else None
         if checked is not None:
@@ -328,7 +338,9 @@ class Library:
             key = None if edit else broadcast_key(stem)
             item["broadcast"] = "|".join((os.path.dirname(path),) + key) if key else ""
         else:
-            whole = os.path.join(os.path.dirname(path), whole_stem + os.path.splitext(path)[1])
+            # целая, оставленная после «Разделить», лежала папкой выше
+            folder = os.path.dirname(os.path.dirname(path)) if item["whole"] else os.path.dirname(path)
+            whole = os.path.join(folder, whole_stem + os.path.splitext(path)[1])
             job = jobs.get(os.path.normcase(os.path.abspath(whole)))
             if job:
                 item.update(title=job.get("title") or "", channel=job.get("channel") or label,

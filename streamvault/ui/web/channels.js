@@ -336,7 +336,7 @@ export function buildChannelHeader() {
     h("label", { class: "switch", title: t("Записывать каждый эфир") }, view.enabled,
       h("span", { class: "track" }), t("Автозапись")),
     button(t("Настройки записи"), { icon: "gear", title: t("Качество, чат, начало эфира, конвертация, " +
-                                   "деление на куски и срок хранения записей этого канала"),
+                                   "деление на части и срок хранения записей этого канала"),
                                    onclick: () => openChannelOptions(id) }),
     button(t("Проверить"), { icon: "refresh", title: t("Проверить, не в эфире ли канал, прямо сейчас"),
                           onclick: () => (state.channels.get(id) ? bridge.call("check_now", id).catch(failed)
@@ -410,8 +410,8 @@ export function openChannelOptions(id) {
   const keep = keepDaysSelect(channel.keep_days === undefined || channel.keep_days === null
                               ? general.keep_days || 0 : channel.keep_days);
   const numberFields = {
-    size: field(t("Кусок не больше, ГБ"), numbers.split_size_gb),
-    duration: field(t("Кусок длиной, минут"), numbers.split_minutes),
+    size: field(t("Часть не больше, ГБ"), numbers.split_size_gb),
+    duration: field(t("Часть длиной, минут"), numbers.split_minutes),
     count: field(t("На сколько частей"), numbers.split_count),
   };
   const showNumbers = () => {
@@ -455,7 +455,7 @@ export function openChannelOptions(id) {
     field(t("Конвертировать записи после эфира"), fields.convert_recordings),
     field(t("Формат после конвертации"), fields.convert_format),
     field(t("Готовить mp4 к просмотру по сети"), fields.mp4_faststart),
-    field(t("Делить запись на куски"), fields.split_mode),
+    field(t("Делить запись на части"), fields.split_mode),
     numberFields.size, numberFields.duration, numberFields.count,
     field(t("Хранить записи"), keep),
     h("div", { class: "actions" }, button(t("Отмена"), { onclick: () => modal.close() }), save));
