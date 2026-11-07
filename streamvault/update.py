@@ -55,6 +55,8 @@ SETUP_ARGUMENTS = "/SILENT /SP- /CLOSEAPPLICATIONS /RELAUNCH"
 UNINSTALLER = "unins000.exe"
 # Проверка руками: программа спрашивает о выпуске свой сервер вместо GitHub.
 URL_ENV = "STREAMVAULT_UPDATE_URL"
+# Пока программа запущена (неделями висит в трее), новая версия ищется снова так часто, секунды.
+CHECK_EVERY = 12 * 3600
 
 # файлы самой программы; всё остальное в её папке — личное
 PROGRAM = ("StreamVault.exe", "StreamVaultCLI.exe", "_internal")
@@ -243,6 +245,28 @@ class AppUpdater(Installer):
         logging.info(tr("обновления: проверить не удалось — {error}", error=error))
         self._set(state="failed", error=str(error))
         return self.snapshot()
+
+    def check_periodically(self, enabled, delay=10, every=CHECK_EVERY, stop=None):
+        """
+        Проверка через delay секунд после запуска и дальше раз в every секунд,
+        пока программа запущена. enabled() — настройка check_updates: её
+        меняют на ходу. Скачанное и ждущее перезапуска не трогается: иначе
+        кнопка «Перезапустить и обновить» сменилась бы на «Скачать».
+        """
+        stop = stop or threading.Event()
+
+        def run():
+            wait = delay
+            while not stop.wait(wait):
+                wait = every
+                if not enabled() or self.snapshot().get("state") == "done":
+                    continue
+                try:
+                    self.check()
+                except Exception:
+                    logging.exception(tr("проверка обновлений упала"))
+        threading.Thread(target=run, name="update-check", daemon=True).start()
+        return stop
 
     def check_in_background(self, delay=0):
         def run():

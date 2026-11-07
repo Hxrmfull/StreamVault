@@ -444,7 +444,7 @@
       "Sites change and an old yt-dlp stops understanding them. Updates are checked against the yt-dlp developers' signature.",
     "Программа": "Program",
     "Обновления": "Updates",
-    "Проверять обновления при запуске": "Check for updates at startup",
+    "Проверять обновления: при запуске и раз в 12 часов": "Check for updates: at startup and every 12 hours",
     "Программа спрашивает GitHub, нет ли версии новее, — больше никуда и ничего о вас не отправляет. Скачанное ставится, только если совпадает с контрольной суммой, которую сообщает GitHub.":
       "The program asks GitHub whether there is a newer version and sends nothing about you anywhere else. A download is installed only if it matches the checksum reported by GitHub.",
     "Подробность журнала": "Log detail",

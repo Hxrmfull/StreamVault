@@ -697,7 +697,7 @@ export function openSettings() {
       h("div", { class: "field" }, h("label", null, "Язык · Language"), language),
       subhead(t("Обновления")),
       appUpdateBlock(),
-      flag("check_updates", t("Проверять обновления при запуске"),
+      flag("check_updates", t("Проверять обновления: при запуске и раз в 12 часов"),
            t("Программа спрашивает GitHub, нет ли версии новее, — больше никуда и ничего о вас не отправляет. " +
              "Скачанное ставится, только если совпадает с контрольной суммой, которую сообщает GitHub.")),
       select("log_level", t("Подробность журнала"),
