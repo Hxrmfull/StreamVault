@@ -5,7 +5,7 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.11.0 — 2026-11-08
 
 ### Added
 
@@ -28,7 +28,6 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 - "Get chat" on a stream beginning that was already joined with the recording
   would have written the beginning's chat over the recording's live chat.
-
 - The "Editing" tab in Downloads is always there; when it is empty it says
   what appears in it. Before, it disappeared after a restart.
 
