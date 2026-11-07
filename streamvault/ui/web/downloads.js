@@ -2,7 +2,7 @@
  * StreamVault, окно программы: «Загрузки» — очередь, прогресс, пауза и отмена.
  */
 
-import { CHAT_STAGES, DOWNLOAD_QUALITIES, bridge, button, channelName, chatSupported, failed, fmt, h, icon, iconButton, liveThumb, platformName, setSrc, setText, state, syncList, t } from "./common.js";
+import { CHAT_STAGES, DOWNLOAD_QUALITIES, bridge, fillChannelLine, jobChannelId, button, channelName, chatSupported, failed, fmt, h, icon, iconButton, liveThumb, platformName, setSrc, setText, state, syncList, t } from "./common.js";
 import { view } from "./app.js";
 import { requestPreview } from "./library.js";
 import { openLive } from "./player.js";
@@ -76,8 +76,9 @@ export function updateRecordRow(row, channel) {
   const stream = channel.stream || {};
   setText(row._title, stream.title || channelName(channel.id));
   row._title.title = recording.file || "";
-  setText(row._sub, [channelName(channel.id), platformName(channel.platform), qualityText(recording.quality),
-                     recording.part > 1 ? t("часть {part}", { part: recording.part }) : ""].filter(Boolean).join(" · "));
+  fillChannelLine(row._sub, channel.id, channelName(channel.id),
+                  [platformName(channel.platform), qualityText(recording.quality),
+                   recording.part > 1 ? t("часть {part}", { part: recording.part }) : ""]);
   // кадр эфира — как на карточке в «Эфирах»: свежий раз в пять минут
   const thumb = liveThumb(stream.thumbnail);
   if (thumb && row._img.dataset.src !== thumb) {
@@ -201,7 +202,10 @@ export function joinText(job) {
   if (job.joined) return t("склеено с записью");
   const join = job.file && state.joins.get(job.file);
   if (!join) return "";
-  if (join.state === "joining") return t("склеивается с записью: {percent}%", { percent: join.percent || 0 });
+  if (join.state === "joining") {
+    return join.stage === "repack" ? t("готовлю запись к склейке…")
+      : t("склеивается с записью: {percent}%", { percent: join.percent || 0 });
+  }
   if (join.state === "done") return t("склеено с записью");
   return t("не склеено с записью: {reason}", { reason: join.reason || "?" });
 }
@@ -217,8 +221,8 @@ export function updateJobRow(row, job) {
   setSrc(row._img, job.thumbnail);
   setText(row._title, job.title || job.url);
   row._title.title = job.title || job.url;
-  setText(row._sub, [job.channel, platformName(job.platform), qualityText(job.quality),
-                     sectionText(job.section)].filter(Boolean).join(" · "));
+  fillChannelLine(row._sub, jobChannelId(job), job.channel,
+                  [platformName(job.platform), qualityText(job.quality), sectionText(job.section)]);
 
   const chatProgress = job.state === "processing" && job.chat_progress;
   const percent = chatProgress ? chatProgress.percent : job.progress && job.progress.percent;

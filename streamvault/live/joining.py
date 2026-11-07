@@ -593,7 +593,9 @@ class Joiner(threading.Thread):
         stem, extension = os.path.splitext(main)
         tail, target = main, main
         if fmp4:
-            # куски mp4 внутри .ts: склеивается с ней же, перепакованной в mp4, и итог — .mp4
+            # куски mp4 внутри .ts: склеивается с ней же, перепакованной в mp4, и итог — .mp4.
+            # Перепаковка — минуты: окно показывает, что склейка уже началась
+            self._report(head, main, "joining", percent=0, stage="repack")
             tail, target, extension = stem + JOINING + ".tail.mp4", stem + ".mp4", ".mp4"
             try:
                 as_mp4(ffmpeg, main, tail)

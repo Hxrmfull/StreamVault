@@ -536,6 +536,12 @@
     "Канал в избранном — он в панели слева": "The channel is in favorites — it is in the left panel",
     "Канал убран из избранного": "Removed from favorites",
     "Идёт запись": "Recording now",
+    "не склеено": "not joined",
+    "готовлю к склейке…": "preparing to join…",
+    "склеивается {percent}%": "joining {percent}%",
+    "Начало эфира склеивается с записью": "The stream beginning is being joined with the recording",
+    "Открыть страницу канала": "Open the channel page",
+    "готовлю запись к склейке…": "preparing the recording for joining…",
     "Обновить {name} {version}":
       "Update {name} {version}",
     "Обновления: {names}":

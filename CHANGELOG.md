@@ -5,6 +5,17 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- **The channel name is a link to its page** — on library cards, in
+  Downloads, in "Recording now" and in the player.
+- **Joining status on the library card:** "joining 45%" while the stream
+  beginning is joined with the recording, "not joined" with the reason in
+  the tooltip. Repacking a recording before the join is shown too
+  ("preparing the recording for joining…").
+
 ## 0.8.0 — 2026-11-07
 
 ### Added

@@ -14,7 +14,7 @@
 import { START_WAIT, bridge, button, ensureProfiles, failed, fmt, h, icon, openModal, rememberProfile, setText, showStopped, state, t, toast } from "./common.js";
 import { refreshSidebar, renderChannel, renderLink, renderLive } from "./channels.js";
 import { refreshDownloadsCount, renderDownloads } from "./downloads.js";
-import { renderLibrary, scheduleLibraryReload } from "./library.js";
+import { renderLibrary, scheduleLibraryReload, showLibrary } from "./library.js";
 import { ffmpegBlock, openAppUpdate, openComponentUpdates, openSettings, refreshAppUpdate, refreshComponentBadge, refreshFfmpegBlocks, refreshTwitchdownloaderBlocks, refreshYtdlpBlocks, setAppUpdate } from "./settings.js";
 import { attachChannelSearch, openAddChannel } from "./search.js";
 import { enhanceSelects } from "./dropdown.js";
@@ -46,6 +46,8 @@ export function receive(batch) {
         noticeJoin(event);
         state.joins.set(event.head, event);
         jobsChanged = true;
+        // ход склейки — и на карточке эфира в библиотеке
+        if (state.route.name === "library") showLibrary();
         break;
       case "download_removed":
         state.jobs.delete(event.id);

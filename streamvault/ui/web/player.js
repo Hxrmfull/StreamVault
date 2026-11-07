@@ -210,7 +210,11 @@ export function openWatch(item, options) {
   const info = h("div", { class: "watch-info" },
     avatar,
     h("div", { class: "watch-info-text" },
-      h("div", { class: "watch-info-channel", text: channelName(item.channel_id, item.channel) }),
+      // имя канала — на его страницу: проигрыватель закрывается
+      item.channel_id ? h("a", { class: "watch-info-channel channel-link", href: "#channel/" + encodeURIComponent(item.channel_id),
+                                 text: channelName(item.channel_id, item.channel), title: t("Открыть страницу канала"),
+                                 onclick: () => modal.close() })
+                      : h("div", { class: "watch-info-channel", text: channelName(item.channel_id, item.channel) }),
       h("h2", { class: "watch-info-title", text: title, title: item.name }),
       h("div", { class: "muted", text: [platformName(item.platform), fmt.date(item.timestamp)].filter(Boolean).join(" · ") })),
     partSelect,

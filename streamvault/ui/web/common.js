@@ -480,6 +480,36 @@ export function channelName(id, fallback) {
   return (channel && channel.label) || fallback || splitId(id).channel;
 }
 
+/*
+ * Подпись «канал · площадка · …»: имя канала — ссылка на его страницу в
+ * программе (из библиотеки, загрузок, идущих записей). id — «площадка:канал»;
+ * нет — имя просто текстом. Карточку под ссылкой щелчок не открывает.
+ */
+export function fillChannelLine(el, id, name, rest) {
+  const tail = (rest || []).filter(Boolean);
+  const key = [id, name, ...tail].join("|");
+  if (el.dataset.key === key) return;
+  el.dataset.key = key;
+  const parts = [];
+  if (id && name) {
+    const link = h("a", { class: "channel-link", href: "#channel/" + encodeURIComponent(id), text: name,
+                          title: t("Открыть страницу канала") });
+    link.addEventListener("click", (event) => event.stopPropagation());
+    parts.push(link);
+  } else if (name) {
+    parts.push(name);
+  }
+  for (const piece of tail) parts.push((parts.length ? " · " : "") + piece);
+  el.replaceChildren(...parts);
+}
+
+// канал загрузки для ссылки: «площадка:папка канала» (у Twitch и Kick — строчными)
+export function jobChannelId(job) {
+  const label = job.folder || (/\s/.test(job.channel || "") ? "" : job.channel);
+  if (!job.platform || !label) return "";
+  return job.platform + ":" + (["twitch", "kick"].includes(job.platform) ? label.toLowerCase() : label);
+}
+
 export function channelUrl(id) {
   const { platform, channel } = splitId(id);
   if (isUrl(channel)) return channel;

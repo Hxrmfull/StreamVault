@@ -814,6 +814,9 @@ select { padding-right: 6px; }
 .job .job-title { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .job .job-sub { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .job .job-status { font-size: 12px; color: var(--muted); }
+/* имя канала в подписи — ссылка на его страницу */
+.channel-link { color: inherit; text-decoration: none; }
+.channel-link:hover { color: var(--accent-text); text-decoration: underline; }
 /* идущая запись: показатели вместо полосы, «REC» на кадре */
 .job .thumb { position: relative; }
 .rec-corner { position: absolute; left: 6px; bottom: 6px; }

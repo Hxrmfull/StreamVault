@@ -3,7 +3,7 @@
  * эфиры из частей одной карточкой, отбор, порядок и место на диске.
  */
 
-import { CONVERT_FORMATS, SPLIT_MODES, bridge, button, channelName, confirmDialog, displayTitle, ensureProfiles, failed, fmt, h, icon, iconButton, openModal, platformName, safeUrl, setSrc, setText, state, syncList, t, toast, tp } from "./common.js";
+import { CONVERT_FORMATS, SPLIT_MODES, bridge, fillChannelLine, button, channelName, confirmDialog, displayTitle, ensureProfiles, failed, fmt, h, icon, iconButton, openModal, platformName, safeUrl, setSrc, setText, state, syncList, t, toast, tp } from "./common.js";
 import { openWatch } from "./player.js";
 import { openChatSearch, openSummary } from "./summary.js";
 import { view } from "./app.js";
@@ -290,6 +290,8 @@ export function createLibraryCard() {
                             title: t("Целая запись: её части — отдельной карточкой рядом") });
   // в записи нашлись пропуски — видно сразу, подробности в сводке
   card._gaps = h("span", { class: "badge warn" });
+  // склейка начала эфира с записью: идёт или не вышла — видно прямо на карточке
+  card._join = h("span", { class: "badge dark" });
   card._title = h("div", { class: "card-title" });
   card._sub = h("div", { class: "card-sub" });
   // значок «играть» — проигрыватель Windows; щелчок по карточке — проигрыватель в окне
@@ -338,7 +340,7 @@ export function createLibraryCard() {
   card.addEventListener("click", () => openWatch(partsOf(card._item)[0]));
   card.append(
     h("div", { class: "thumb" }, h("div", { class: "placeholder" }, icon("video")), card._img,
-      h("div", { class: "corner top-left" }, card._kind, card._whole, card._parts, card._ts, card._gaps),
+      h("div", { class: "corner top-left" }, card._kind, card._whole, card._parts, card._ts, card._gaps, card._join),
       actions,
       h("div", { class: "corner bottom-left" }, card._duration),
       h("div", { class: "corner bottom-right" }, card._size)),
@@ -508,6 +510,15 @@ export function updateLibraryCard(card, item) {
   const gapCount = gaps.reduce((sum, part) => sum + part.count, 0);
   const lost = gaps.reduce((sum, part) => sum + part.lost, 0);
   card._gaps.hidden = !gapCount;
+  const join = parts.map((part) => state.joins.get(part.path)).find((event) => event && event.state !== "done");
+  card._join.hidden = !join;
+  if (join) {
+    card._join.className = "badge " + (join.state === "failed" ? "warn" : "dark");
+    setText(card._join, join.state === "failed" ? t("не склеено")
+      : join.stage === "repack" ? t("готовлю к склейке…") : t("склеивается {percent}%", { percent: join.percent || 0 }));
+    card._join.title = join.state === "failed" ? t("Начало эфира не склеено с записью: {reason}", { reason: join.reason || "?" })
+      : t("Начало эфира склеивается с записью");
+  }
   setText(card._gaps, gapCount + " " + tp(gapCount, t("пропуск|пропуска|пропусков")));
   card._gaps.title = lost ? t("В записи пропущены отрезки эфира: пропало {length}", { length: fmt.duration(lost) })
                           : t("В записи пропущены отрезки эфира");
@@ -518,10 +529,9 @@ export function updateLibraryCard(card, item) {
   setText(card._size, fmt.size(item.size));
   setText(card._title, displayTitle(item.title) || item.title);
   card._title.title = parts.map((part) => part.name).join("\n");
-  setText(card._sub, [channelName(item.channel_id, item.channel), platformName(item.platform),
-                      fmt.date(item.timestamp),
-                      !item.parts && item.part ? t("часть {part}", { part: item.part }) : ""]
-                     .filter(Boolean).join(" · "));
+  fillChannelLine(card._sub, item.channel_id, channelName(item.channel_id, item.channel),
+                  [platformName(item.platform), fmt.date(item.timestamp),
+                   !item.parts && item.part ? t("часть {part}", { part: item.part }) : ""]);
   const showDuration = (seconds) => {
     card._duration.hidden = !seconds;
     setText(card._duration, fmt.duration(seconds));
