@@ -392,7 +392,8 @@ function field(label, control) {
 // что можно разделить: не клип, не видео с чатом поверх, не кусок уже поделённого
 // и не целая запись, оставленная рядом с кусками
 function splittable(item) {
-  return item.edit ? [] : partsOf(item).filter((part) => !part.piece && !part.whole);
+  // целую из whole тоже: её можно поделить заново, на другие части
+  return item.edit ? [] : partsOf(item).filter((part) => !part.piece);
 }
 
 // «Разделить»: каждая целая часть — на куски того же формата; целая остаётся
@@ -404,8 +405,10 @@ function openSplit(item) {
   const keep = h("input", { type: "checkbox" });
   keep.checked = true;
   const keepHint = h("div", { class: "hint" });
+  const again = parts.every((part) => part.whole);
   const showKeep = () => setText(keepHint, keep.checked
-    ? t("Целая запись с чатом переедет в папку whole рядом с частями и будет в библиотеке отдельной карточкой.")
+    ? (again ? t("Целая запись с чатом останется в папке whole; новые части лягут рядом с прежними.")
+      : t("Целая запись с чатом переедет в папку whole рядом с частями и будет в библиотеке отдельной карточкой."))
     : t("Целая запись с чатом уйдёт в корзину Windows. Файл больше корзины Windows удаляет насовсем."));
   keep.addEventListener("change", showKeep);
   showKeep();
@@ -445,8 +448,9 @@ function openConvert(card) {
   const controls = splitControls(item, true);
   const format = h("select", null, CONVERT_FORMATS.map(([value, label]) => h("option", { value: value, text: t(label) })));
   format.value = channelSetting(item, "convert_format") || "mp4";
-  // кусок поделённой записи ещё раз не делится — только конвертируется
-  const pieces = parts.every((part) => part.piece);
+  // кусок поделённой записи ещё раз не делится — только конвертируется; целая из whole
+  // при конвертации тоже не делится (части легли бы в whole) — её делят ножницами
+  const pieces = parts.every((part) => part.piece || part.whole);
   const modal = openModal();
   const start = button(t("Конвертировать"), { kind: "primary", onclick: () => {
     const split = controls.value();
@@ -470,7 +474,9 @@ function openConvert(card) {
   } });
   modal.body.append(
     h("h2", { text: t("Конвертировать запись") }),
-    h("div", { class: "muted field-gap", text: pieces
+    h("div", { class: "muted field-gap", text: pieces && parts.every((part) => part.whole)
+      ? t("Целая запись перепишется в выбранный формат без перекодирования, чат — вместе с ней. Файл .ts после этого удалится. Разделить её — ножницами на карточке.")
+      : pieces
       ? t("Части перепишутся в выбранный формат без перекодирования, каждая со своим чатом. Файлы .ts после этого удалятся.")
       : parts.length > 1
       ? t("Частей эфира в .ts: {count}. Каждая перепишется в выбранный формат и поделится так, как выбрано; чат — вместе с ней.", { count: parts.length })

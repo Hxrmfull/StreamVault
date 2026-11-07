@@ -837,7 +837,13 @@ class Api:
                       channel_option_value("split_size_gb", split.get("size_gb", self._settings["split_size_gb"])),
                       channel_option_value("split_minutes", split.get("minutes", self._settings["split_minutes"])),
                       channel_option_value("split_count", split.get("count", self._settings["split_count"])))
-        self._live.convert_recording(self._media(path), chosen, fmt)
+        path = self._media(path)
+        # .ts после конвертации удаляется: открытую в плеере — не трогать
+        holders = util.file_holders(path)
+        if holders:
+            raise ValueError(tr("запись открыта в {programs} — закрой её и попробуй снова",
+                                programs=", ".join("«%s»" % name for name in holders)))
+        self._live.convert_recording(path, chosen, fmt)
 
     def delete_file(self, path):
         self._need_library().delete(self._media(path))

@@ -648,6 +648,10 @@
     "Оставить целую запись": "Keep the whole recording",
     "Целая запись с чатом переедет в папку whole рядом с частями и будет в библиотеке отдельной карточкой.":
       "The whole recording with its chat moves to the whole folder next to the pieces and stays a separate card in the library.",
+    "Целая запись с чатом останется в папке whole; новые части лягут рядом с прежними.":
+      "The whole recording with its chat stays in the whole folder; the new pieces go next to the earlier ones.",
+    "Целая запись перепишется в выбранный формат без перекодирования, чат — вместе с ней. Файл .ts после этого удалится. Разделить её — ножницами на карточке.":
+      "The whole recording is rewritten into the chosen format without re-encoding, its chat goes with it. The .ts file is deleted afterwards. To split it, use the scissors on the card.",
     "Целая запись с чатом уйдёт в корзину Windows. Файл больше корзины Windows удаляет насовсем.":
       "The whole recording with its chat goes to the Windows Recycle Bin. Windows deletes a file larger than the bin for good.",
     "целая": "whole",

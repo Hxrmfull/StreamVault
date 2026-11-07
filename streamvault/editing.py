@@ -205,7 +205,7 @@ class Editor(threading.Thread):
         Запись source — на куски того же формата. keep_whole — целую оставить
         (в подпапке whole), иначе — в корзину. Возвращает id правки.
         """
-        from .library import is_whole, piece_mark
+        from .library import piece_mark
         if mode not in SPLIT_MODES:
             raise ValueError(tr("как делить: size, duration или count"))
         if os.path.splitext(source)[1].lower() not in SEGMENT_FORMATS:
@@ -217,8 +217,7 @@ class Editor(threading.Thread):
             raise ValueError(tr("клип и видео с чатом поверх не делятся"))
         if piece_mark(stem):
             raise ValueError(tr("это уже часть поделённой записи: {name}", name=os.path.basename(source)))
-        if is_whole(source):
-            raise ValueError(tr("это целая запись, уже поделённая на части: они — в папке канала"))
+        # целую из whole делить можно ещё раз — на другие части (части лягут в папку канала)
         with self._lock:
             if any(job["kind"] == SPLIT and job["source"] == source and job["state"] in (QUEUED, RUNNING)
                    for job in self._jobs):
@@ -309,7 +308,7 @@ class Editor(threading.Thread):
         self._finish(job, DONE)
 
     def _split(self, job, ffmpeg):
-        from .library import probe_duration
+        from .library import is_whole, probe_duration
         from .live.processing import MIN_PIECE, piece_name, split_points
         source = job["source"]
         if not os.path.isfile(source):
@@ -341,7 +340,11 @@ class Editor(threading.Thread):
             self._drop(job["partials"])
             raise EditError(tr("не поделилось: в записи слишком мало ключевых кадров"))
         lengths = [probe_duration(ffmpeg, path) for path in produced]
-        pieces = [util.unique_path(piece_name(source, number, len(produced)))
+        # целую из whole делят заново (на другие части): части — в папку канала, как в первый
+        # раз; прежние части с теми же именами не затираются — у новых имя с номером
+        again = is_whole(source)
+        named = os.path.join(os.path.dirname(os.path.dirname(source)), os.path.basename(source)) if again else source
+        pieces = [util.unique_path(piece_name(named, number, len(produced)))
                   for number in range(1, len(produced) + 1)]
         chats = self._split_chat(source, pieces, lengths)
         # целая запись — в подпапку whole или в корзину. Открыта (проигрыватель,
@@ -354,7 +357,9 @@ class Editor(threading.Thread):
             self._drop(job["partials"] + chats)
             raise
         try:
-            if job["keep_whole"]:
+            if job["keep_whole"] and again:
+                whole = source                     # она уже в whole — там и остаётся
+            elif job["keep_whole"]:
                 folder = os.path.join(os.path.dirname(source), util.WHOLE_DIR)
                 os.makedirs(folder, exist_ok=True)
                 whole = util.unique_path(os.path.join(folder, os.path.basename(source)))
@@ -374,7 +379,8 @@ class Editor(threading.Thread):
         for key, path in whole_chat.items():
             try:
                 if job["keep_whole"]:
-                    os.replace(path, chat.chat_paths(whole)[key])
+                    if path != chat.chat_paths(whole)[key]:
+                        os.replace(path, chat.chat_paths(whole)[key])
                 else:
                     util.send_to_recycle_bin(path)
             except OSError as error:

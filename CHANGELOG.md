@@ -19,6 +19,10 @@ versions follow [Semantic Versioning](https://semver.org/).
   (what is being downloaded) and "Editing" (when there is any), with
   counters. A recording row also shows how its stream beginning is going.
   Its buttons have labels: "Play" and a red "Stop".
+- **The whole recording kept after "Split" can be split again** into other
+  pieces: the scissors are on its card too. The new pieces go to the channel
+  folder next to the earlier ones, and the whole one stays in "whole" (or
+  goes to the Recycle Bin when the checkbox is off).
 
 ### Fixed
 
@@ -35,6 +39,10 @@ versions follow [Semantic Versioning](https://semver.org/).
   file ("can't access local storage"), so the split went ahead. Now the
   check sees the player without disturbing it, and refuses before the split
   starts, not after it.
+- **"Convert" refuses a recording open in a player** (it deletes the .ts
+  afterwards), like splitting does.
+- **The "Convert" window of the whole recording** no longer offers pieces
+  it never made: it only converts, and splitting is done with the scissors.
 
 ## 0.8.0 — 2026-11-07
 
