@@ -28,7 +28,7 @@ const IDLE_HIDE = 2500;       // через столько мс без движ�
 // идущая запись: смотреть на столько секунд позади её края — поток успевает
 // за файлом, а чат приходит раньше видео
 const LIVE_GAP = 12;
-const LIVE_POLL = 8000;       // как часто спрашивать, сколько уже записано, мс
+const LIVE_POLL = 5000;       // как часто спрашивать, сколько уже записано, мс: край шкалы идёт ровнее
 const LIVE_CHAT_EVERY = 4000; // как часто дочитывать свежий кусок чата, мс
 const STORYBOARD_RETRY = 5000; // кадры для шкалы ещё делаются — спросить снова через столько мс
 const PEAK_LEAD = 15;         // всплеск чата — реакция: смотреть с 15 секунд до него
@@ -160,7 +160,7 @@ export function openWatch(item, options) {
   // идущая запись: у края — «В ЭФИРЕ», перемотали назад — «К ЭФИРУ»
   const liveBadge = h("button", { type: "button", class: "watch-live", title: t("К тому, что идёт сейчас") });
   liveBadge.hidden = true;
-  liveBadge.addEventListener("click", () => seekTo(Math.max(0, duration - LIVE_GAP), true));
+  liveBadge.addEventListener("click", () => seekTo(span(), true));
   const rateBadge = h("span", { class: "watch-rate-badge" });
   const settingsButton = iconButton("gear", t("Настройки"), () => openSettingsMenu());
   const clipButton = iconButton("scissors", t("Клип (клавиши [ и ])"), () => {
@@ -287,10 +287,17 @@ export function openWatch(item, options) {
 
   let dragging = null;        // время, куда тянут шкалу
 
+  // сколько показывает шкала. У идущей записи — до того места, которое уже можно
+  // смотреть (на LIVE_GAP позади края): иначе «К эфиру» на короткой записи
+  // попадало в середину шкалы, а последние секунды притворялись доступными
+  function span() {
+    return live ? Math.max(1, duration - LIVE_GAP) : duration;
+  }
+
   function seekAt(event) {
     const box = seek.getBoundingClientRect();
     const share = Math.max(0, Math.min(1, (event.clientX - box.left) / box.width));
-    return { share: share, seconds: share * duration };
+    return { share: share, seconds: share * span() };
   }
 
   seek.addEventListener("pointermove", (event) => {
@@ -331,7 +338,7 @@ export function openWatch(item, options) {
   function update() {
     const now = dragging !== null ? dragging : position();
     // длину идущей записи программа узнаёт раз в несколько секунд — видео бывает чуть впереди
-    const total = Math.max(duration, now);
+    const total = Math.max(span(), now);
     const share = total ? Math.min(1, now / total) : 0;
     seekFill.style.width = (share * 100) + "%";
     seekThumb.style.left = (share * 100) + "%";
@@ -347,7 +354,7 @@ export function openWatch(item, options) {
     if (document.activeElement !== volume) volume.value = String(video.muted ? 0 : video.volume);
     stage.classList.toggle("paused", video.paused);
     if (live) {
-      const atEdge = duration - now < LIVE_GAP + 8;
+      const atEdge = span() - now < 8;
       liveBadge.classList.toggle("behind", !atEdge);
       setText(liveBadge, atEdge ? t("В эфире") : t("К эфиру"));
     }
@@ -737,8 +744,8 @@ export function openWatch(item, options) {
     if (!duration) return;
     for (const gap of gaps) {
       const mark = h("span", { class: "watch-gap" + (gap.kept && gap.length ? "" : " cut") });
-      mark.style.left = Math.min(100, gap.at / duration * 100) + "%";
-      if (gap.kept && gap.length) mark.style.width = Math.min(100, gap.length / duration * 100) + "%";
+      mark.style.left = Math.min(100, gap.at / span() * 100) + "%";
+      if (gap.kept && gap.length) mark.style.width = Math.min(100, gap.length / span() * 100) + "%";
       seekGaps.append(mark);
     }
   }
@@ -762,7 +769,8 @@ export function openWatch(item, options) {
     // идущая запись растёт — график обновляется, но не чаще раза в LIVE_POLL
     if (activity && (!live || Date.now() - activityAt < LIVE_POLL)) return;
     activityAt = Date.now();
-    bridge.call("chat_activity", chat.id, duration).then((answer) => {
+    // график — на ту же длину, что шкала: у идущей записи она короче записанного
+    bridge.call("chat_activity", chat.id, span()).then((answer) => {
       if (closed) return;
       activity = answer;
       drawActivity();
@@ -774,7 +782,7 @@ export function openWatch(item, options) {
     if (activityGraph.hidden) return;
     const counts = activity.counts, top = Math.max(...counts);
     // в масштабе шкалы: последний столбик бывает длиннее записи — он обрезается
-    const total = duration || counts.length * activity.bucket;
+    const total = span() || counts.length * activity.bucket;
     // столбики во всю высоту графика: самый частый отрезок — до верха
     activityBars.setAttribute("viewBox", "0 0 " + counts.length + " 100");
     activityBars.style.width = Math.min(100, counts.length * activity.bucket / total * 100) + "%";
@@ -810,7 +818,8 @@ export function openWatch(item, options) {
 
   // перейти к месту записи: у .ts — новый поток, у прочего — сам элемент
   function jump(seconds, play) {
-    seconds = Math.max(0, duration ? Math.min(seconds, duration - 1) : seconds);
+    // у идущей записи — не дальше места, которое уже можно смотреть
+    seconds = Math.max(0, duration ? Math.min(seconds, live ? span() : duration - 1) : seconds);
     if (remux) {
       seekTo(seconds, play === undefined ? !video.paused : play);
       return;
@@ -892,7 +901,7 @@ export function openWatch(item, options) {
       // идущая запись — с её края; назад — шкалой, вперёд — «К эфиру»
       live = true;
       liveBadge.hidden = false;
-      seekTo(Math.max(0, duration - LIVE_GAP), true);
+      seekTo(span(), true);
       liveTimer = setInterval(pollLive, LIVE_POLL);
     } else if (options.start !== undefined) {
       startAt(options.start);       // из поиска по чатам и сводки — сразу с нужного места

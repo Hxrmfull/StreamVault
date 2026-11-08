@@ -127,6 +127,13 @@ class ChatReplay:
         messages.sort(key=lambda message: message[0])
         self.messages = messages
         self._times = [message[0] for message in messages]
+        # длина записи, к которой чат: для шкалы, когда видео нет (чат без видео)
+        video = data.get("video") or {}
+        try:
+            length = float(video.get("length") or 0) or float(video.get("end") or 0) - start
+        except (TypeError, ValueError):
+            length = 0.0
+        self.length = max(length, self._times[-1] if self._times else 0.0)
 
     def _add(self, data):
         self.images.append(data)
@@ -147,18 +154,27 @@ class ChatReplay:
         """Сообщения со временем в записи от start (включительно) до end."""
         return self.messages[bisect.bisect_left(self._times, start):bisect.bisect_left(self._times, end)]
 
-    def search(self, text, limit=SEARCH_LIMIT):
+    def search(self, text, limit=SEARCH_LIMIT, by="all"):
         """
-        Сообщения, где есть text — в нике, тексте или названии смайла, без
-        учёта регистра. Не больше limit: окно показывает их списком.
+        Сообщения, где есть text, без учёта регистра. by: all — в нике, тексте
+        или названии смайла; text — только в тексте; name — в нике; user —
+        ник целиком (все сообщения одного зрителя). Не больше limit: окно
+        показывает их списком.
         """
         needle = str(text).strip().casefold()
         if not needle:
             return []
         found = []
         for message in self.messages:
-            words = [message[1]] + [part if isinstance(part, str) else part[1] for part in message[4]]
-            if needle in " ".join(words).casefold():
+            name = message[1].casefold()
+            if by == "user":
+                hit = name == needle
+            elif by == "name":
+                hit = needle in name
+            else:
+                words = [part if isinstance(part, str) else part[1] for part in message[4]]
+                hit = needle in " ".join(([message[1]] if by == "all" else []) + words).casefold()
+            if hit:
                 found.append(message)
                 if len(found) >= limit:
                     break
@@ -337,7 +353,8 @@ class LiveChatReplay:
             high = bisect.bisect_left(self._times, end - self.shift)
             return [self._shown(entry) for entry in self._entries[low:high] if self._visible(entry)]
 
-    def search(self, text, limit=SEARCH_LIMIT):
+    def search(self, text, limit=SEARCH_LIMIT, by="all"):
+        """Как ChatReplay.search, по идущей записи."""
         needle = str(text).strip().casefold()
         if not needle:
             return []
@@ -346,8 +363,15 @@ class LiveChatReplay:
         with self._lock:
             for entry in self._entries:
                 message = entry[4]
-                words = [message[0]] + [part if isinstance(part, str) else part[1] for part in message[3]]
-                if self._visible(entry) and needle in " ".join(words).casefold():
+                name = message[0].casefold()
+                if by == "user":
+                    hit = name == needle
+                elif by == "name":
+                    hit = needle in name
+                else:
+                    words = [part if isinstance(part, str) else part[1] for part in message[3]]
+                    hit = needle in " ".join(([message[0]] if by == "all" else []) + words).casefold()
+                if self._visible(entry) and hit:
                     found.append(self._shown(entry))
                     if len(found) >= limit:
                         break

@@ -43,6 +43,8 @@ UNFINISHED = (QUEUED, DOWNLOADING, PROCESSING, PAUSED, FAILED)
 
 # Качество «только чат»: видео не качается, только чат записи эфира или клипа.
 CHAT_ONLY = "chat"
+# Чат своей записи из архива чатов (archive/chatlogs.py) — когда записи эфира на Twitch нет.
+CHAT_ARCHIVE = "chat-archive"
 
 # Поиск записи эфира к своей записи (чат к ней): столько записей с вкладки
 # канала, у стольких из них спросить время и длину, если в списке их нет, и
@@ -396,6 +398,43 @@ class DownloadManager:
                      chat_mode=chat_mode or chat.TEXT, target=os.path.splitext(path)[0], chat_shift=begin_here)
             added += 1
         return added, vod["url"]
+
+    def add_archive_chat(self, part, channel, start, end, title="", seam=None, chat_mode=None):
+        """
+        Чат части своей записи из архива чатов: с start до end (секунды эпохи).
+        seam — часть склеена с началом эфира и чат прямого эфира у неё есть:
+        чат из архива встаёт только до стыка. Та же часть второй раз не ставится,
+        пока её загрузка не закончена. Возвращает id загрузки.
+        """
+        from . import chatlogs
+        stem = os.path.splitext(part)[0]
+        with self._lock:
+            for job in self._jobs:
+                if job["quality"] == CHAT_ARCHIVE and job.get("fixed_target") == stem and job["state"] in UNFINISHED:
+                    if job["state"] in (PAUSED, FAILED):
+                        self._requeue(job)
+                    existing = job["id"]
+                    break
+            else:
+                existing = None
+                snapshot = self._new_job(chatlogs.BASE + "/channel/" + channel, CHAT_ARCHIVE, None,
+                                         {"title": title, "channel": channel, "platform": "twitch", "kind": "vod",
+                                          "timestamp": start},
+                                         chat_mode if chat_mode in (chat.TEXT, chat.RENDER) else chat.TEXT, stem)
+                job = self._job(snapshot["id"])
+                job["archive"] = {"channel": channel, "start": float(start), "end": float(end),
+                                  "seam": float(seam) if seam else None, "video": part}
+                job["video_id"] = "archive"      # сведения у yt-dlp не спрашиваются: их нет
+                self._save()
+                snapshot = copy.deepcopy(job)
+        if existing is not None:
+            self._emit(existing)
+            return existing
+        logging.info(tr("загрузка добавлена: {name}", name=tr("чат из архива чатов: {name}",
+                                                                name=os.path.basename(part))))
+        if self._bus is not None:
+            self._bus.emit("download", job=snapshot)
+        return snapshot["id"]
 
     def known_videos(self):
         """
@@ -848,6 +887,9 @@ class DownloadManager:
         job = self.job(job_id)
         self._emit(job_id)
 
+        if job["quality"] == CHAT_ARCHIVE:
+            return self._chat_from_archive(job_id, runtime, job)
+
         if job.get("chat_only"):
             if job["file"] and os.path.exists(job["file"]):
                 return self._finish_with_chat(job_id, runtime, job["file"])
@@ -988,7 +1030,8 @@ class DownloadManager:
             self._update(job_id, chat=chat.TEXT)
         # видео нет: имена файлов чата — от того, каким было бы видео
         named = job["target"] + ".mp4"
-        result, interrupted = self._fetch_chat(job_id, runtime, job, named)
+        # чат сдвигается — HTML и видео делаются после сдвига, а не дважды
+        result, interrupted = self._fetch_chat(job_id, runtime, job, named, json_only=bool(job.get("chat_shift")))
         if runtime.get("remove"):
             self._drop(job_id)
             return None
@@ -1007,13 +1050,16 @@ class DownloadManager:
             except (OSError, ValueError) as error:
                 return self._finish(job_id, runtime, FAILED, chat_progress=None,
                                     error=tr("чат не сдвинулся: {error}", error=error))
-            notes.append(self._remake_chat_html(job, named))
+            notes.append(self._remake_chat_html(job_id, runtime, job, named))
             files = chat.existing(named)
         return self._finish(job_id, runtime, DONE, file=files.get("html") or files["json"], chat_files=files,
                             chat_error="; ".join(filter(None, notes)), chat_progress=None)
 
-    def _remake_chat_html(self, job, named):
-        """HTML (и видео) чата заново, по поправленному .chat.json. Возвращает примечание или ""."""
+    def _remake_chat_html(self, job_id, runtime, job, named, embedded=True):
+        """
+        HTML (и видео) чата заново, по поправленному .chat.json — с прогрессом
+        в строке загрузки. Возвращает примечание или "".
+        """
         paths = chat.chat_paths(named)
         for key in ("html", "video"):
             util.remove_quietly(paths[key])
@@ -1021,11 +1067,18 @@ class DownloadManager:
         if not cli:
             return ""
         mode = job["chat"] if job["chat"] != chat.NONE else chat.TEXT
+        ffmpeg = self._ffmpeg.path()
+        if mode == chat.RENDER and not ffmpeg:
+            mode = chat.TEXT
         temp_dir = os.path.join(os.path.dirname(os.path.abspath(self._settings.path)), "cache", "twitchdownloader")
         size = (self._settings["chat_width"], self._settings["chat_height"], self._settings["chat_font_size"])
+        progress, started, stopped = self._chat_watchers(job_id, runtime)
         try:
-            chat.run(chat.finishing(cli, named, mode, self._ffmpeg.path(), size, temp_dir, embedded=True))
-        except (chat.ChatError, chat.ChatStopped) as error:
+            chat.run(chat.finishing(cli, named, mode, ffmpeg, size, temp_dir, embedded=embedded),
+                     progress, started, stopped)
+        except chat.ChatStopped:
+            return tr("HTML чата не сделан: {error}", error=tr("чат отменён"))
+        except chat.ChatError as error:
             return tr("HTML чата не сделан: {error}", error=error)
         return ""
 
@@ -1040,7 +1093,8 @@ class DownloadManager:
         main = job["file"]
         stem, _ = os.path.splitext(main)
         named = stem + PART00 + ".mp4"           # начала уже нет — имена файлов чата от него
-        result, interrupted = self._fetch_chat(job_id, runtime, job, named)
+        # HTML и видео — только общего чата: у чата начала они ушли бы в удаление
+        result, interrupted = self._fetch_chat(job_id, runtime, job, named, json_only=True)
         head_chat, main_chat = chat.chat_paths(named), chat.chat_paths(main)
         changes = {"file": main, "chat_only": False, "chat_progress": None, "chat_files": chat.existing(main)}
         try:
@@ -1063,20 +1117,10 @@ class DownloadManager:
             joined = main_chat["json"] + ".joined"
             join_chat(head_chat["json"], main_chat["json"], seam, length, joined, shift=0)
             os.replace(joined, main_chat["json"])
-            # HTML и видео чата — заново, по общему чату
-            for key in ("html", "video"):
-                util.remove_quietly(main_chat[key])
-            notes = [result.get("chat_error") or ""]
-            cli = self._twitchdownloader.command()
-            if cli:
-                mode = job["chat"] if job["chat"] != chat.NONE else chat.TEXT
-                temp_dir = os.path.join(os.path.dirname(os.path.abspath(self._settings.path)), "cache",
-                                        "twitchdownloader")
-                size = (self._settings["chat_width"], self._settings["chat_height"], self._settings["chat_font_size"])
-                try:
-                    chat.run(chat.finishing(cli, main, mode, self._ffmpeg.path(), size, temp_dir, embedded=False))
-                except (chat.ChatError, chat.ChatStopped) as error:
-                    notes.append(tr("HTML чата не сделан: {error}", error=error))
+            # HTML и видео чата — заново, по общему чату; смайлы чата прямого эфира
+            # ещё не встроены — TwitchDownloader докачает недостающие
+            notes = [result.get("chat_error") or "",
+                     self._remake_chat_html(job_id, runtime, job, main, embedded=False)]
             logging.info(tr("чат начала эфира вклеен в чат записи: {name}", name=os.path.basename(main)))
             return self._finish(job_id, runtime, DONE, **dict(changes, chat_files=chat.existing(main),
                                                               beginning_chat=True,
@@ -1084,6 +1128,107 @@ class DownloadManager:
         finally:
             for path in head_chat.values():
                 util.remove_quietly(path)
+
+    def _chat_from_archive(self, job_id, runtime, job):
+        """
+        Чат части своей записи из архива чатов (add_archive_chat): сообщения
+        за время части — в .chat.json рядом с ней, затем смайлы и HTML, как
+        у чата прямого эфира. У склеенной с началом части — только до стыка,
+        в её чат; чат прямого эфира в ней не трогается.
+        """
+        from . import chatlogs
+        from ..live.joining import join_chat
+        from ..live.livechat import convert
+        archive = job.get("archive") or {}
+        video = archive.get("video") or ""
+        seam = archive.get("seam")
+        if not video or not os.path.exists(video):
+            return self._finish(job_id, runtime, FAILED, error=tr("записи, к которой чат, больше нет"))
+        main_chat = chat.chat_paths(video)
+        if seam is None and os.path.isfile(main_chat["json"]):
+            return self._finish(job_id, runtime, FAILED, error=tr("чат у этой части уже есть"))
+        self._update(job_id, state=PROCESSING, file=video, chat_error="",
+                     chat_progress={"stage": "archive", "percent": 0})
+        progress, _, stopped = self._chat_watchers(job_id, runtime)
+        logging.info(tr("чат из архива чатов: {name}", name=os.path.basename(video)))
+        # своё имя, чтобы не задеть чат части: у склеенной он уже есть
+        stem = os.path.splitext(video)[0] + (PART00 if seam is not None else "")
+        jsonl, target = stem + ".archive.chat.jsonl", stem + ".archive.chat.json"
+        # скачанные сутки — общие для частей одной записи: второй раз не качаются
+        cache_dir = os.path.join(os.path.dirname(os.path.abspath(self._settings.path)), "cache", "chatlogs")
+        try:
+            chatlogs.fetch(archive["channel"], archive["start"], archive["end"], jsonl, cache_dir=cache_dir,
+                           progress=lambda percent: progress("archive", percent), stopped=stopped)
+        except chatlogs.ArchiveStopped:
+            util.remove_quietly(jsonl)
+            return self._finish(job_id, runtime, None, chat_progress=None)
+        except (chatlogs.ArchiveError, OSError) as error:
+            util.remove_quietly(jsonl)
+            return self._finish(job_id, runtime, FAILED, chat_progress=None, error=str(error))
+        if runtime["stop"]:
+            util.remove_quietly(jsonl)
+            return self._finish(job_id, runtime, None, chat_progress=None)
+        length = archive["end"] - archive["start"]
+        try:
+            count = convert(jsonl, target, title=job["title"], channel=archive["channel"], length=length)
+            if not count:
+                return self._finish(job_id, runtime, FAILED, chat_progress=None,
+                                    error=tr("в архиве чатов за время этой записи сообщений нет"))
+            if seam is not None:
+                # до стыка — из архива, после — чат прямого эфира, как был
+                total = None
+                try:
+                    with open(main_chat["json"], encoding="utf-8") as source:
+                        total = (json.load(source).get("video") or {}).get("length")
+                except (OSError, ValueError):
+                    pass
+                joined = main_chat["json"] + ".joined"
+                join_chat(target, main_chat["json"], seam, total or seam + (self._probe_length(video) or 0), joined,
+                          shift=0)
+                os.replace(joined, main_chat["json"])
+            else:
+                os.replace(target, main_chat["json"])
+        except (OSError, ValueError) as error:
+            return self._finish(job_id, runtime, FAILED, chat_progress=None,
+                                error=tr("чат из архива не записан: {error}", error=error))
+        finally:
+            for path in (jsonl, target):
+                util.remove_quietly(path)
+        # смайлы 7TV, BTTV, FFZ и значки — внутрь .chat.json; потом HTML (и видео чата)
+        notes = [self._embed_chat(job_id, runtime, main_chat["json"]),
+                 self._remake_chat_html(job_id, runtime, job, video)]
+        if seam is not None:
+            # у загрузки начала эфира кнопка «Скачать чат начала» больше не нужна
+            with self._lock:
+                for other in self._jobs:
+                    if other.get("joined") and other.get("file") \
+                            and os.path.normcase(other["file"]) == os.path.normcase(video):
+                        other["beginning_chat"] = True
+                        other["chat_files"] = chat.existing(video)
+                self._save()
+        logging.info(tr("чат из архива чатов готов: {name} — сообщений: {count}",
+                        name=os.path.basename(video), count=count))
+        return self._finish(job_id, runtime, DONE, file=video, chat_files=chat.existing(video), chat_progress=None,
+                            chat_error="; ".join(filter(None, notes)))
+
+    def _embed_chat(self, job_id, runtime, json_path):
+        """Смайлы и значки внутрь .chat.json (TwitchDownloader). Возвращает примечание или ""."""
+        cli = self._twitchdownloader.command()
+        if not cli:
+            return tr("смайлы 7TV, BTTV и FFZ не встроены: нужен TwitchDownloader")
+        temp_dir = os.path.join(os.path.dirname(os.path.abspath(self._settings.path)), "cache", "twitchdownloader")
+        step, temporary = chat.embedding(cli, json_path, temp_dir)
+        progress, started, stopped = self._chat_watchers(job_id, runtime)
+        try:
+            chat.run([("embedding", step[1])], progress, started, stopped)
+            os.replace(temporary, json_path)
+            return ""
+        except chat.ChatStopped:
+            util.remove_quietly(temporary)
+            return tr("смайлы не встроены: {error}", error=tr("чат отменён"))
+        except (chat.ChatError, OSError) as error:
+            util.remove_quietly(temporary)
+            return tr("смайлы не встроены: {error}", error=error)
 
     def _probe_length(self, path):
         from ..library import probe_duration
@@ -1112,10 +1257,28 @@ class DownloadManager:
                 changes["chat_error"] = tr("чат отменён")
         return self._finish(job_id, runtime, DONE, **changes)
 
-    def _fetch_chat(self, job_id, runtime, job, video):
+    def _chat_watchers(self, job_id, runtime):
+        """(прогресс, запущен процесс, остановлено ли) — для chat.run в строке загрузки."""
+        def progress(stage, percent):
+            with self._lock:
+                self._job(job_id)["chat_progress"] = {"stage": stage, "percent": percent}
+            self._emit(job_id, progress_only=percent not in (None, 100))
+
+        def started(process):
+            with self._lock:
+                runtime["process"] = process
+                stop = runtime["stop"]
+            if stop:
+                util.kill_process_tree(process)
+
+        return progress, started, lambda: bool(runtime["stop"])
+
+    def _fetch_chat(self, job_id, runtime, job, video, json_only=False):
         """
         Чат через TwitchDownloader (у YouTube и Kick сам чат скачивает vodchat,
-        а HTML и видео чата — тоже он). Возвращает (изменения загрузки, остановлен ли).
+        а HTML и видео чата — тоже он). json_only — только .chat.json: HTML и
+        видео сделает вызывающий (чат, который ещё вклеится в другой).
+        Возвращает (изменения загрузки, остановлен ли).
         """
         cli = self._twitchdownloader.command()
         twitch = job["platform"] == "twitch"
@@ -1136,20 +1299,11 @@ class DownloadManager:
         else:
             # смайлы и значки уже встроены — TwitchDownloader их у Twitch не ищет
             steps = chat.finishing(cli, video, mode, ffmpeg, size, temp_dir, embedded=True) if cli else []
+        if json_only:
+            steps = steps[:1] if twitch else []
         self._update(job_id, state=PROCESSING, chat_progress={"stage": "download", "percent": None})
-        logging.info(tr("скачиваю чат: {name}", name=job["title"] or job["url"]))
-
-        def progress(stage, percent):
-            with self._lock:
-                self._job(job_id)["chat_progress"] = {"stage": stage, "percent": percent}
-            self._emit(job_id, progress_only=percent not in (None, 100))
-
-        def started(process):
-            with self._lock:
-                runtime["process"] = process
-                stop = runtime["stop"]
-            if stop:
-                util.kill_process_tree(process)
+        logging.info(tr("скачивание чата: {name}", name=job["title"] or job["url"]))
+        progress, started, stopped = self._chat_watchers(job_id, runtime)
 
         try:
             if not twitch:
@@ -1157,14 +1311,14 @@ class DownloadManager:
                     job["platform"], job["url"], chat.chat_paths(video)["json"], title=job["title"],
                     channel=job["channel"], section=job["section"], duration=job["duration"],
                     progress=lambda percent: progress("download", percent), on_process=started,
-                    stopped=lambda: bool(runtime["stop"]), env=self._ytdlp.environment())
+                    stopped=stopped, env=self._ytdlp.environment())
                 if not count:
                     return {"chat_files": chat.existing(video),
                             "chat_error": tr("в чате этого видео нет сообщений")}, False
                 if not cli:
                     notes.append(tr("чат сохранён в .chat.json; HTML и видео чата сделает "
                                     "TwitchDownloader — его можно скачать в настройках"))
-            chat.run(steps, progress, started, lambda: bool(runtime["stop"]))
+            chat.run(steps, progress, started, stopped)
         except chat.ChatStopped:
             return {"chat_files": chat.existing(video)}, True
         except chat.ChatError as error:
@@ -1276,7 +1430,9 @@ class DownloadManager:
                 else:
                     state = PAUSED
             retry = None
-            if state == FAILED and job.get("fixed_target") and not runtime.get("remove"):
+            # чат из архива — не начало эфира: его отказ по делу, повтор ничего не даст
+            if state == FAILED and job.get("fixed_target") and job["quality"] != CHAT_ARCHIVE \
+                    and not runtime.get("remove"):
                 # начало эфира — само ещё раз, а не ждать, пока нажмут «Повторить»;
                 # в строке — короткая причина, текст ошибки — в журнале
                 reason, passing = beginning_reason(changes.get("error") or job.get("error"))

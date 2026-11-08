@@ -5,6 +5,80 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.12.0 — 2026-11-08
+
+### Added
+
+- **Actions menu on library cards:** the row of unlabelled icons on the frame
+  is replaced by "Summary" and "⋯". The "⋯" button and a right-click open a
+  menu with words and icons, in groups: watch in the window, open in the
+  Windows player, summary · open the chat, open the chat video, get the chat
+  from the platform, get the beginning's chat, make a video with chat on top ·
+  convert, split into parts, show in folder · move to Recycle Bin. Getting a
+  chat has a download icon, so it no longer looks like "open the chat".
+- "Get the beginning's chat" is also in the library card's menu of a joined
+  recording, not only in Downloads.
+- **Chat window:** a chat is read right in the program, not in the browser.
+  On top is a chat activity graph: spikes are marked, a click goes to that
+  moment. The message feed with emotes and badges loads as you scroll both
+  ways. You can search by word or by name, click a name to see all of that
+  viewer's messages, and jump to a time (1:23:45). It opens from a chat card,
+  "Read the chat" in a card's menu, the summary (where top chatters are
+  clickable) and "Search all chats". The browser HTML stays as "Open the chat
+  in the browser".
+- **Chat from the chat archive (Twitch):** if the VOD of your recording is
+  hidden or deleted on Twitch, "Get the chat from the chat archive" in the
+  card's menu takes it from logs.zonian.dev, a public archive of Twitch
+  chats, for the time of each part without chat (and for a joined stream
+  beginning, only before the seam). It runs in Downloads with progress. The
+  archive is not trusted: one fixed address, no redirects, size limits, and
+  every line is parsed by the program's own IRC parser — lines of another
+  channel or room, outside the recording or with broken tags are dropped.
+  When the archive cannot help, the item is greyed out with the reason under
+  it (not Twitch, the channel is not logged, no chat for that day, the chat
+  is already there). Big chats are fine: messages go to disk in 16 MB
+  chunks, up to 3 GB per day (about 7–8 million messages), and a day is
+  downloaded once for all parts of a recording. Kick, YouTube and VK Video
+  Live have no such archives.
+- **"What to download":** video · sound only · chat only — a switch above
+  the quality in the download window and in the bar of selected videos.
+  The quality list has resolutions only; with "chat only" the chat choice has
+  no "no chat"; for a video without chat "chat only" is greyed out with the
+  reason.
+- **"Chats" tab in the library:** chats downloaded without video are listed
+  separately. Their card shows the chat itself instead of a stream frame and
+  length: an activity graph and the number of messages; viewers and the
+  chat's length are in the tooltip.
+
+### Fixed
+
+- A recording split twice into different numbers of parts (into 2, then the
+  whole into 3) showed as one card "5 parts", and the player mixed the
+  pieces of both splits. Each split is now its own card.
+- Watching a recording in progress: "To live" seemed to jump to the middle
+  of a short recording. Playback stays 12 seconds behind the recorded edge
+  (the newest seconds are still being written), and the timeline used to
+  show those seconds too. Now the timeline ends where watching is possible,
+  so "To live" lands at its end, and the length is asked every 5 seconds
+  instead of 8, so the edge moves more smoothly.
+- Turning a live chat into .chat.json (all platforms) held every message in
+  memory at once — gigabytes for a day-long stream of a big channel. It now
+  reads the file in passes and writes messages one by one.
+- "Only a section" in the download window: the "to" field wrapped onto its
+  own line. "From … to …" is one line again.
+- A Twitch chat download looked as if it jumped back to 0% or hung: after the
+  messages TwitchDownloader fetches emotes and badges, embeds them and adds
+  viewer details, each stage counting from zero. The Downloads row now names
+  the stage ("downloading chat", "getting emotes and badges", "embedding
+  emotes", …), and "preparing chat for the browser" shows its step out of
+  three.
+- "Get the beginning's chat" made an HTML (and a chat video) for the
+  beginning's chat that was deleted right after, and the final HTML of the
+  whole chat showed no progress. Now the HTML is made once, for the whole
+  chat, with progress; the same for a chat fetched for your own recording.
+- The row of a joined stream beginning lost its picture once the stream had
+  ended; it now shows a frame from the recording.
+
 ## 0.11.0 — 2026-11-08
 
 ### Added

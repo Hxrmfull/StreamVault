@@ -23,7 +23,7 @@ import time
 from .. import __version__, i18n, sites, util
 from ..archive import downloads as dl
 from ..archive import chat, ytdlp
-from ..chatreplay import ChatReplay, LiveChatReplay
+from ..chatreplay import SEARCH_LIMIT, ChatReplay, LiveChatReplay
 from ..ffmpeg import read_version
 from ..library import broadcast_parts, piece_parts, probe_duration
 from ..live.livechat import jsonl_path, video_backlog
@@ -38,6 +38,8 @@ from .media import MediaServer
 MEDIA_EXTENSIONS = (".mp4", ".ts", ".m4a", ".mkv", ".webm", ".mp3", ".chat.html")
 # Сколько открытых чатов держать в памяти: этот и предыдущий.
 OPEN_CHATS = 2
+# Сообщений одного зрителя в окне чата — все, но не больше стольких.
+USER_MESSAGES = 5000
 
 # Настройки, которые меняет окно. Каналы меняются отдельными вызовами.
 EDITABLE = ("language", "root_path", "quality", "twitch_client_id", "twitch_client_secret",
@@ -104,7 +106,7 @@ class Api:
         "add_download", "pause_download", "resume_download", "cancel_download",
         "remove_download", "clear_finished", "downloads_snapshot",
         "open_file", "show_in_folder", "open_folder", "open_url", "watch", "chat_replay",
-        "chat_search", "save_position", "cut_clip", "overlay_chat", "split_recording", "cancel_edit",
+        "chat_search", "open_chat", "save_position", "cut_clip", "overlay_chat", "split_recording", "cancel_edit",
         "remove_edit", "clear_edits",
         "watch_live", "live_status", "chat_activity", "storyboard", "check_recording",
         "search_chats", "broadcast_summary",
@@ -112,7 +114,7 @@ class Api:
         "ffmpeg_status", "install_ffmpeg", "cancel_ffmpeg_install", "choose_ffmpeg",
         "check_ffmpeg", "ytdlp_status", "update_ytdlp", "cancel_ytdlp_update",
         "twitchdownloader_status", "install_twitchdownloader", "cancel_twitchdownloader_install",
-        "download_chat", "recording_chat", "convert_recording",
+        "download_chat", "recording_chat", "chat_archive_status", "recording_chat_archive", "convert_recording",
         "app_update_status", "check_app_update", "install_app_update", "cancel_app_update",
         "apply_app_update",
         "get_settings", "save_settings", "choose_folder", "quit",
@@ -455,6 +457,90 @@ class Api:
             raise ValueError(tr("чат у всех частей этой записи уже есть"))
         return {"added": added}
 
+    # ------------------------------------------------------------ чат из архива чатов
+
+    def _archive_plan(self, path):
+        """
+        Что взять из архива чатов для записи: (ник канала, [(часть, начало,
+        конец, стык или None)]) — время в секундах эпохи. Нельзя — ValueError
+        с причиной для человека (окно показывает её у серого пункта меню).
+        """
+        from ..archive import chatlogs
+        from ..library import parse_recording_name
+        path = self._media(path)
+        platform, label = util.recording_channel(self._settings["root_path"], path)
+        if not platform:
+            raise ValueError(tr("архив чатов — только для своих записей эфиров"))
+        if platform != "twitch":
+            raise ValueError(tr("архив чатов есть только у Twitch: у Kick, YouTube и VK Video Live таких архивов нет"))
+        login = str(label or "").lower()
+        if not chatlogs.valid_channel(login):
+            raise ValueError(tr("не похоже на ник канала Twitch: {name}", name=label))
+        parts = [part for _, part in broadcast_parts(path) if not os.path.splitext(part)[0].endswith(dl.PART00)]
+        if not parts:
+            raise ValueError(tr("начало эфира ещё не склеено с записью — его чат качается вместе с ним"))
+        moment = parse_recording_name(os.path.splitext(os.path.basename(parts[0]))[0]).get("timestamp")
+        if not moment:
+            raise ValueError(tr("не понять, когда шла запись: время — из имени файла"))
+        # склеенная с началом эфира запись начинается с начала эфира — раньше времени в имени
+        joined = next((job for job in self._downloads.snapshot()["jobs"] if job.get("joined") and job.get("file")
+                       and os.path.normcase(job["file"]) == os.path.normcase(parts[0])), None)
+        seam = None
+        if joined:
+            seam = joined.get("joined_seam") or max(0.0, (joined.get("section") or [0, 0])[1] - dl.BEGINNING_OVERLAP)
+        begin = moment - (seam or 0)
+        plan = []
+        for index, part in enumerate(parts):
+            length = self._part_length(part)
+            if not length:
+                raise ValueError(tr("не узнать длину записи: {name}", name=os.path.basename(part)))
+            start, begin = begin, begin + length
+            if not chat.existing(part).get("json"):
+                plan.append((part, start, start + length, None))
+            elif index == 0 and joined and seam and not joined.get("beginning_chat"):
+                # чат прямого эфира есть, а у склеенного начала — нет: только до стыка
+                plan.append((part, start, start + seam, seam))
+        if not plan:
+            raise ValueError(tr("чат у всех частей этой записи уже есть"))
+        return login, plan
+
+    def _part_length(self, part):
+        known = self._library.preview(part).get("duration") if self._library is not None else None
+        return known or probe_duration(self._ffmpeg.path() if self._ffmpeg else None, part)
+
+    def chat_archive_status(self, path):
+        """
+        Можно ли взять чат записи из архива чатов: {"ok": bool, "reason": текст}.
+        Спрашивает архив, за какие дни у него есть чат канала, — это сеть.
+        """
+        from ..archive import chatlogs
+        try:
+            login, plan = self._archive_plan(path)
+            known = chatlogs.available_days(login)
+        except (ValueError, chatlogs.ArchiveError) as error:
+            return {"ok": False, "reason": str(error)}
+        if not known:
+            return {"ok": False, "reason": tr("архив чатов не ведёт канал {name}", name=login)}
+        wanted = {day for _, start, end, _ in plan for day in chatlogs.days_between(start, end)}
+        if not wanted & known:
+            first = min(wanted)
+            return {"ok": False, "reason": tr("в архиве чатов нет чата канала {name} за {date}",
+                                               name=login, date=first.isoformat())}
+        missing = sorted(wanted - known)
+        return {"ok": True, "parts": len(plan),
+                "reason": tr("за {date} в архиве чата нет — будет только за остальные дни",
+                             date=", ".join(day.isoformat() for day in missing)) if missing else ""}
+
+    def recording_chat_archive(self, path):
+        """Чат записи из архива чатов: по загрузке на часть. {"added": сколько поставлено}."""
+        from ..library import parse_recording_name
+        login, plan = self._archive_plan(path)
+        title = parse_recording_name(os.path.splitext(os.path.basename(plan[0][0]))[0]).get("title") or ""
+        mode = self._settings["chat_mode"] if self._settings["chat_mode"] != chat.NONE else chat.TEXT
+        for part, start, end, seam in plan:
+            self._downloads.add_archive_chat(part, login, start, end, title=title, seam=seam, chat_mode=mode)
+        return {"added": len(plan)}
+
     @staticmethod
     def _clean_meta(meta):
         """Из сведений о видео — только известные поля нужного типа."""
@@ -615,12 +701,13 @@ class Api:
         Сводка эфира по всем его частям: чат (сообщений, зрителей, самые
         активные, смайлы, всплески — с частью и временем) и пропуски каждой части.
         """
-        from ..library import chat_length, chat_only_json
+        from ..library import chat_only_json, read_chat_facts
         path = self._media(path)
         only_chat = chat_only_json(path)
         if only_chat is not None:
             # чат, скачанный без видео: одна «часть» — сам чат, длина — из него
-            parts, durations, chats = [path], [chat_length(only_chat)], [only_chat]
+            facts = self._library.chat_facts(only_chat) if self._library is not None else read_chat_facts(only_chat)
+            parts, durations, chats = [path], [facts.get("length") or None], [only_chat]
         else:
             parts = [part["path"] for part in self._parts(path)]
             durations = [self._library.preview(part).get("duration") if self._library is not None else None
@@ -803,13 +890,36 @@ class Api:
         if hasattr(self._live, "clear_conversions"):
             self._live.clear_conversions()
 
-    def chat_search(self, chat_id, text):
-        """Сообщения открытого чата, где есть text: для перехода к ним."""
+    def chat_search(self, chat_id, text, by="all"):
+        """
+        Сообщения открытого чата, где есть text: для перехода к ним. by: all,
+        text, name — где искать; user — все сообщения зрителя с этим ником.
+        """
         with self._chats_lock:
             opened = self._chats.get(str(chat_id))
         if opened is None:
             raise ValueError(tr("чат закрыт — открой запись заново"))
-        return opened[2].search(str(text)[:100])
+        by = by if by in ("all", "text", "name", "user") else "all"
+        # сообщения одного зрителя — все, сколько бы их ни было; поиск — первые
+        return opened[2].search(str(text)[:100], limit=USER_MESSAGES if by == "user" else SEARCH_LIMIT, by=by)
+
+    def open_chat(self, path):
+        """
+        Чат для окна чата программы — без видео: по записи или по .chat.html
+        (чат, скачанный без видео); .chat.json — рядом с ними. Как chat у
+        watch, плюс length — длина записи, к которой чат, и json — его файл.
+        """
+        path = self._media(path)
+        if path.lower().endswith(chat.SUFFIXES["html"]):
+            json_path = path[:-len(chat.SUFFIXES["html"])] + chat.SUFFIXES["json"]
+        else:
+            json_path = chat.chat_paths(path)["json"]
+        if not os.path.isfile(json_path):
+            raise ValueError(tr("у этой записи нет чата"))
+        chat_id, replay = self._open_chat(json_path)
+        return {"id": chat_id, "count": len(replay.messages), "length": replay.length, "json": json_path,
+                "images": [image if image.startswith("https://") else self._media_server.image_url(chat_id, index)
+                           for index, image in enumerate(replay.images)]}
 
     def chat_replay(self, chat_id, start, end):
         """Сообщения открытого чата со временем в записи от start до end, секунды."""

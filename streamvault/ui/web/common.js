@@ -80,6 +80,7 @@ export const ICONS = {
   search: "M10 4a6 6 0 104.47 10.03l4.82 4.82 1.41-1.41-4.82-4.82A6 6 0 0010 4zm0 2a4 4 0 110 8 4 4 0 010-8z",
   power: "M11 3h2v9h-2zM7.05 6.05l1.41 1.41a6 6 0 107.08 0l1.41-1.41a8 8 0 11-9.9 0z",
   play: "M8 5v14l11-7z",
+  more: "M6 10a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4z",
   volume: "M4 9h4l5-4v14l-5-4H4zm12.5-1.1a5 5 0 010 8.2l-1.2-1.6a3 3 0 000-5z",
   muted: "M4 9h4l5-4v14l-5-4H4zm11.6.6L17 8.2l2 2 2-2 1.4 1.4-2 2 2 2-1.4 1.4-2-2-2 2-1.4-1.4 2-2z",
   fullscreen: "M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4z",
@@ -391,7 +392,17 @@ export function keepDaysSelect(days) {
 
 // чат записей: Twitch, Kick, VK Video Live и прошедшие эфиры YouTube
 export const CHAT_MODES = [["none", "без чата"], ["text", "чат для браузера"], ["render", "чат + видео чата"]];
-export const CHAT_STAGES = { download: "скачиваю чат", html: "готовлю чат для браузера", render: "рисую видео чата" };
+// у скачивания чата этапы (их называет TwitchDownloader), проценты каждого — с нуля
+export const CHAT_STAGES = { download: "скачивание чата", images: "загрузка смайлов и значков",
+                             embedding: "встраивание смайлов", commenters: "сведения о зрителях",
+                             writing: "сохранение чата",
+                             archive: "загрузка чата из архива чатов",
+                             html: "подготовка чата для браузера",
+                             // у этого шага процентов нет — TwitchDownloader пишет только номер шага
+                             html_info: "подготовка чата для браузера: сведения о записи, шаг 1 из 3",
+                             html_embeds: "подготовка чата для браузера: смайлы и значки, шаг 2 из 3",
+                             html_writing: "подготовка чата для браузера: сохранение, шаг 3 из 3",
+                             render: "отрисовка видео чата" };
 
 // что умеет площадка, решает программа (sites в init), а не окно
 export function siteInfo(platform) { return ((state.info && state.info.sites) || {})[platform] || null; }
@@ -438,6 +449,82 @@ export const DOWNLOAD_QUALITIES = [
 ];
 // «только чат»: видео не качается — чат записи эфира или клипа (archive/downloads.py: CHAT_ONLY)
 export const CHAT_ONLY = { quality: "chat", label: "только чат, без видео" };
+const AUDIO = "audio";
+
+/*
+ * Что скачать: видео, только звук или только чат — переключателем над
+ * качеством. «Только звук» и «только чат» — не варианты качества видео:
+ * в одном списке с 1080p они путали, и варианты чата пересекались с ними.
+ * Качество — только у видео; у «только чат» нет «без чата».
+ * withChat — у видео бывает чат; compact — для полосы выбранных видео.
+ */
+export function downloadChoice(withChat, compact) {
+  const qualities = h("select", { title: t("Качество видео") });
+  const setQualities = (options) => {
+    const previous = qualities.value;
+    qualities.replaceChildren(...options.filter((option) => option.quality !== AUDIO && option.quality !== CHAT_ONLY.quality)
+      .map((option) => h("option", { value: option.quality, text: t(option.label) })));
+    const wanted = previous || state.settings.download_quality;
+    qualities.value = [...qualities.options].some((option) => option.value === wanted) ? wanted : "best";
+  };
+  setQualities(DOWNLOAD_QUALITIES);
+  const chatMode = chatSelect();
+  const buttons = new Map();
+  const group = h("div", { class: "segmented" + (compact ? " compact" : ""), role: "radiogroup", "aria-label": t("Что скачать") });
+  for (const [value, label] of [["video", "Видео"], [AUDIO, "Только звук"], ["chat", "Только чат"]]) {
+    const option = h("button", { type: "button", role: "radio", text: t(label) });
+    option.addEventListener("click", () => choose(value));
+    buttons.set(value, option);
+    group.append(option);
+  }
+  const qualityRow = h("div", { class: "form-row" }, h("label", null, t("Качество")), qualities);
+  const chatRow = h("div", { class: "form-row" }, h("label", null, t("Чат")), chatMode);
+  let what = state.settings.download_quality === AUDIO ? AUDIO : "video";
+  let chatBefore = null;            // что было выбрано у чата до «только чат»
+
+  function choose(value) {
+    if (value === "chat" && !self.withChat) return;
+    what = value;
+    for (const [key, option] of buttons) {
+      option.classList.toggle("active", key === what);
+      option.setAttribute("aria-checked", String(key === what));
+    }
+    qualityRow.hidden = what !== "video";
+    // «без чата» при «только чат» смысла не имеет — его нет, стоит «для браузера»
+    const none = chatMode.querySelector('option[value="none"]');
+    if (what === "chat") {
+      if (chatBefore === null) chatBefore = chatMode.value;
+      none.hidden = true;
+      if (chatMode.value === "none") chatMode.value = "text";
+    } else {
+      none.hidden = false;
+      if (chatBefore !== null) chatMode.value = chatBefore;
+      chatBefore = null;
+    }
+    chatRow.hidden = !self.withChat;
+    self.onchange();
+  }
+
+  const self = {
+    group, qualities, chatMode, qualityRow, chatRow, withChat: Boolean(withChat), onchange: () => {},
+    get what() { return what; },
+    setQualities,
+    // чат бывает или нет — «только чат» серый с объяснением
+    setWithChat(value) {
+      self.withChat = Boolean(value);
+      const chatButton = buttons.get("chat");
+      chatButton.disabled = !self.withChat;
+      chatButton.title = self.withChat ? t("Только .chat.json и .chat.html, без видео") : t("У этого видео чата не бывает");
+      if (!self.withChat && what === "chat") choose("video"); else choose(what);
+    },
+    value() {
+      return { quality: what === "video" ? qualities.value : what === AUDIO ? AUDIO : CHAT_ONLY.quality,
+               chat: self.withChat ? chatMode.value : null };
+    },
+  };
+  self.setWithChat(withChat);
+  return self;
+}
 
 export const PAGE = 24;
 

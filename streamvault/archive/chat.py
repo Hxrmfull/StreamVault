@@ -26,6 +26,24 @@ SUFFIXES = {"json": ".chat.json", "html": ".chat.html", "video": ".chat.mp4"}
 
 # "[STATUS] - Downloading Embed Images 45%" и "[STATUS] - Rendering Video 45% (…)"
 _PROGRESS = re.compile(r"\[STATUS\] - .*?(\d+)%")
+# "[STATUS] - Updating Embeds [2/3]": у chatupdate вместо процентов — номер шага
+_STATUS = re.compile(r"\[STATUS\] - ([A-Za-z +]+?)\s*(?:\d+%|\[\d+/\d+\]|$)")
+# у шагов несколько этапов, и проценты каждого — с нуля, а у chatupdate процентов
+# нет вовсе: без названия этапа в окне это выглядит как откат или зависание.
+# Шаг → (что пишет TwitchDownloader → этап для окна)
+_SUBSTAGES = {
+    "download": {
+        "Downloading Embed Images": "images",
+        "Embedding Images": "embedding",
+        "Backfilling Commenter Info": "commenters",
+        "Writing Output File": "writing",
+    },
+    "html": {
+        "Updating Video Info": "html_info",
+        "Updating Embeds": "html_embeds",
+        "Writing Output File": "html_writing",
+    },
+}
 _LINES = re.compile(rb"[\r\n]+")
 # сколько строк вывода хранить ради текста ошибки: начало и конец
 _HEAD, _TAIL = 20, 30
@@ -171,10 +189,16 @@ def run(steps, on_progress=None, on_process=None, stopped=lambda: False):
                 *complete, rest = _LINES.split(rest + chunk)
                 for raw in complete:
                     line = raw.decode("utf-8", "replace").strip()
+                    status = _STATUS.match(line)
+                    shown = _SUBSTAGES.get(stage, {}).get(status.group(1), stage) if status else stage
                     match = _PROGRESS.match(line)
                     if match:
                         if on_progress:
-                            on_progress(stage, min(100, int(match.group(1))))
+                            on_progress(shown, min(100, int(match.group(1))))
+                    elif status:
+                        # этап без процентов («Writing Output File», шаги chatupdate)
+                        if on_progress and shown != stage:
+                            on_progress(shown, None)
                     elif line:
                         if len(head) < _HEAD:
                             head.append(line)

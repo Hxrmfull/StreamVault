@@ -487,55 +487,87 @@ def video_backlog(duration, start, end):
     return round(backlog, 3) if backlog > RESTART_SHIFT_MIN else 0.0
 
 
-def convert(source, target, title="", channel="", fetch=fetch_image, shift=0.0):
-    """
-    .chat.jsonl -> .chat.json в формате TwitchDownloader. Возвращает число
-    сообщений; без единого сообщения файл не создаётся (0). fetch(адрес) ->
-    картинка смайла или значка площадок, кроме Twitch (тесты — свою).
-    shift — на сколько секунд видео начинается раньше чата (video_backlog).
-    """
-    start, room_id, platform = None, None, "twitch"
-    records, deleted, emotes, badges = [], set(), {}, {}
+def _jsonl_records(source):
+    """Записи .chat.jsonl по одной, без оборванных строк (сбой посреди записи)."""
     with open(source, encoding="utf-8") as lines:
         for line in lines:
             try:
                 record = json.loads(line)
             except ValueError:
-                continue                 # оборванная последняя строка при сбое
-            kind = record.get("type")
-            if kind == "start":
-                start = start if start is not None else record.get("ts")
-                room_id = room_id or record.get("room_id")
-                channel = channel or record.get("channel", "")
-                platform = record.get("platform") or platform
-            elif kind == "room":
-                room_id = room_id or record.get("room_id")
-            elif kind == "msg":
-                records.append(record)
-            elif kind == "delete":
-                deleted.add(record.get("id"))
-            elif kind == "delete_user":
-                # бан: прячутся сообщения зрителя до него, после — нет
-                deleted.update(earlier.get("id") for earlier in records
-                               if earlier.get("user_id") == record.get("user_id"))
-            elif kind in ("emote", "badge") and record.get("id") is not None:
-                described = emotes if kind == "emote" else badges
-                described[record["id"]] = (record.get("name") or "", record.get("url") or "")
-    records = [record for record in records if record.get("id") not in deleted]
-    if not records:
+                continue
+            if isinstance(record, dict):
+                yield record
+
+
+def convert(source, target, title="", channel="", fetch=fetch_image, shift=0.0, length=None):
+    """
+    .chat.jsonl -> .chat.json в формате TwitchDownloader. Возвращает число
+    сообщений; без единого сообщения файл не создаётся (0). fetch(адрес) ->
+    картинка смайла или значка площадок, кроме Twitch (тесты — свою).
+    shift — на сколько секунд видео начинается раньше чата (video_backlog).
+    length — длина видео, если известна (чат из архива к своей записи);
+    иначе — до последнего сообщения.
+
+    Сообщения в памяти не копятся — у суточного эфира большого канала их
+    миллионы: файл читается три раза. Первый — удаления и баны (их немного),
+    второй — что осталось: сколько, до какого времени, какие смайлы и значки;
+    третий — сообщения прямо в .chat.json, одно за другим.
+    """
+    start, room_id, platform = None, None, "twitch"
+    deleted, banned, emotes, badges = set(), {}, {}, {}
+    index = 0
+    for record in _jsonl_records(source):
+        kind = record.get("type")
+        if kind == "start":
+            start = start if start is not None else record.get("ts")
+            room_id = room_id or record.get("room_id")
+            channel = channel or record.get("channel", "")
+            platform = record.get("platform") or platform
+        elif kind == "room":
+            room_id = room_id or record.get("room_id")
+        elif kind == "msg":
+            index += 1
+        elif kind == "delete":
+            deleted.add(record.get("id"))
+        elif kind == "delete_user":
+            # бан: прячутся сообщения зрителя до него, после — нет
+            banned[record.get("user_id")] = index
+        elif kind in ("emote", "badge") and record.get("id") is not None:
+            described = emotes if kind == "emote" else badges
+            described[record["id"]] = (record.get("name") or "", record.get("url") or "")
+
+    def kept():
+        """Оставшиеся сообщения по порядку."""
+        number = 0
+        for record in _jsonl_records(source):
+            if record.get("type") != "msg":
+                continue
+            number += 1
+            if record.get("id") in deleted or number <= banned.get(record.get("user_id"), 0):
+                continue
+            if not isinstance(record.get("ts"), (int, float)):
+                continue
+            yield record
+
+    count, first, end, used_emotes, used_badges = 0, None, None, set(), set()
+    for record in kept():
+        count += 1
+        first = record["ts"] if first is None else first
+        end = record["ts"] if end is None else max(end, record["ts"])
+        if platform != "twitch":
+            # только то, что встретилось в оставшихся сообщениях
+            used_emotes.update(part[1] for part in record.get("parts") or ()
+                               if len(part) > 1 and part[1] in emotes)
+            if isinstance(record.get("badges"), list):
+                used_badges.update(badge for badge in record["badges"] if badge in badges)
+    if not count:
         return 0
     if start is None:
-        start = records[0]["ts"]
-    end = max(record["ts"] for record in records)
-    length = max(1, int(round(end - start + shift)))
+        start = first
+    length = max(1, int(round(length if length else end - start + shift)))
 
     embedded, have_emotes, badge_names = None, set(), {}
     if platform != "twitch":
-        # только то, что встретилось в оставшихся сообщениях
-        used_emotes = {part[1] for record in records for part in record.get("parts") or ()
-                       if len(part) > 1 and part[1] in emotes}
-        used_badges = {badge for record in records if isinstance(record.get("badges"), list)
-                       for badge in record["badges"] if badge in badges}
         names = _badge_names({key: badges[key] for key in used_badges})
         embedded = _embed({key: emotes[key] for key in used_emotes},
                           {names[key]: badges[key] for key in used_badges}, fetch)
@@ -543,8 +575,7 @@ def convert(source, target, title="", channel="", fetch=fetch_image, shift=0.0):
         embedded_badges = {entry["name"] for entry in embedded["twitchBadges"]}
         badge_names = {key: name for key, name in names.items() if name in embedded_badges}
 
-    comments = []
-    for record in records:
+    def comment(record):
         system = record.get("system") or ""
         if "parts" in record:
             body, fragments, emoticons = _parts_fragments(record["parts"], have_emotes)
@@ -561,7 +592,7 @@ def convert(source, target, title="", channel="", fetch=fetch_image, shift=0.0):
         except ValueError:
             bits = 0
         login = record.get("login") or (record.get("name") or "").lower()
-        comments.append({
+        return {
             "_id": record.get("id"),
             "created_at": _iso(record["ts"]),
             "channel_id": room_id or "",
@@ -574,8 +605,9 @@ def convert(source, target, title="", channel="", fetch=fetch_image, shift=0.0):
             "message": {"body": body, "bits_spent": bits, "fragments": fragments,
                         "user_badges": _badges(record.get("badges", ""), badge_names),
                         "user_color": record.get("color") or None, "emoticons": emoticons},
-        })
-    data = {
+        }
+
+    head = {
         "FileInfo": {"Version": {"Major": 1, "Minor": 4, "Patch": 0},
                      "CreatedAt": _iso(time.time()), "UpdatedAt": "0001-01-01T00:00:00"},
         "streamer": {"name": channel, "login": channel, "id": int(room_id) if str(room_id or "").isdigit() else 0},
@@ -583,15 +615,23 @@ def convert(source, target, title="", channel="", fetch=fetch_image, shift=0.0):
         "video": {"title": title, "description": None, "id": None, "created_at": _iso(start),
                   "start": 0, "end": length, "length": length, "viewCount": 0, "game": None,
                   "chapters": []},
-        "comments": comments,
-        # у Twitch смайлы и значки подставит TwitchDownloader; у остальных — уже здесь
-        "embeddedData": embedded,
     }
     temporary = target + ".tmp"
-    with open(temporary, "w", encoding="utf-8") as output:
-        json.dump(data, output, ensure_ascii=False)
-    os.replace(temporary, target)
-    return len(comments)
+    written = 0
+    try:
+        with open(temporary, "w", encoding="utf-8") as output:
+            # тот же JSON, что json.dump(словарь): шапка, сообщения по одному, картинки
+            output.write(json.dumps(head, ensure_ascii=False)[:-1] + ', "comments": [')
+            for record in kept():
+                output.write((", " if written else "") + json.dumps(comment(record), ensure_ascii=False))
+                written += 1
+            # у Twitch смайлы и значки подставит TwitchDownloader; у остальных — уже здесь
+            output.write('], "embeddedData": ' + json.dumps(embedded, ensure_ascii=False) + "}")
+        os.replace(temporary, target)
+    except BaseException:
+        remove_quietly(temporary)
+        raise
+    return written
 
 
 # ------------------------------------------------------------ после конвертации записи

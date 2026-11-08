@@ -42,6 +42,9 @@ _MP4_INPUT = re.compile(r"^Input #0, mov,", re.MULTILINE)
 THUMB_WIDTH = 320
 # Как считана длительность в кэше превью; 2 — с поправкой на начало трансляции.
 PROBE_VERSION = 2
+# Сводка чата без видео для карточки: столбиков графика; версия — чтобы пересчитать кэш.
+CHAT_FACTS_BARS = 48
+CHAT_FACTS_VERSION = 1
 # Сколько ffmpeg может работать над превью одновременно.
 PREVIEW_WORKERS = 2
 
@@ -98,6 +101,41 @@ def broadcast_key(stem):
     return (match["label"].lower(), match["date"], match["h"], match["m"], match["s"])
 
 
+def piece_total(stem):
+    """Сколько всего кусков в делении, к которому относится файл; не кусок — None."""
+    mark = PIECE_MARK.search(stem)
+    return int(mark.group(2)) if mark else None
+
+
+def split_groups(entries):
+    """
+    Одну запись можно поделить ещё раз, на другое число кусков («из 2» и «из 3»
+    рядом): такие деления — разные, вместе это не части одного эфира. entries —
+    [(часть эфира, всего кусков или None)]; возвращает метку деления для каждой:
+    "" — общая карточка эфира, «of N» — своё деление. Пока деление у части одно,
+    его куски идут вместе с остальными частями эфира, как раньше.
+    """
+    totals = {}
+    for part, total in entries:
+        if total:
+            totals.setdefault(part, set()).add(total)
+    clashing = {part for part, found in totals.items() if len(found) > 1}
+    return ["of %d" % total if total and part in clashing else "" for part, total in entries]
+
+
+def _separate_splits(items):
+    """Записи эфира, поделённые по-разному: каждое деление — своей карточкой (split_groups)."""
+    by_broadcast = {}
+    for item in items:
+        if item["kind"] == "record" and item["broadcast"]:
+            by_broadcast.setdefault(item["broadcast"], []).append(item)
+    for group in by_broadcast.values():
+        totals = [piece_total(os.path.splitext(os.path.basename(item["path"]))[0]) for item in group]
+        for item, label in zip(group, split_groups([(item.get("part"), total) for item, total in zip(group, totals)])):
+            if label:
+                item["broadcast"] += "|" + label
+
+
 def broadcast_parts(path):
     """
     Все части эфира, к которому относится запись, по порядку: [(номер, путь)].
@@ -112,7 +150,8 @@ def broadcast_parts(path):
     if key is None:
         # имя не по образцу программы, но запись поделена — её куски подряд
         return piece_parts(path)
-    parts = {}
+    own = parse_recording_name(stem).get("part"), piece_total(stem)
+    found = []
     try:
         names = os.listdir(folder)
     except OSError:
@@ -123,7 +162,14 @@ def broadcast_parts(path):
                 or name.lower().endswith(chat.SUFFIXES["video"]) or EDIT_MARK.search(stem) \
                 or broadcast_key(stem) != key:
             continue
-        parsed = parse_recording_name(stem)
+        found.append((name, parse_recording_name(stem), piece_total(stem)))
+    # поделена по-разному — только своё деление (или эфир без этих делений)
+    groups = split_groups([(parsed.get("part"), total) for _, parsed, total in found] + [own])
+    mine = groups.pop()
+    parts = {}
+    for (name, parsed, _), group in zip(found, groups):
+        if group != mine:
+            continue
         # part00 — начало эфира, скачанное из архива площадки: идёт первым
         part = parsed.get("part")
         order = (1 if part is None else part, parsed.get("piece") or 0)
@@ -158,7 +204,8 @@ def piece_parts(path):
                 or name.lower().endswith(chat.SUFFIXES["video"]):
             continue
         found = PIECE_MARK.search(other)
-        if not found or other[:found.start()].lower() != base:
+        # поделено ещё раз на другое число — то другое деление
+        if not found or other[:found.start()].lower() != base or found.group(2) != mark.group(2):
             continue
         number = int(found.group(1))
         candidate = os.path.join(folder, name)
@@ -248,13 +295,38 @@ def chat_only_json(path):
     return path[:-len(html)] + chat.SUFFIXES["json"] if str(path).endswith(html) else None
 
 
-def chat_length(json_path):
-    """Длина чата (video.length в .chat.json) или None."""
+def read_chat_facts(json_path):
+    """Сводка чата для карточки (Library.chat_facts) прямо из .chat.json."""
     try:
         with open(json_path, encoding="utf-8") as source:
-            return (json.load(source).get("video") or {}).get("length") or None
+            data = json.load(source)
     except (OSError, ValueError):
-        return None
+        return {}
+    video = data.get("video") or {}
+    try:
+        start = float(video.get("start") or 0)
+    except (TypeError, ValueError):
+        start = 0.0
+    times, names = [], set()
+    for comment in data.get("comments") or ():
+        try:
+            times.append(float(comment["content_offset_seconds"]) - start)
+        except (KeyError, TypeError, ValueError):
+            continue
+        commenter = comment.get("commenter") or {}
+        names.add(str(commenter.get("name") or commenter.get("display_name") or "").casefold())
+    try:
+        length = float(video.get("length") or 0) or float(video.get("end") or 0) - start
+    except (TypeError, ValueError):
+        length = 0.0
+    length = max(length, max(times) if times else 0.0)
+    bars = [0] * CHAT_FACTS_BARS
+    if times and length > 0:
+        for moment in times:
+            bars[min(CHAT_FACTS_BARS - 1, max(0, int(moment / length * CHAT_FACTS_BARS)))] += 1
+        top = max(bars)
+        bars = [round(count / top * 100) for count in bars]
+    return {"length": round(length, 3), "messages": len(times), "chatters": len(names - {""}), "bars": bars}
 
 
 def delete_with_chat(path):
@@ -343,13 +415,16 @@ class Library:
             item = self._describe("download", platform, label, path, stat, jobs)
             stem = path[:-len(chat.SUFFIXES["html"])]
             files = chat.existing(stem + ".mp4")
-            item.update(video_kind="chat", chat=files,
-                        duration=chat_length(chat_only_json(path)),
+            facts = self.chat_facts(chat_only_json(path))
+            # не кадр и длительность эфира, а сам чат: сообщений, зрителей, график
+            item.update(video_kind="chat", chat=files, thumbnail="", chat_facts=facts,
+                        duration=facts.get("length") or None,
                         # размер — всех файлов чата: HTML сам по себе крошечный
                         size=sum(os.path.getsize(file) for file in files.values() if os.path.isfile(file)),
                         title=item["title"] if item["title"] != os.path.basename(stem) + ".chat" else
                         parse_download_name(os.path.basename(stem)).get("title") or os.path.basename(stem))
             items.append(item)
+        _separate_splits(items)
         items.sort(key=lambda item: item["timestamp"] or 0, reverse=True)
         return items
 
@@ -415,12 +490,34 @@ class Library:
                 item.update(parsed)
         if piece and not item["broadcast"]:
             item["piece"] = int(piece.group(1))
-            item["broadcast"] = "|".join((os.path.dirname(path), "pieces", whole_stem.lower()))
+            # поделено ещё раз на другое число — отдельной карточкой
+            item["broadcast"] = "|".join((os.path.dirname(path), "pieces", whole_stem.lower(), piece.group(2)))
         if edit == "clip":
             item["video_kind"] = "clip"
         item["title"] = item["title"] or whole_stem
         item["timestamp"] = item["timestamp"] or stat.st_mtime
         return item
+
+    def chat_facts(self, json_path):
+        """
+        Чат без видео для карточки: {"length", "messages", "chatters", "bars"} —
+        bars: столбики графика активности 0…100. Считается раз, дальше из кэша:
+        .chat.json бывает в сотню мегабайт.
+        """
+        try:
+            stat = os.stat(json_path)
+        except (OSError, TypeError):
+            return {}
+        key = self._key(json_path, stat)
+        with self._lock:
+            cached = self._cache.get(key)
+        if cached and cached.get("chat_facts") == CHAT_FACTS_VERSION:
+            return cached["facts"]
+        facts = read_chat_facts(json_path)
+        with self._lock:
+            self._cache[key] = {"chat_facts": CHAT_FACTS_VERSION, "facts": facts}
+            self._save_cache()
+        return facts
 
     # ------------------------------------------------------------ превью
 

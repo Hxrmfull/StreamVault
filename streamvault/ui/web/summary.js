@@ -11,6 +11,7 @@
 import { bridge, button, channelName, displayTitle, failed, fmt, h, openModal, platformName, setText, t, tp }
   from "./common.js";
 import { openWatch } from "./player.js";
+import { openChatView } from "./chatview.js";
 
 const PEAK_LEAD = 15;         // всплеск чата — реакция: смотреть с 15 секунд до него
 const SEARCH_AGAIN = 300;     // не все чаты ещё в базе — спросить снова через столько мс
@@ -37,9 +38,9 @@ export function openSummary(item, options) {
     body);
   const jump = (path, seconds) => {
     modal.close();
-    // чат без видео: перейти некуда — открывается сам чат
+    // чат без видео: видео нет — окно чата на этом месте
     if (item.video_kind === "chat") {
-      bridge.call("open_file", (item.chat || {}).html || item.path).catch(failed);
+      openChatView(item, { start: seconds });
       return;
     }
     if (options.jump) {
@@ -96,20 +97,38 @@ export function openSummary(item, options) {
           return row;
         })));
     }
-    const top = (title, rows) => h("div", null, h("h3", { class: "subhead", text: title }),
-      h("div", { class: "summary-top" }, rows.map(([name, count]) => h("div", { class: "summary-top-row" },
-        h("span", { class: "summary-name", text: name }), h("span", { class: "muted", text: fmt.count(count) })))));
+    // ник — щелчком к его сообщениям в окне чата (у эфира из нескольких частей с чатом
+    // окно открывает одну часть — там ник не кликается, чтобы не показать не всё)
+    const withChat = parts.filter((part) => part.chat);
+    const chatItem = item.video_kind === "chat" ? item
+      : withChat.length === 1 ? (item.parts || [item]).find((part) => part.path === withChat[0].path) : null;
+    const top = (title, rows, user) => h("div", null, h("h3", { class: "subhead", text: title }),
+      h("div", { class: "summary-top" }, rows.map(([name, count]) => {
+        const row = h(user ? "button" : "div", { class: "summary-top-row" + (user ? " link" : "") },
+          h("span", { class: "summary-name", text: name }), h("span", { class: "muted", text: fmt.count(count) }));
+        if (user) {
+          row.type = "button";
+          row.title = t("Все сообщения {name}", { name: name });
+          row.addEventListener("click", () => { modal.close(); openChatView(chatItem, { user: name }); });
+        }
+        return row;
+      })));
     if (summary.top_chatters.length || summary.top_emotes.length) {
       sections.push(h("div", { class: "two" },
-        summary.top_chatters.length ? top(t("Самые активные в чате"), summary.top_chatters) : h("div"),
+        summary.top_chatters.length ? top(t("Самые активные в чате"), summary.top_chatters, Boolean(chatItem)) : h("div"),
         summary.top_emotes.length ? top(t("Частые смайлы"), summary.top_emotes) : h("div")));
     }
-    if (!summary.messages) sections.push(h("div", { class: "muted field-gap", text: t("Чата у этой записи нет.") }));
-    // поиск по слову и нику — в этом чате: тот же поиск, что по всем, с подсказкой
-    if (summary.chat_only) {
+    // читать чат в окне программы — у любой записи с чатом
+    if (summary.messages && chatItem) {
       sections.push(h("div", { class: "toolbar field-gap" },
-        button(t("Открыть чат"), { icon: "chat", onclick: () => bridge.call("open_file", (item.chat || {}).html || item.path).catch(failed) }),
-        button(t("Поиск по слову или нику"), { icon: "search", onclick: () => { modal.close(); openChatSearch([item]); } })));
+        button(t("Читать чат"), { icon: "chat", onclick: () => { modal.close(); openChatView(chatItem); } }),
+        summary.chat_only ? button(t("Поиск по чатам"), { icon: "search", kind: "ghost",
+                                                          onclick: () => { modal.close(); openChatSearch([item]); } }) : null,
+        summary.chat_only && (item.chat || {}).html ? button(t("Открыть в браузере"), { icon: "external", kind: "ghost",
+          onclick: () => bridge.call("open_file", item.chat.html).catch(failed) }) : null));
+    }
+    if (!summary.messages) sections.push(h("div", { class: "muted field-gap", text: t("Чата у этой записи нет.") }));
+    if (summary.chat_only) {
       body.replaceChildren(...sections);
       return;
     }
@@ -211,8 +230,8 @@ export function openChatSearch(items) {
             h("span", { class: "chat-name", text: name }), ": ", text);
           line.addEventListener("click", () => {
             modal.close();
-            // чат без видео — открывается сам чат: видео, к месту которого перейти, нет
-            if (item.video_kind === "chat") bridge.call("open_file", (item.chat || {}).html || item.path).catch(failed);
+            // чат без видео — окно чата на найденном сообщении: видео, к месту которого перейти, нет
+            if (item.video_kind === "chat") openChatView(item, { start: offset, mark: [offset, name] });
             else openWatch(item, { start: Math.max(0, offset - 2) });
           });
           return line;

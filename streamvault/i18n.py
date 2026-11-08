@@ -466,7 +466,7 @@ STRINGS = {
     'не удалось запустить TwitchDownloader: {error}': 'could not start TwitchDownloader: {error}',
     'скачанный TwitchDownloader не запустился или назвал другую версию':
         'the downloaded TwitchDownloader did not start or reported a different version',
-    'скачиваю чат: {name}': 'downloading chat: {name}',
+    'скачивание чата: {name}': 'downloading chat: {name}',
     'установка TwitchDownloader здесь недоступна': 'TwitchDownloader cannot be installed here',
     'чат делается к уже скачанному видео': 'a chat is made for an already downloaded video',
     'чат не скачался: {name} — {error}': 'chat was not downloaded: {name} — {error}',
@@ -571,6 +571,32 @@ STRINGS = {
         'chat needs TwitchDownloader — it can be downloaded in the settings, Tools section',
     'чат {channel}: сбой, переподключаюсь': 'chat {channel}: failure, reconnecting',
     'чат закрыт — открой запись заново': 'the chat was closed — open the recording again',
+    'у этой записи нет чата': 'this recording has no chat',
+    'архив чатов есть только у Twitch: у Kick, YouTube и VK Video Live таких архивов нет':
+        'the chat archive is for Twitch only: Kick, YouTube and VK Video Live have no such archives',
+    'архив чатов не ведёт канал {name}': 'the chat archive does not log the channel {name}',
+    'архив чатов не отвечает: {error}': 'the chat archive does not respond: {error}',
+    'архив чатов ответил непонятно': 'the chat archive gave an unclear answer',
+    'архив чатов ответил ошибкой {code}': 'the chat archive answered with error {code}',
+    'архив чатов отправил на другой адрес — не иду туда': 'the chat archive redirected to another address — not going there',
+    'архив чатов — только для своих записей эфиров': 'the chat archive is only for your own stream recordings',
+    'в архиве чатов за время этой записи сообщений нет': 'the chat archive has no messages for the time of this recording',
+    'в архиве чатов нет чата канала {name} за {date}': 'the chat archive has no chat of {name} for {date}',
+    'за {date} в архиве чата нет — будет только за остальные дни':
+        'the archive has no chat for {date} — only the other days will be there',
+    'записи, к которой чат, больше нет': 'the recording for this chat is gone',
+    'начало эфира ещё не склеено с записью — его чат качается вместе с ним':
+        'the stream beginning is not joined with the recording yet — its chat comes with it',
+    'не похоже на ник канала Twitch: {name}': 'does not look like a Twitch channel name: {name}',
+    'не узнать длину записи: {name}': 'cannot find out the length of the recording: {name}',
+    'ответ архива чатов слишком большой': 'the chat archive answer is too large',
+    'смайлы 7TV, BTTV и FFZ не встроены: нужен TwitchDownloader':
+        '7TV, BTTV and FFZ emotes are not embedded: TwitchDownloader is needed',
+    'смайлы не встроены: {error}': 'emotes not embedded: {error}',
+    'чат из архива не записан: {error}': 'the chat from the archive was not written: {error}',
+    'чат из архива чатов готов: {name} — сообщений: {count}': 'chat from the chat archive is ready: {name} — messages: {count}',
+    'чат из архива чатов: {name}': 'chat from the chat archive: {name}',
+    'чат у этой части уже есть': 'this part already has a chat',
     'чат не читается: {error}': 'cannot read the chat: {error}',
     'смайлы в чат эфира не встроены: {name} — {error}':
         'emotes were not embedded into the live chat: {name} — {error}',

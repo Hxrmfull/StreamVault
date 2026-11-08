@@ -3,7 +3,7 @@
  * канала, списки записей и клипов, одно видео и запись по ссылке.
  */
 
-import { CHAT_MODES, CHAT_ONLY, CONVERT_FORMATS, DOWNLOAD_QUALITIES, SPLIT_MODES, KIND_LABELS, PAGE, PERIOD_LABELS, bridge, button, channelName, channelUrl, chatSelect, chatSupported, confirmDialog, displayTitle, ensureProfiles, entryChannelName, failed, fillAvatar, fmt, h, icon, iconButton, isLive, isRecording, isUrl, recordStarting, keepDaysSelect, setLiveQuality, knownProfile, liveQualityLabel, liveQualitySelect, liveThumb, openModal, platformName, qualitySelect, setSrc, setText, siteInfo, sortedChannels, splitId, state, stateText, stateTone, syncList, t, toast } from "./common.js";
+import { CHAT_MODES, CHAT_ONLY, CONVERT_FORMATS, SPLIT_MODES, KIND_LABELS, PAGE, PERIOD_LABELS, bridge, button, channelName, channelUrl, chatSupported, confirmDialog, downloadChoice, displayTitle, ensureProfiles, entryChannelName, failed, fillAvatar, fmt, h, icon, iconButton, isLive, isRecording, isUrl, recordStarting, keepDaysSelect, setLiveQuality, knownProfile, liveQualityLabel, liveQualitySelect, liveThumb, openModal, platformName, setSrc, setText, siteInfo, sortedChannels, splitId, state, stateText, stateTone, syncList, t, toast } from "./common.js";
 import { twitchdownloaderBlock } from "./settings.js";
 import { openAddChannel } from "./search.js";
 import { navigate, recBadge, refreshView, render, routeHash, view } from "./app.js";
@@ -669,11 +669,15 @@ export function createVideoBrowser(key, load) {
   const more = button(t("Показать ещё"), { onclick: () => loadMore() });
   const moreBox = h("div", { class: "more" }, more);
   const count = h("span", { class: "muted" });
-  const quality = qualitySelect([...DOWNLOAD_QUALITIES, CHAT_ONLY]);
-  const chatMode = chatSelect();
+  const choice = downloadChoice(false, true);
+  const qualityLabel = h("span", { class: "muted", text: t("Качество") });
   const chatLabel = h("span", { class: "muted", text: t("Чат") });
+  choice.onchange = () => {
+    qualityLabel.hidden = choice.qualities.hidden = choice.what !== "video";
+    chatLabel.hidden = choice.chatMode.hidden = !choice.withChat;
+  };
   const bar = h("div", { class: "selection-bar" }, count, h("span", { class: "spacer" }),
-    h("span", { class: "muted", text: t("Качество") }), quality, chatLabel, chatMode,
+    choice.group, qualityLabel, choice.qualities, chatLabel, choice.chatMode,
     button(t("Снять выбор"), { kind: "ghost", onclick: () => { selected.clear(); refresh(); } }),
     button(t("Скачать"), { kind: "primary", icon: "download", onclick: () => downloadSelected() }));
   const el = h("div", null, grid, status, moreBox, bar);
@@ -683,7 +687,8 @@ export function createVideoBrowser(key, load) {
     syncList(grid, listing.entries, (entry) => entry.url || entry.id, createVideoCard, updateCard);
     grid.classList.toggle("selecting", selected.size > 0);
     bar.hidden = selected.size === 0;
-    chatLabel.hidden = chatMode.hidden = ![...selected.values()].some(chatSupported);
+    // «только чат» — если хоть у одного выбранного видео чат бывает
+    choice.setWithChat([...selected.values()].some(chatSupported));
     setText(count, t("Выбрано: {count}", { count: selected.size }));
     moreBox.hidden = listing.done || Boolean(listing.error) || listing.entries.length === 0;
     more.disabled = loading;
@@ -735,14 +740,15 @@ export function createVideoBrowser(key, load) {
 
   async function downloadSelected() {
     // «только чат» — у видео, где чат бывает; остальные пропускаются, а не падают ошибкой
-    const chatOnly = quality.value === CHAT_ONLY.quality;
+    const wanted = choice.value();
+    const chatOnly = wanted.quality === CHAT_ONLY.quality;
     const entries = [...selected.values()].filter((entry) => !chatOnly || chatSupported(entry));
     const skipped = selected.size - entries.length;
     let added = 0;
     for (const entry of entries) {
       try {
-        await bridge.call("add_download", entry.url, quality.value, null, entryMeta(entry), false,
-                          chatSupported(entry) ? chatMode.value : null);
+        await bridge.call("add_download", entry.url, wanted.quality, null, entryMeta(entry), false,
+                          chatSupported(entry) ? wanted.chat : null);
         added++;
       } catch (error) {
         failed(error);
@@ -833,30 +839,32 @@ export function openVideoModal(entry) {
 export function videoDetail(entry, onDone) {
   const img = h("img", { alt: "" });
   setSrc(img, entry.thumbnail);
-  const qualities = h("select");
-  for (const option of DOWNLOAD_QUALITIES) qualities.append(h("option", { value: option.quality, text: t(option.label) }));
-  // чат бывает — можно скачать его одного, без видео
-  if (chatSupported(entry)) qualities.append(h("option", { value: CHAT_ONLY.quality, text: t(CHAT_ONLY.label) }));
-  qualities.value = state.settings.download_quality || "best";
+  // что скачать — переключателем; качество — только у видео (common.js: downloadChoice)
+  const choice = downloadChoice(chatSupported(entry));
   const loadingNote = h("span", { class: "faint" }, h("span", { class: "spinner small" }), t(" узнаю варианты качества…"));
 
   const useSection = h("input", { type: "checkbox" });
   const from = h("input", { type: "text", class: "time", placeholder: "0:00:00" });
   const to = h("input", { type: "text", class: "time", placeholder: fmt.duration(entry.duration) || "1:00:00" });
-  const sectionRow = h("div", { class: "form-row" }, h("label", null, t("с")), from, h("label", null, t("по")), to);
+  // «по» — посреди строки, без ширины подписи слева: иначе «по» и поле не влезали и переносились
+  const sectionRow = h("div", { class: "form-row section-row" }, h("label", null, t("с")), from,
+                       h("label", { class: "inline" }, t("по")), to);
   sectionRow.hidden = true;
   useSection.addEventListener("change", () => { sectionRow.hidden = !useSection.checked; });
   const error = h("div", { class: "error-text" });
   const jobLine = h("div");
   const submit = button(t("Скачать"), { kind: "primary", icon: "download", type: "submit" });
-  const withChat = chatSupported(entry);
-  const chatMode = chatSelect();
+  const chatMode = choice.chatMode;
   const chatHint = twitchdownloaderBlock(true, chatMode);
+  choice.qualityRow.append(loadingNote);
+  // подсказка про TwitchDownloader сама смотрит на выбор чата; без чата — не нужна
+  choice.onchange = () => {
+    if (choice.withChat) chatHint._fill(); else chatHint.hidden = true;
+  };
+  choice.onchange();
 
   const form = h("form", { class: "download-form" },
-    h("div", { class: "form-row" }, h("label", null, t("Качество")), qualities, loadingNote),
-    withChat ? h("div", { class: "form-row" }, h("label", null, t("Чат")), chatMode) : null,
-    withChat ? chatHint : null,
+    choice.group, choice.qualityRow, choice.chatRow, chatHint,
     h("label", { class: "switch" }, useSection, h("span", { class: "track" }), t("Только отрезок")),
     sectionRow, error,
     h("div", { class: "toolbar" }, submit,
@@ -875,8 +883,8 @@ export function videoDetail(entry, onDone) {
     }
     submit.disabled = true;
     try {
-      await bridge.call("add_download", entry.url, qualities.value, section, entryMeta(entry), false,
-                        withChat ? chatMode.value : null);
+      const wanted = choice.value();
+      await bridge.call("add_download", entry.url, wanted.quality, section, entryMeta(entry), false, wanted.chat);
       toast(t("Добавлено в загрузки"), "ok", "#downloads");
       if (onDone) onDone();
     } catch (problem) {
@@ -895,7 +903,7 @@ export function videoDetail(entry, onDone) {
         button(t("Открыть"), { icon: "play", onclick: () => bridge.call("open_file", job.file).catch(failed) }),
         button(t("Показать в папке"), { icon: "folder", onclick: () => bridge.call("show_in_folder", job.file).catch(failed) }),
         chatFiles.html ? button(t("Открыть чат"), { icon: "chat", onclick: () => bridge.call("open_file", chatFiles.html).catch(failed) })
-          : withChat && !job.chat_only ? button(t("Скачать чат"), { icon: "chat", onclick: () =>
+          : choice.withChat && !job.chat_only ? button(t("Скачать чат"), { icon: "chat", onclick: () =>
               bridge.call("download_chat", job.id, chatMode.value === "none" ? null : chatMode.value).catch(failed) }) : null));
     } else if (job && job.state !== "cancelled") {
       jobLine.append(h("div", { class: "toolbar" }, jobBadge(job),
@@ -921,16 +929,14 @@ export function videoDetail(entry, onDone) {
   const details = entry.qualities ? Promise.resolve(entry) : bridge.call("inspect", entry.url);
   details.then((full) => {
     if (full.type !== "video") { loadingNote.replaceChildren(t("это список, а не одно видео")); return; }
-    const previous = qualities.value;
-    qualities.replaceChildren();
-    for (const option of full.qualities) qualities.append(h("option", { value: option.quality, text: t(option.label) }));
+    // точные варианты от yt-dlp; «только звук» в них есть — он у переключателя
+    choice.setQualities(full.qualities);
     loadingNote.replaceChildren();
     for (const key of ["duration", "timestamp", "channel", "thumbnail", "title", "id", "kind", "platform", "live_status"]) {
       if (!entry[key] && full[key]) entry[key] = full[key];
     }
-    // варианты от yt-dlp — только видео; «только чат» — снова в конце списка
-    if (chatSupported(entry)) qualities.append(h("option", { value: CHAT_ONLY.quality, text: t(CHAT_ONLY.label) }));
-    qualities.value = [...qualities.options].some((o) => o.value === previous) ? previous : "best";
+    // что за видео, теперь известно точнее — бывает ли у него чат
+    choice.setWithChat(chatSupported(entry));
     if (!img.getAttribute("src")) setSrc(img, entry.thumbnail);
     to.placeholder = fmt.duration(entry.duration) || to.placeholder;
     showMeta();

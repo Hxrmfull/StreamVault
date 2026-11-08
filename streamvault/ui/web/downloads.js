@@ -271,6 +271,7 @@ export function qualityText(quality) {
   // "h264:1080" — начало эфира: те же кодеки, что у записи; качество то же
   const plain = String(quality || "").replace(/^h264:/, "");
   if (plain === CHAT_ONLY.quality) return t("только чат");
+  if (plain === "chat-archive") return t("чат из архива чатов");
   const known = DOWNLOAD_QUALITIES.find((option) => option.quality === plain);
   return known ? t(known.label) : quality;
 }
@@ -326,9 +327,10 @@ export function doneSize(job) {
 
 export function updateJobRow(row, job) {
   // картинки с площадки нет (начало эфира заводит сама программа) — кадр из
-  // скачанного файла, а пока он качается — из идущего эфира канала
+  // скачанного файла, а пока он качается — из идущего эфира канала. У склеенного
+  // начала файл — сама запись: кадр из неё и пока докачивается чат начала
   if (job.thumbnail) setSrc(row._img, job.thumbnail);
-  else if (job.state === "done" && job.file && row._framed !== job.file) {
+  else if ((job.state === "done" || job.joined) && job.file && row._framed !== job.file) {
     row._framed = job.file;
     requestPreview(job.file, (preview) => {
       if (row._framed === job.file && preview && preview.thumbnail) setSrc(row._img, preview.thumbnail);
@@ -380,7 +382,7 @@ export function updateJobRow(row, job) {
     processing: chatProgress
       ? t(CHAT_STAGES[chatProgress.stage] || CHAT_STAGES.download) + (chatProgress.percent !== null && chatProgress.percent !== undefined
                                                        ? " · " + chatProgress.percent + "%" : "…")
-      : job.chat_only ? t("скачиваю чат…") : t("склеиваю и перепаковываю…"),
+      : job.chat_only ? t("скачивание чата…") : t("склеиваю и перепаковываю…"),
     paused: t("на паузе") + (percent ? " · " + Math.floor(percent) + "%" : "")
             + " — " + t("продолжится с того же места"),
     done: [t("Готово"), doneSize(job)].filter(Boolean).join(" · "),

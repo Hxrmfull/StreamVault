@@ -65,7 +65,12 @@ themselves from the app.
   (or kept as a separate first part, if you switch joining off). Download
   and join progress show in Downloads. Works on all four platforms.
 - **Chat:** live chat of all four platforms is saved next to the recording;
-  VOD and clip chat downloads as HTML, JSON or a rendered chat video.
+  VOD and clip chat downloads as HTML, JSON or a rendered chat video, or on
+  its own without the video. Read any chat right in the program: activity
+  graph, search by word or name, all messages of one viewer. If a Twitch
+  VOD is hidden or deleted, the chat of your recording can come from a
+  public chat archive (logs.zonian.dev) — Twitch only: Kick, YouTube and
+  VK Video Live have no such archives.
 - **Downloads:** VODs, highlights and clips from a link or a channel tab,
   quality choice, only a section of a video, "Download all" for a whole tab.
   Paused and interrupted downloads resume, even after a restart.
