@@ -230,7 +230,7 @@ class ProcessingQueue(threading.Thread):
                 draining = True
                 drain_deadline = time.time() + self._drain_grace
                 if not self._queue.empty():
-                    logging.info(tr("доделываю оставшиеся записи ({count})",
+                    logging.info(tr("обработка оставшихся записей ({count})",
                                     count=self._queue.qsize()))
             if draining:
                 if time.time() > drain_deadline:
@@ -488,7 +488,7 @@ class ProcessingQueue(threading.Thread):
         result = None
         for number, streams in enumerate(stream_args(fmt)):
             if number:
-                logging.info(tr("звук не ложится в m4a как есть — перекодирую в AAC: {name}",
+                logging.info(tr("звук не ложится в m4a как есть, перекодирование в AAC: {name}",
                                 name=os.path.basename(recorded)))
             skip = util.SKIP_CORRUPT if util.mp4_inside_ts(ffmpeg, recorded) else []
             result = subprocess.run([ffmpeg, "-nostdin", "-y", "-err_detect", "ignore_err", *skip, "-i", recorded,
@@ -517,7 +517,7 @@ class ProcessingQueue(threading.Thread):
                                 creationflags=util.subprocess_flags())
         if result.returncode != 0 or not os.path.exists(partial) or not os.path.getsize(partial):
             remove_quietly(partial)
-            logging.warning(tr("запись из кусков mp4 не перепаковалась в .ts, переношу как есть: {name}",
+            logging.warning(tr("запись из кусков mp4 не перепаковалась в .ts, перенесена как есть: {name}",
                                name=os.path.basename(recorded)))
             return False
         os.replace(partial, target)
@@ -542,7 +542,7 @@ class ProcessingQueue(threading.Thread):
         partials = [stem + " - piece %d" % number + extension + PARTIAL_SUFFIX for number in range(1, planned + 1)]
         faststart = self._wants_faststart(recorded)
         muxer = FORMATS[fmt][1]
-        logging.info(tr("конвертирую в {format} и делю на {count} {pieces}: {name}", format=_format_label(fmt),
+        logging.info(tr("конвертация в {format} и деление на {count} {pieces}: {name}", format=_format_label(fmt),
                         count=planned, pieces=plural(planned, "часть|части|частей"), name=os.path.basename(recorded)))
         # первые видео и звук: служебные дорожки .ts кускам не нужны
         if fmt == "audio":
@@ -593,13 +593,13 @@ class ProcessingQueue(threading.Thread):
     def _process(self, recorded, processed):
         try:
             if not os.path.exists(recorded):
-                logging.warning(tr("файл исчез, пропускаю: {path}", path=recorded))
+                logging.warning(tr("файл исчез, пропущен: {path}", path=recorded))
                 return Outcome.DONE
             if self._is_being_written(recorded):
                 logging.debug("файл ещё пишется, откладываю: %s", os.path.basename(recorded))
                 return Outcome.NOT_READY
             if os.path.getsize(recorded) == 0:
-                logging.warning(tr("пустая запись, удаляю: {name}",
+                logging.warning(tr("пустая запись, удаление: {name}",
                                    name=os.path.basename(recorded)))
                 os.remove(recorded)
                 return Outcome.DONE
@@ -643,7 +643,7 @@ class ProcessingQueue(threading.Thread):
             # настоящее имя. Иначе прерванная конвертация (Ctrl+C, закрытое окно,
             # сбой) оставляла битый mp4 под основным именем, а целый получал "(2)".
             partial = target + PARTIAL_SUFFIX
-            logging.info(tr("конвертирую в {format}: {name}", format=_format_label(fmt),
+            logging.info(tr("конвертация в {format}: {name}", format=_format_label(fmt),
                             name=os.path.basename(recorded)))
             faststart = self._wants_faststart(recorded)
             # faststart переносит оглавление mp4 (и m4a) в начало — для просмотра по сети;

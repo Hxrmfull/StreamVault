@@ -14,13 +14,18 @@ import { view } from "./app.js";
 // «Чаты» — скачанные без видео: у них нет кадра и длительности эфира, они отдельно
 export const LIBRARY_KINDS = [["all", "Всё"], ["record", "Записанные эфиры"], ["download", "Скачанное"], ["chat", "Чаты"]];
 export const VIDEO_KIND_LABELS = { stream: "эфир", vod: "запись", clip: "клип", video: "видео", chat: "чат" };
-export const LIBRARY_SORTS = [["new", "Сначала новые"], ["old", "Сначала старые"],
-                       ["long", "Сначала длинные"], ["big", "Сначала большие"]];
+// «недавно добавленные» — по тому, когда файл появился на диске; по дате эфира — отдельно:
+// только что скачанная запись недельной давности иначе терялась внизу
+export const LIBRARY_SORTS = [["new", "Сначала недавно добавленные"], ["stream_new", "По дате эфира: новые"],
+                              ["stream_old", "По дате эфира: старые"], ["long", "Сначала длинные"],
+                              ["big", "Сначала большие"]];
 
 // отбор и порядок библиотеки — на время работы окна
 export function libraryFilters() {
   const filters = { platform: "", type: "", chat: false, sort: "new" };
   try { Object.assign(filters, JSON.parse(sessionStorage.getItem("library-filters") || "{}")); } catch (error) { /* по умолчанию */ }
+  // прежнего порядка (old) больше нет — по умолчанию
+  if (!LIBRARY_SORTS.some(([sort]) => sort === filters.sort)) filters.sort = "new";
   return filters;
 }
 
@@ -189,6 +194,8 @@ export function groupParts(items) {
       key: "broadcast:" + parts[0].broadcast, parts: parts,
       size: parts.reduce((sum, part) => sum + part.size, 0),
       timestamp: Math.min(...parts.map((part) => part.timestamp || Infinity)),
+      // эфир из частей добавлен, когда появилась последняя его часть
+      added: Math.max(...parts.map((part) => part.added || 0)),
       chat: (parts.find((part) => part.chat && part.chat.json) || parts[0]).chat,
     });
   });
@@ -216,12 +223,13 @@ export function showLibrary() {
     && (!filters.chat || partsOf(item).some((part) => part.chat && part.chat.json))
     && (!query || item.title.toLowerCase().includes(query) || item.channel.toLowerCase().includes(query)));
   const order = {
-    new: (a, b) => (b.timestamp || 0) - (a.timestamp || 0),
-    old: (a, b) => (a.timestamp || 0) - (b.timestamp || 0),
+    new: (a, b) => (b.added || b.timestamp || 0) - (a.added || a.timestamp || 0),
+    stream_new: (a, b) => (b.timestamp || 0) - (a.timestamp || 0),
+    stream_old: (a, b) => (a.timestamp || 0) - (b.timestamp || 0),
     // длительность ещё не узнанной записи — в конце, пока превью её не скажет
     long: (a, b) => (groupDuration(b) || 0) - (groupDuration(a) || 0),
     big: (a, b) => b.size - a.size,
-  }[filters.sort] || ((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }[filters.sort] || ((a, b) => (b.added || b.timestamp || 0) - (a.added || a.timestamp || 0));
   items.sort(order);
   const files = items.reduce((sum, item) => sum + partsOf(item).length, 0);
   const total = items.reduce((sum, item) => sum + item.size, 0);
@@ -298,7 +306,9 @@ export function createLibraryCard() {
   card._gaps = h("span", { class: "badge warn" });
   // склейка начала эфира с записью: идёт или не вышла — видно прямо на карточке
   card._join = h("span", { class: "badge dark" });
-  card._joinBar = h("div", { class: "progress join card-join-bar" }, h("div", { class: "bar" }));
+  // склейка идёт — полосой по низу кадра, с подписью прямо на ней
+  card._joinText = h("span", { class: "card-join-text" });
+  card._joinBar = h("div", { class: "progress join card-join-bar" }, h("div", { class: "bar" }), card._joinText);
   card._joinBar.hidden = true;
   card._title = h("div", { class: "card-title" });
   card._sub = h("div", { class: "card-sub" });
@@ -343,7 +353,9 @@ function cardAbilities(item) {
   const vodChat = Boolean(site) && site.chat_kinds.includes(item.platform === "youtube" ? "video" : "vod");
   const ts = parts.filter((part) => /\.ts$/i.test(part.path));
   const whole = onlyChat ? [] : splittable(item);
-  const paths = new Set(parts.map((part) => part.path));
+  // пути в «Загрузках» и в библиотеке бывают записаны по-разному: «/» и «\», регистр
+  const same = (path) => String(path || "").replace(/\//g, "\\").toLowerCase();
+  const paths = new Set(parts.map((part) => same(part.path)));
   return {
     onlyChat,
     chatHtml: chatFiles.html,
@@ -354,11 +366,16 @@ function cardAbilities(item) {
     // своя запись эфира, у части которой нет чата, — его можно взять с площадки
     chatFetch: item.kind === "record" && !item.edit && vodChat
       && parts.some((part) => !(part.chat && part.chat.json) && !/ - part00\.[^.]+$/i.test(part.path)),
+    // скачанное видео без чата — чат той же загрузкой (как кнопка в «Загрузках»)
+    downloadChat: item.kind === "download" && !onlyChat && !parts.some((part) => part.chat && part.chat.json)
+      ? [...state.jobs.values()].find((job) => job.state === "done" && job.file && paths.has(same(job.file))
+                                             && chatSupported(job)) || null
+      : null,
     // архив чатов — у своих записей эфиров; можно ли сейчас, скажет сама программа
     archive: item.kind === "record" && !item.edit && !onlyChat,
     // начало эфира склеено с записью без своего чата — докачать его (как в «Загрузках»)
     beginningChat: [...state.jobs.values()].find((job) => job.joined && !job.beginning_chat && job.state === "done"
-                                                  && paths.has(job.file) && chatSupported(job)),
+                                                  && paths.has(same(job.file)) && chatSupported(job)),
     // запись, оставленная в .ts (автоконвертация выключена), — сконвертировать
     convert: item.kind === "record" && ts.length > 0,
     converting: ts.length > 0 && ts.every((part) => state.converting.has(part.path)),
@@ -384,15 +401,20 @@ function openCardMenu(card, at) {
      can.chatHtml ? { icon: "external", label: t("Открыть чат в браузере"),
                       onclick: run(() => bridge.call("open_file", can.chatHtml)) } : null,
      can.chatVideo ? { icon: "video", label: t("Открыть видео чата"), onclick: run(() => bridge.call("open_file", can.chatVideo)) } : null,
+     can.downloadChat ? { icon: "download", label: t("Скачать чат"),
+                          title: t("Чат этого видео с площадки — рядом с ним; ход в «Загрузках»"),
+                          onclick: run(() => bridge.call("download_chat", can.downloadChat.id).then(chatInDownloads)) } : null,
      can.chatFetch ? { icon: "download", label: t("Скачать чат с площадки"),
                        title: t("Чата при записи не было — взять его из записи эфира на площадке"),
                        onclick: () => fetchRecordingChat(item) } : null,
      // запасной путь: публичный архив чатов Twitch — когда записи эфира на Twitch нет;
      // нельзя — пункт серый, и под ним сказано почему
-     can.archive ? { icon: "download", label: t("Взять чат из архива чатов"), checking: t("проверяю архив чатов…"),
+     // сторонний сервис, не Twitch — это сказано прямо в пункте, ещё до загрузки
+     can.archive ? { icon: "download", label: t("Взять чат из стороннего архива"), checking: t("проверка архива чатов…"),
                      check: () => bridge.call("chat_archive_status", item.path).then((answer) => ({
                        disabled: !answer.ok,
-                       hint: answer.reason || t("logs.zonian.dev — публичный архив чатов Twitch") })),
+                       hint: answer.ok ? [t("logs.zonian.dev, сторонний сервис, не Twitch"), answer.reason].filter(Boolean).join(". ")
+                                       : answer.reason })),
                      onclick: () => fetchArchiveChat(item) } : null,
      can.beginningChat ? { icon: "download", label: t("Скачать чат начала"),
                            title: t("Чат начала эфира встанет в чат записи до стыка; чат прямого эфира останется"),
@@ -418,7 +440,9 @@ function chatInDownloads(answer) {
 // чат из архива чатов: по загрузке на каждую часть без чата — ход в «Загрузках»
 async function fetchArchiveChat(item) {
   try {
-    chatInDownloads(await bridge.call("recording_chat_archive", item.path));
+    await bridge.call("recording_chat_archive", item.path);
+    try { sessionStorage.setItem("downloads-tab", "downloads"); } catch (error) { /* не помним — не беда */ }
+    toast(t("История чата загружается из стороннего архива logs.zonian.dev, ход в «Загрузках»"), "ok", "#downloads");
   } catch (error) {
     failed(error);
   }
@@ -426,7 +450,7 @@ async function fetchArchiveChat(item) {
 
 // чата при записи не было (выключен) — взять его из записи эфира на площадке
 async function fetchRecordingChat(item) {
-  toast(t("Ищу запись этого эфира на площадке…"));
+  toast(t("Поиск записи этого эфира на площадке…"));
   try {
     chatInDownloads(await bridge.call("recording_chat", item.path));
   } catch (error) {
@@ -513,7 +537,7 @@ function openSplit(item) {
     modal.close();
     if (started) {
       showEditsNext();
-      toast(t("Делю на части — ход виден в «Загрузках»"), "ok", "#downloads");
+      toast(t("Деление на части, ход виден в «Загрузках»"), "ok", "#downloads");
     }
   } });
   const skipped = partsOf(item).length - parts.length;
@@ -549,7 +573,7 @@ function openConvert(card) {
       return bridge.call("convert_recording", part.path, split, format.value)
         .then(() => {
           showEditsNext();
-          toast(t("Конвертирую: {name} — ход виден в «Загрузках»", { name: part.name }), "ok", "#downloads");
+          toast(t("Конвертация: {name}, ход виден в «Загрузках»", { name: part.name }), "ok", "#downloads");
         })
         .catch((error) => {
           state.converting.delete(part.path);
@@ -618,21 +642,24 @@ export function updateLibraryCard(card, item) {
   const lost = gaps.reduce((sum, part) => sum + part.lost, 0);
   card._gaps.hidden = !gapCount;
   const join = parts.map((part) => state.joins.get(part.path)).find((event) => event && event.state !== "done");
-  card._join.hidden = !join;
-  // идущая склейка — яркой меткой, которая заполняется по ходу, и полосой по низу кадра
-  const joining = join && join.state === "joining";
+  // не склеилось — меткой сверху; идёт — полосой по низу кадра с подписью на ней
+  const joining = Boolean(join) && join.state === "joining";
+  card._join.hidden = !join || joining;
   card._joinBar.hidden = !joining;
-  if (join) {
+  card.classList.toggle("joining", joining);
+  if (join && !joining) {
+    card._join.className = "badge warn";
+    setText(card._join, t("не склеено"));
+    card._join.title = t("Начало эфира не склеено с записью: {reason}", { reason: join.reason || "?" });
+  }
+  if (joining) {
     const percent = join.waiting ? 100 : join.percent || 0;
-    card._join.className = "badge " + (join.state === "failed" ? "warn" : "joining");
-    card._join.style.setProperty("--fill", (joining && !join.stage ? percent : 0) + "%");
-    setText(card._join, join.state === "failed" ? t("не склеено")
-      : join.waiting ? t("жду, пока закроешь")
-      : join.stage === "repack" ? t("готовлю к склейке…") : t("склеивается {percent}%", { percent: percent }));
-    card._join.title = join.state === "failed" ? t("Начало эфира не склеено с записью: {reason}", { reason: join.reason || "?" })
-      : joiningText(join);
-    card._joinBar.firstChild.style.width = percent + "%";
-    card._joinBar.classList.toggle("indeterminate", join.stage === "repack");
+    setText(card._joinText, join.waiting ? t("склеено, ожидание закрытия проигрывателя")
+      : join.stage === "repack" ? t("подготовка к склейке…")
+      : join.stage === "finish" ? t("завершение склейки…") : t("склеивается {percent}%", { percent: percent }));
+    card._joinBar.title = joiningText(join);
+    card._joinBar.firstChild.style.width = (join.stage ? 0 : percent) + "%";
+    card._joinBar.classList.toggle("indeterminate", Boolean(join.stage));
   }
   setText(card._gaps, gapCount + " " + tp(gapCount, t("пропуск|пропуска|пропусков")));
   card._gaps.title = lost ? t("В записи пропущены отрезки эфира: пропало {length}", { length: fmt.duration(lost) })
@@ -705,7 +732,7 @@ function openOverlay(item) {
         failed(error);
       }
     }
-    if (started) toast(t("Накладываю чат на видео — ход виден в «Загрузках»"), "ok", "#downloads");
+    if (started) toast(t("Наложение чата на видео, ход виден в «Загрузках»"), "ok", "#downloads");
   };
   modal.body.append(
     h("h2", { text: t("Видео с чатом поверх") }),

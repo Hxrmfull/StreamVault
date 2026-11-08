@@ -444,7 +444,7 @@ def parse_time(text):
     """'1:02:03', '62:03', '3723' -> секунды."""
     match = _TIME.match(text.strip())
     if not match:
-        raise ValueError(tr("не понимаю время: «{text}» (нужно Ч:ММ:СС, ММ:СС или секунды)",
+        raise ValueError(tr("непонятное время: «{text}» (нужно Ч:ММ:СС, ММ:СС или секунды)",
                             text=text))
     parts = [part for part in match.groups() if part is not None]
     seconds = 0.0

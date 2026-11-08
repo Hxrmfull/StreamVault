@@ -7,14 +7,33 @@ import { view } from "./app.js";
 import { requestPreview } from "./library.js";
 import { openLive } from "./player.js";
 
-// вкладки «Загрузок»: идущие записи — отдельно от того, что докачивается, правка — третьей
-const DOWNLOAD_TABS = [["records", "Записи"], ["downloads", "Загрузки"], ["edits", "Редактирование"]];
+// вкладки «Загрузок»: идущие записи, склейка начала эфира с записью (кончилась — строка
+// уходит в «Загрузки»), что докачивается, правка
+const DOWNLOAD_TABS = [["records", "Записи"], ["joining", "Склеивается"], ["downloads", "Загрузки"],
+                       ["edits", "Редактирование"]];
+
+// загрузка начала эфира, которое сейчас склеивается с записью
+function isJoining(job) {
+  const join = job.state === "done" && !job.joined && job.file && state.joins.get(job.file);
+  return Boolean(join) && join.state === "joining";
+}
+
+// во вкладке «Склеивается» — и то, что склейки ещё ждёт: видно, что она будет
+function inJoinTab(job) {
+  return isJoining(job) || awaitingJoin(job);
+}
+
+// запись канала этого начала эфира ещё идёт — склейка после её конца
+function recordingGoes(job) {
+  const channel = state.channels.get(jobChannelId(job));
+  return Boolean(channel && channel.recording);
+}
 
 function chosenTab(counts) {
   let tab = "";
   try { tab = sessionStorage.getItem("downloads-tab") || ""; } catch (error) { /* хранилище закрыто */ }
   if (DOWNLOAD_TABS.some(([name]) => name === tab)) return tab;
-  return counts.records ? "records" : "downloads";
+  return counts.records ? "records" : counts.joining ? "joining" : "downloads";
 }
 
 export function renderDownloads(main) {
@@ -44,6 +63,10 @@ export function renderDownloads(main) {
   view.recordsBox = h("div", { class: "edits" }, view.records);
   view.recordsEmpty = h("div", { class: "empty" }, h("strong", { text: t("Сейчас ничего не пишется") }),
     t("Начни запись на странице канала или включи автозапись — идущие записи появятся здесь."));
+  // склейка начала эфира с записью: её ход — своей вкладкой, готовое уходит в «Загрузки»
+  view.joining = h("div", { class: "jobs" });
+  view.joiningEmpty = h("div", { class: "empty" }, h("strong", { text: t("Сейчас ничего не склеивается") }),
+    t("Когда запись началась посреди эфира, его начало докачивается и после записи склеивается с ней — ход виден здесь."));
   view.empty = h("div", { class: "empty" },
     h("strong", { text: t("Загрузок пока нет") }),
     t("Вставь ссылку на запись или клип в строку сверху либо найди там канал и выбери его записи."));
@@ -55,37 +78,51 @@ export function renderDownloads(main) {
       view.clearFinished = button(t("Очистить список"), {
         icon: "close", title: t("Убрать завершённые загрузки из списка; файлы останутся на диске"),
         onclick: () => bridge.call(view.downloadsTab === "edits" ? "clear_edits" : "clear_finished").catch(failed) })),
-    view.tabs, view.recordsBox, view.recordsEmpty, view.editsBox, view.editsEmpty, view.empty, view.jobs);
+    view.tabs, view.recordsBox, view.recordsEmpty, view.joining, view.joiningEmpty, view.editsBox, view.editsEmpty,
+    view.empty, view.jobs);
   view.refresh = refreshDownloads;
   refreshDownloads();
 }
 
 export function refreshDownloads() {
-  const jobs = [...state.jobs.values()].sort((a, b) => b.created - a.created);
+  const all = [...state.jobs.values()].sort((a, b) => b.created - a.created);
+  const joining = all.filter(inJoinTab);
+  const jobs = all.filter((job) => !inJoinTab(job));
   const edits = [...state.edits.values()].sort((a, b) => b.created - a.created);
   const records = [...state.channels.values()].filter((channel) => channel.recording)
     .sort((a, b) => a.recording.started - b.recording.started);
-  const active = jobs.filter((job) => ["queued", "downloading", "processing"].includes(job.state)).length;
-  const counts = { records: records.length, downloads: active, edits: edits.length };
+  // у вкладки — сколько в ней строк
+  const counts = { records: records.length, joining: joining.length, downloads: jobs.length, edits: edits.length };
   const tab = view.downloadsTab || chosenTab(counts);
   view.downloadsTab = tab;
+  // во вкладке что-то идёт — её название переливается фиолетовым: видно, не открывая
+  const busy = {
+    records: records.length > 0,
+    joining: joining.length > 0,
+    downloads: jobs.some((job) => ["queued", "downloading", "processing"].includes(job.state)),
+    edits: edits.some((job) => ["queued", "running"].includes(job.state)),
+  };
   for (const [name, button] of Object.entries(view.tabButtons)) {
     button.classList.toggle("active", name === tab);
+    button.classList.toggle("busy", busy[name]);
     setText(button._count, counts[name] ? String(counts[name]) : "");
   }
   view.recordsBox.hidden = tab !== "records";
   view.recordsEmpty.hidden = tab !== "records" || records.length > 0;
   view.editsBox.hidden = tab !== "edits";
   view.editsEmpty.hidden = tab !== "edits" || edits.length > 0;
+  view.joining.hidden = tab !== "joining";
+  view.joiningEmpty.hidden = tab !== "joining" || joining.length > 0;
   view.jobs.hidden = tab !== "downloads";
   view.empty.hidden = tab !== "downloads" || jobs.length > 0;
   syncList(view.edits, edits, (job) => job.id, createJobRow, updateEditRow);
   syncList(view.records, records, (channel) => channel.id, createJobRow, updateRecordRow);
   const finished = (list) => list.some((job) => ["done", "cancelled", "failed"].includes(job.state));
-  view.clearFinished.hidden = tab === "records" || !finished(tab === "edits" ? edits : jobs);
+  view.clearFinished.hidden = tab === "records" || tab === "joining" || !finished(tab === "edits" ? edits : jobs);
   view.clearFinished.title = tab === "edits" ? t("Убрать законченное из списка; файлы останутся на диске")
     : t("Убрать завершённые загрузки из списка; файлы останутся на диске");
   syncList(view.jobs, jobs, (job) => job.id, createJobRow, updateJobRow);
+  syncList(view.joining, joining, (job) => job.id, createJobRow, updateJobRow);
 }
 
 export function refreshDownloadsCount() {
@@ -182,7 +219,7 @@ function beginningStatus(job) {
   }
   if (job.state === "queued") return t("в очереди");
   if (job.state === "downloading") return progressText(job);
-  if (job.state === "processing") return t("склеиваю и перепаковываю…");
+  if (job.state === "processing") return t("склейка и перепаковка…");
   if (job.state === "done") return joinText(job) || t("скачано");
   if (job.state === "failed") return job.reason || job.error || t("не скачалось");
   return job.state;
@@ -200,7 +237,7 @@ function editTimeLeft(job) {
 const CONVERT_NAMES = { mp4: "mp4", mkv: "mkv", audio: "m4a" };
 
 export function convertingText(started) {
-  return t("конвертирую… · {time}", { time: fmt.duration(Math.max(0, Date.now() / 1000 - (started || Date.now() / 1000))) });
+  return t("конвертация… · {time}", { time: fmt.duration(Math.max(0, Date.now() / 1000 - (started || Date.now() / 1000))) });
 }
 
 // строка правки: клип, видео с чатом поверх, деление на части или конвертация
@@ -233,9 +270,9 @@ export function updateEditRow(row, job) {
   setText(row._status, {
     queued: t("в очереди"),
     running: job.kind === "convert" ? convertingText(job.started)
-      : job.kind === "clip" ? t("вырезаю…")
+      : job.kind === "clip" ? t("вырезание…")
       : [job.kind === "split" ? (job.progress || 0) + "%"
-         : t("накладываю чат · {percent}%", { percent: job.progress || 0 }), editTimeLeft(job)].filter(Boolean).join(" · "),
+         : t("наложение чата · {percent}%", { percent: job.progress || 0 }), editTimeLeft(job)].filter(Boolean).join(" · "),
     done: ["split", "convert"].includes(job.kind) && (job.pieces || []).length
       ? t("Готово · частей: {count}", { count: job.pieces.length })
       : job.chat_messages ? t("Готово · чат: {count}", { count: job.chat_messages }) : t("Готово"),
@@ -271,7 +308,7 @@ export function qualityText(quality) {
   // "h264:1080" — начало эфира: те же кодеки, что у записи; качество то же
   const plain = String(quality || "").replace(/^h264:/, "");
   if (plain === CHAT_ONLY.quality) return t("только чат");
-  if (plain === "chat-archive") return t("чат из архива чатов");
+  if (plain === "chat-archive") return t("чат из стороннего архива logs.zonian.dev");
   const known = DOWNLOAD_QUALITIES.find((option) => option.quality === plain);
   return known ? t(known.label) : quality;
 }
@@ -287,7 +324,7 @@ export function progressText(job) {
   }
   if (progress.speed) parts.push(t("{speed}/с", { speed: fmt.size(progress.speed) }));
   if (progress.eta !== null && progress.eta !== undefined && progress.percent < 100) parts.push(t("осталось {time}", { time: fmt.duration(progress.eta) }));
-  return parts.join(" · ") || t("начинаю…");
+  return parts.join(" · ") || t("запуск…");
 }
 
 // начало эфира и его склейка с записью (live/joining.py): идёт, готово или почему нет
@@ -300,10 +337,23 @@ export function joinText(job) {
   return t("не склеено с записью: {reason}", { reason: join.reason || "?" });
 }
 
+// начало эфира (part00) скачано, но с записью ещё не склеивалось: она идёт, склейка — после неё
+export function awaitingJoin(job) {
+  if (job.state !== "done" || job.joined || !/ - part00$/.test(job.fixed_target || "")) return false;
+  // склейка у канала выключена — начало так и останется первой частью, ждать нечего
+  const channel = state.channels.get(jobChannelId(job));
+  const options = (channel && channel.options) || {};
+  const joins = "join_beginning" in options ? options.join_beginning : (state.settings || {}).join_beginning;
+  if (joins === false) return false;
+  return !(job.file && state.joins.get(job.file));
+}
+
 // идущая склейка: этап, проценты, сколько осталось, а дописана — кого ждёт
 export function joiningText(join) {
-  if (join.waiting) return t("склеено — жду, пока закроешь запись в «{programs}»", { programs: join.waiting });
-  if (join.stage === "repack") return t("готовлю запись к склейке…");
+  if (join.waiting) return t("склеено, ожидание закрытия записи в «{programs}»", { programs: join.waiting });
+  if (join.stage === "repack") return t("подготовка записи к склейке…");
+  // видео склеено: проверка, чат, замена файлов — секунды или минута, без процентов
+  if (join.stage === "finish") return t("видео склеено, проверка и замена файлов…");
   const left = joinTimeLeft(join);
   return t("склеивается с записью: {percent}%", { percent: join.percent || 0 }) + (left ? " · " + left : "");
 }
@@ -368,7 +418,7 @@ export function updateJobRow(row, job) {
   row._joinLine.hidden = !joining;
   if (joining) {
     setText(row._joinText, joiningText(join));
-    row._joinBar.parentNode.className = "progress join" + (join.stage === "repack" ? " indeterminate" : "");
+    row._joinBar.parentNode.className = "progress join" + (join.stage ? " indeterminate" : "");
     row._joinBar.style.width = (join.waiting ? 100 : join.percent || 0) + "%";
   }
 
@@ -382,10 +432,14 @@ export function updateJobRow(row, job) {
     processing: chatProgress
       ? t(CHAT_STAGES[chatProgress.stage] || CHAT_STAGES.download) + (chatProgress.percent !== null && chatProgress.percent !== undefined
                                                        ? " · " + chatProgress.percent + "%" : "…")
-      : job.chat_only ? t("скачивание чата…") : t("склеиваю и перепаковываю…"),
+      : job.chat_only ? t("скачивание чата…") : t("склейка и перепаковка…"),
     paused: t("на паузе") + (percent ? " · " + Math.floor(percent) + "%" : "")
             + " — " + t("продолжится с того же места"),
-    done: [t("Готово"), doneSize(job)].filter(Boolean).join(" · "),
+    // начало эфира скачано, а склейки ещё не было (запись идёт) — так и сказано, а не «Готово»
+    done: [awaitingJoin(job) ? (recordingGoes(job) ? t("Начало эфира скачано, склейка после конца записи")
+                                                 : t("Начало эфира скачано, запись обрабатывается, склейка скоро начнётся"))
+             : isJoining(job) ? t("Начало эфира скачано") : t("Готово"), doneSize(job)]
+      .filter(Boolean).join(" · "),
     // начало эфира: почему не взять — коротко; текст ошибки — в журнале
     failed: job.reason ? t("начало эфира не скачать: {reason}", { reason: job.reason })
                        : t("ошибка: {error}", { error: job.error || t("неизвестная") }),

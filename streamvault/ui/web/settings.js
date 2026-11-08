@@ -87,15 +87,15 @@ export const INSTALLING = ["checking", "downloading", "installing"];
 export function ffmpegInstallText(install) {
   const progress = install.progress || {};
   switch (install.state) {
-    case "checking": return t("Сверяю контрольную сумму на GitHub и gyan.dev…");
+    case "checking": return t("Сверка контрольной суммы на GitHub и gyan.dev…");
     case "downloading": {
       const params = { version: install.version || "", source: install.source || "",
                        done: fmt.size(progress.downloaded || 0), total: fmt.size(progress.total) };
-      const text = install.source ? t("Скачиваю ffmpeg {version} с {source}: {done} из {total}", params)
-                                  : t("Скачиваю ffmpeg {version}: {done} из {total}", params);
+      const text = install.source ? t("Скачивание ffmpeg {version} с {source}: {done} из {total}", params)
+                                  : t("Скачивание ffmpeg {version}: {done} из {total}", params);
       return progress.speed ? text + " · " + t("{speed}/с", { speed: fmt.size(progress.speed) }) : text;
     }
-    case "installing": return t("Проверяю и устанавливаю…");
+    case "installing": return t("Проверка и установка…");
     case "done": return t("ffmpeg установлен");
     case "failed": return t("Не установился: {error}", { error: install.error });
     case "cancelled": return t("Установка отменена");
@@ -191,15 +191,15 @@ export const ytdlpBlocks = new Set();
 export function ytdlpUpdateText(install) {
   const progress = install.progress || {};
   switch (install.state) {
-    case "checking": return t("Проверяю, есть ли новая версия…");
+    case "checking": return t("Поиск новой версии…");
     case "downloading": {
       const params = { version: install.version || "", source: install.source || "",
                        done: fmt.size(progress.downloaded || 0), total: fmt.size(progress.total) };
-      const text = install.source ? t("Скачиваю yt-dlp {version} с {source}: {done} из {total}", params)
-                                  : t("Скачиваю yt-dlp {version}: {done} из {total}", params);
+      const text = install.source ? t("Скачивание yt-dlp {version} с {source}: {done} из {total}", params)
+                                  : t("Скачивание yt-dlp {version}: {done} из {total}", params);
       return progress.speed ? text + " · " + t("{speed}/с", { speed: fmt.size(progress.speed) }) : text;
     }
-    case "installing": return t("Проверяю и устанавливаю…");
+    case "installing": return t("Проверка и установка…");
     case "done": return t("yt-dlp обновлён до {version}", { version: install.version || "" });
     case "current": return t("Уже последняя версия");
     case "failed": return t("Не обновился: {error}", { error: install.error });
@@ -271,15 +271,15 @@ export const twitchdownloaderBlocks = new Set();
 export function twitchdownloaderInstallText(install) {
   const progress = install.progress || {};
   switch (install.state) {
-    case "checking": return t("Сверяю контрольную сумму на GitHub и в каталоге scoop…");
+    case "checking": return t("Сверка контрольной суммы на GitHub и в каталоге scoop…");
     case "downloading": {
       const params = { version: install.version || "", source: install.source || "",
                        done: fmt.size(progress.downloaded || 0), total: fmt.size(progress.total) };
-      const text = install.source ? t("Скачиваю TwitchDownloader {version} с {source}: {done} из {total}", params)
-                                  : t("Скачиваю TwitchDownloader {version}: {done} из {total}", params);
+      const text = install.source ? t("Скачивание TwitchDownloader {version} с {source}: {done} из {total}", params)
+                                  : t("Скачивание TwitchDownloader {version}: {done} из {total}", params);
       return progress.speed ? text + " · " + t("{speed}/с", { speed: fmt.size(progress.speed) }) : text;
     }
-    case "installing": return t("Проверяю и устанавливаю…");
+    case "installing": return t("Проверка и установка…");
     case "done": return t("TwitchDownloader установлен");
     case "current": return t("Уже последняя версия");
     case "failed": return t("Не установился: {error}", { error: install.error });
@@ -365,18 +365,18 @@ export const UPDATE_BADGE_STATES = ["available", "downloading", "installing", "d
 export function appUpdateText(update) {
   const progress = update.progress || {};
   switch (update.state) {
-    case "checking": return t("Проверяю…");
+    case "checking": return t("Проверка…");
     case "current": return t("Это последняя версия");
     case "none": return t("Выпусков на GitHub пока нет");
     case "available": return t("Доступна версия {version}", { version: update.version || "" });
     case "downloading": {
       const params = { version: update.version || "", source: update.source || "",
                        done: fmt.size(progress.downloaded || 0), total: fmt.size(progress.total) };
-      const text = update.source ? t("Скачиваю StreamVault {version} с {source}: {done} из {total}", params)
-                                 : t("Скачиваю StreamVault {version}: {done} из {total}", params);
+      const text = update.source ? t("Скачивание StreamVault {version} с {source}: {done} из {total}", params)
+                                 : t("Скачивание StreamVault {version}: {done} из {total}", params);
       return progress.speed ? text + " · " + t("{speed}/с", { speed: fmt.size(progress.speed) }) : text;
     }
-    case "installing": return t("Проверяю и распаковываю…");
+    case "installing": return t("Проверка и распаковка…");
     case "done": return t("Версия {version} скачана и проверена", { version: update.version || "" });
     case "failed": return t("Не получилось: {error}", { error: update.error });
     case "cancelled": return t("Отменено");

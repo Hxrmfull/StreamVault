@@ -256,7 +256,7 @@ def record(args, parser):
         except KeyboardInterrupt:
             # второй Ctrl+C, пока доделывается обработка: выходим без трассировки.
             # Недописанный mp4 останется с расширением .part и будет убран сам.
-            logging.warning(tr("повторный Ctrl+C — выхожу, не дожидаясь обработки. "
+            logging.warning(tr("повторный Ctrl+C — выход без ожидания обработки. "
                                "Необработанные записи подхватятся при следующем запуске"))
             return 130
     finally:
@@ -288,7 +288,7 @@ def describe_progress(job):
         parts.append(tr("осталось {time}", time=format_duration(progress["eta"])))
     if job["state"] == dl.PROCESSING:
         parts.append(tr("склейка"))
-    return ", ".join(parts) or tr("начинаю")
+    return ", ".join(parts) or tr("запуск")
 
 
 def download(args, parser):

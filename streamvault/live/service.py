@@ -237,7 +237,7 @@ class LiveService:
                     self._launch(entry)
             watched = [recorder.tag for recorder in self._recorders.values()]
         if watched:
-            logging.info(tr("наблюдаю за каналами: {channels}", channels=", ".join(watched)))
+            logging.info(tr("наблюдение за каналами: {channels}", channels=", ".join(watched)))
 
     def shutdown(self, grace=0, drain=True):
         """

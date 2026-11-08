@@ -190,7 +190,7 @@ def recording_status(service):
             text = "%s REC  %s" % (dot, "  |  ".join(parts))
         else:
             live = sum(1 for channel in channels if channel.get("state") in ("live", "unavailable"))
-            text = "%s %s" % (spin, tr("наблюдаю за каналами: {count}, в эфире: {live}",
+            text = "%s %s" % (spin, tr("наблюдение за каналами: {count}, в эфире: {live}",
                                                      count=len(channels), live=live))
         processing = snapshot.get("processing") or {}
         if processing.get("current"):

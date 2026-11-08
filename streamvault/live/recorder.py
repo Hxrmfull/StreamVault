@@ -314,7 +314,7 @@ class ChannelRecorder(threading.Thread):
         Вернулся — (статус, сведения о нём): пишется следующая часть того же
         эфира. Нет, или запись остановили — None.
         """
-        logging.info(tr("{tag}: эфир прервался — жду его возвращения {minutes} мин",
+        logging.info(tr("{tag}: эфир прервался, ожидание возвращения {minutes} мин",
                         tag=self.tag, minutes=self.RETURN_GRACE // 60))
         for _ in range(max(1, self.RETURN_GRACE // self.RETURN_CHECK)):
             self._sleep(self.RETURN_CHECK)
@@ -383,7 +383,7 @@ class ChannelRecorder(threading.Thread):
     def _iteration(self):
         # ключи Twitch отвергнуты — не бросаем канал, а спрашиваем streamlink
         if self._fallback_probe is not None and self._probe.is_unusable():
-            logging.warning(tr("{tag}: проверка через {probe} недоступна, перехожу на {fallback}",
+            logging.warning(tr("{tag}: проверка через {probe} недоступна, переход на {fallback}",
                                tag=self.tag, probe=self._probe.name,
                                fallback=self._fallback_probe.name))
             self._probe = self._fallback_probe
@@ -457,7 +457,7 @@ class ChannelRecorder(threading.Thread):
             # первый раз говорим вслух, дальше молчим: иначе при опросе
             # раз в минуту лог заполнится одинаковыми строками
             if self._announced is not Status.OFFLINE:
-                logging.info(tr("{tag}: не в эфире, жду выхода", tag=self.tag))
+                logging.info(tr("{tag}: не в эфире, ожидание эфира", tag=self.tag))
                 self._announced = Status.OFFLINE
             else:
                 logging.debug("%s: не в эфире", self.tag)
@@ -468,10 +468,10 @@ class ChannelRecorder(threading.Thread):
             self._unauthorized += 1
             if self._unauthorized > self.UNAUTHORIZED_LIMIT:
                 logging.error(tr("{tag}: Twitch раз за разом не принимает свежий токен, "
-                                 "перехожу на проверку без API", tag=self.tag))
+                                 "переход на проверку без API", tag=self.tag))
                 self._probe.disable()
             else:
-                logging.info(tr("{tag}: токен отклонён, обновляю", tag=self.tag))
+                logging.info(tr("{tag}: токен отклонён, обновление", tag=self.tag))
                 self._probe.refresh_token()
                 # первый раз — сразу, потом с паузой: без неё упорный 401
                 # превращался в бесконечную долбёжку API без остановки
@@ -479,7 +479,7 @@ class ChannelRecorder(threading.Thread):
 
         elif status is Status.NOT_FOUND:
             if self._announced is not Status.NOT_FOUND:
-                logging.error(tr("{tag}: {reason} — проверь имя. Перепроверю через {minutes} мин",
+                logging.error(tr("{tag}: {reason} — проверь имя. Повторная проверка через {minutes} мин",
                                  tag=self.tag, reason=reason or tr("канал не найден"),
                                  minutes=self.MISSING_RECHECK // 60))
                 self._announced = Status.NOT_FOUND
@@ -544,7 +544,7 @@ class ChannelRecorder(threading.Thread):
                 disk_checked = time.monotonic()
                 if self._no_room():
                     # лучше остановить запись, чем получить битый файл на забитом диске
-                    logging.error(tr("{tag}: место на диске кончается — останавливаю запись",
+                    logging.error(tr("{tag}: место на диске кончается, запись остановлена",
                                      tag=self.tag))
                     self._end_session.set()
             # запись остановили кнопкой — ждать нечего, консоли у streamlink нет
@@ -554,7 +554,7 @@ class ChannelRecorder(threading.Thread):
             if stop_seen_at is None:
                 stop_seen_at = time.monotonic()
             if ended or time.monotonic() - stop_seen_at >= self._stop_grace:
-                logging.info(tr("{tag}: останавливаю запись", tag=self.tag))
+                logging.info(tr("{tag}: остановка записи", tag=self.tag))
                 util.kill_process_tree(process)
                 try:
                     process.wait(timeout=10)
@@ -698,7 +698,7 @@ class ChannelRecorder(threading.Thread):
                 if reason:
                     failure.append(reason)
                 if empty_parts >= 3:
-                    logging.error(tr("{tag}: три пустые попытки подряд, возвращаюсь к проверкам",
+                    logging.error(tr("{tag}: три пустые попытки подряд, возврат к проверкам",
                                      tag=self.tag))
                     return recorded_any
                 self._sleep(self._refresh)
@@ -727,10 +727,10 @@ class ChannelRecorder(threading.Thread):
                 self._set(stream=stream)
             if size > 0:
                 part += 1
-                logging.info(tr("{tag}: эфир продолжается, пишу часть {part}",
+                logging.info(tr("{tag}: эфир продолжается, запись части {part}",
                                 tag=self.tag, part=part))
             else:
                 # пустая попытка новой части не заводит: номер остаётся прежним
                 self._set(state="recording")
-                logging.info(tr("{tag}: эфир продолжается, пробую снова", tag=self.tag))
+                logging.info(tr("{tag}: эфир продолжается, новая попытка", tag=self.tag))
         return recorded_any

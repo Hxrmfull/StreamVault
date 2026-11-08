@@ -183,13 +183,13 @@ class ChatReader(threading.Thread):
                     break
                 # долгий обрыв не засоряет журнал: пишется первая неудача подряд
                 if not failures:
-                    logging.info(tr("чат {channel}: связь прервалась ({error}), переподключаюсь",
+                    logging.info(tr("чат {channel}: связь прервалась ({error}), переподключение",
                                     channel=self.channel, error=error.__class__.__name__))
             except Exception:
                 if self._stopping.is_set():
                     break
                 if not failures:
-                    logging.exception(tr("чат {channel}: сбой, переподключаюсь", channel=self.channel))
+                    logging.exception(tr("чат {channel}: сбой, переподключение", channel=self.channel))
             finally:
                 self._interrupt()
             # долго проработавшее соединение — повод начать отсчёт пауз заново
@@ -499,14 +499,15 @@ def _jsonl_records(source):
                 yield record
 
 
-def convert(source, target, title="", channel="", fetch=fetch_image, shift=0.0, length=None):
+def convert(source, target, title="", channel="", fetch=fetch_image, shift=0.0, length=None, description=None):
     """
     .chat.jsonl -> .chat.json в формате TwitchDownloader. Возвращает число
     сообщений; без единого сообщения файл не создаётся (0). fetch(адрес) ->
     картинка смайла или значка площадок, кроме Twitch (тесты — свою).
     shift — на сколько секунд видео начинается раньше чата (video_backlog).
     length — длина видео, если известна (чат из архива к своей записи);
-    иначе — до последнего сообщения.
+    иначе — до последнего сообщения. description — в video.description: там
+    метка, откуда чат (chatlogs.SOURCE_MARK), — окно чата её показывает.
 
     Сообщения в памяти не копятся — у суточного эфира большого канала их
     миллионы: файл читается три раза. Первый — удаления и баны (их немного),
@@ -612,7 +613,7 @@ def convert(source, target, title="", channel="", fetch=fetch_image, shift=0.0, 
                      "CreatedAt": _iso(time.time()), "UpdatedAt": "0001-01-01T00:00:00"},
         "streamer": {"name": channel, "login": channel, "id": int(room_id) if str(room_id or "").isdigit() else 0},
         "clipper": None,
-        "video": {"title": title, "description": None, "id": None, "created_at": _iso(start),
+        "video": {"title": title, "description": description, "id": None, "created_at": _iso(start),
                   "start": 0, "end": length, "length": length, "viewCount": 0, "game": None,
                   "chapters": []},
     }

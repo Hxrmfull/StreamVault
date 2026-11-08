@@ -224,7 +224,7 @@ def _validated(data, base=None):
     for key, value in data.items():
         key = _LEGACY_NAMES.get(key, key)
         if key not in DEFAULTS:
-            logging.warning(tr("настройки: незнакомый параметр {key}, оставляю как есть",
+            logging.warning(tr("настройки: незнакомый параметр {key} оставлен как есть",
                                key=key))
             result[key] = value
             continue
@@ -261,7 +261,7 @@ def _validated(data, base=None):
             result[key] = value
             continue
 
-        logging.warning(tr("настройки: {key} задан непонятно ({value}), оставляю {kept}",
+        logging.warning(tr("настройки: {key} задан непонятно ({value}), оставлено {kept}",
                            key=key, value=repr(value), kept=repr(result[key])))
     return result
 

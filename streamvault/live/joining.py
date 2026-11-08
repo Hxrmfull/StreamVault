@@ -613,7 +613,7 @@ class Joiner(threading.Thread):
             util.remove_quietly(tail if tail != main else "")
             return self._refuse(head, main, tr("стык не найден"))
         output = stem + JOINING + extension
-        logging.info(tr("склеиваю начало эфира с записью: {name}", name=name))
+        logging.info(tr("склейка начала эфира с записью: {name}", name=name))
         self._report(head, main, "joining", percent=0)
         last = [0]
 
@@ -631,6 +631,9 @@ class Joiner(threading.Thread):
         finally:
             if tail != main:
                 util.remove_quietly(tail)
+        # видео склеено — дальше проверка длины, чат и замена файлов: своим этапом,
+        # а не «99%», которые будто зависли
+        self._report(head, main, "joining", percent=100, stage="finish")
         joined_length = probe(ffmpeg, output)[0]
         if not joined_length or abs(joined_length - (cut + main_length)) > 3:
             util.remove_quietly(output)

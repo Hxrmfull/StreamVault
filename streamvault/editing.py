@@ -348,7 +348,7 @@ class Editor(threading.Thread):
         job["partials"] = [stem + " - piece %d" % number + extension + util.PARTIAL_SUFFIX
                            for number in range(1, len(points) + 2)]
         job["partial"] = job["partials"][0]
-        logging.info(tr("делю на части ({count}): {name}", count=len(points) + 1, name=job["name"]))
+        logging.info(tr("деление на части ({count}): {name}", count=len(points) + 1, name=job["name"]))
         # куски mp4 внутри .ts (запись Twitch): битый последний кадр не роняет деление
         self._run(job, split_command(ffmpeg, source, points, pattern, util.mp4_inside_ts(ffmpeg, source)), duration)
         if job["state"] == CANCELLED:

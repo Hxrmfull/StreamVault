@@ -134,6 +134,12 @@ class ChatReplay:
         except (TypeError, ValueError):
             length = 0.0
         self.length = max(length, self._times[-1] if self._times else 0.0)
+        # чат из стороннего архива (archive/chatlogs.py) — окно так и скажет
+        # source — сайт архива; source_part — оттуда только начало эфира (до стыка)
+        description = str(video.get("description") or "")
+        marked = re.match(r"^StreamVault: (beginning )?chat from the public chat archive (\S+)$", description)
+        self.source = marked.group(2) if marked else ""
+        self.source_part = bool(marked and marked.group(1))
 
     def _add(self, data):
         self.images.append(data)
@@ -158,16 +164,21 @@ class ChatReplay:
         """
         Сообщения, где есть text, без учёта регистра. by: all — в нике, тексте
         или названии смайла; text — только в тексте; name — в нике; user —
-        ник целиком (все сообщения одного зрителя). Не больше limit: окно
+        ник целиком (все сообщения одного зрителя); users — text — список
+        ников, сообщения всех этих зрителей. Не больше limit: окно
         показывает их списком.
         """
-        needle = str(text).strip().casefold()
-        if not needle:
+        # users — несколько ников сразу (сообщения выбранных зрителей), text — их список
+        names = {str(name).strip().casefold() for name in text} if by == "users" else set()
+        needle = "" if by == "users" else str(text).strip().casefold()
+        if not needle and not names:
             return []
         found = []
         for message in self.messages:
             name = message[1].casefold()
-            if by == "user":
+            if by == "users":
+                hit = name in names
+            elif by == "user":
                 hit = name == needle
             elif by == "name":
                 hit = needle in name
@@ -355,8 +366,9 @@ class LiveChatReplay:
 
     def search(self, text, limit=SEARCH_LIMIT, by="all"):
         """Как ChatReplay.search, по идущей записи."""
-        needle = str(text).strip().casefold()
-        if not needle:
+        names = {str(name).strip().casefold() for name in text} if by == "users" else set()
+        needle = "" if by == "users" else str(text).strip().casefold()
+        if not needle and not names:
             return []
         self.refresh()
         found = []
@@ -364,7 +376,9 @@ class LiveChatReplay:
             for entry in self._entries:
                 message = entry[4]
                 name = message[0].casefold()
-                if by == "user":
+                if by == "users":
+                    hit = name in names
+                elif by == "user":
                     hit = name == needle
                 elif by == "name":
                     hit = needle in name

@@ -385,6 +385,25 @@ export function askQuit(always) {
       } })));
 }
 
+// левая панель сворачивается до аватарок (как на Twitch); выбор помнится между запусками
+function setupSidebarToggle() {
+  const toggle = document.getElementById("sidebar-toggle");
+  const apply = (collapsed) => {
+    document.body.classList.toggle("sidebar-collapsed", collapsed);
+    // стрелка — куда панель поедет: свёрнута — вправо, развёрнута — влево
+    toggle.replaceChildren(icon(collapsed ? "collapse" : "expand"));
+    toggle.title = toggle.ariaLabel = collapsed ? t("Развернуть панель") : t("Свернуть панель");
+  };
+  let collapsed = false;
+  try { collapsed = localStorage.getItem("sidebar-collapsed") === "1"; } catch (error) { /* не помним — развёрнута */ }
+  apply(collapsed);
+  toggle.addEventListener("click", () => {
+    collapsed = !document.body.classList.contains("sidebar-collapsed");
+    apply(collapsed);
+    try { localStorage.setItem("sidebar-collapsed", collapsed ? "1" : "0"); } catch (error) { /* не беда */ }
+  });
+}
+
 export function setupChrome() {
   document.querySelector(".search-button").append(icon("search"));
   document.getElementById("settings-button").append(icon("tune"));
@@ -398,6 +417,7 @@ export function setupChrome() {
   document.getElementById("components-badge").addEventListener("click", openComponentUpdates);
   document.getElementById("add-channel-button").addEventListener("click", openAddChannel);
   document.getElementById("sidebar-add").addEventListener("click", openAddChannel);
+  setupSidebarToggle();
 
   const input = document.getElementById("search-input");
   const results = attachChannelSearch(input, (channel) => {

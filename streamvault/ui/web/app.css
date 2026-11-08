@@ -782,6 +782,25 @@ select { padding-right: 6px; }
 .tabs button:hover { color: var(--accent-text); }
 .tabs button.active { color: var(--accent-text); }
 .tabs .tab-count { margin-left: 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+/* во вкладке что-то идёт — по названию бежит фирменный фиолетовый перелив */
+.tabs button.busy {
+  background: linear-gradient(90deg, var(--text) 0%, var(--text) 30%, var(--accent-text) 42%, var(--accent) 50%,
+                              var(--accent-text) 58%, var(--text) 70%, var(--text) 100%);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: tab-shimmer 2.6s linear infinite;
+}
+.tabs button.busy.active {
+  background-image: linear-gradient(90deg, var(--accent-text) 0%, var(--accent-text) 30%, #fff 45%, var(--accent) 50%,
+                                    #fff 55%, var(--accent-text) 70%, var(--accent-text) 100%);
+}
+.tabs button.busy .tab-count { color: var(--accent-text); }
+@keyframes tab-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .tabs button.busy { animation: none; background: none; color: var(--accent-text); }
+}
 .tabs .tab-count:empty { display: none; }
 .tabs button.active::after {
   content: "";
@@ -794,11 +813,13 @@ select { padding-right: 6px; }
 .more { display: flex; justify-content: center; margin-top: 22px; }
 .library-search { width: 260px; }   /* подсказка «Поиск по названию и каналу» целиком */
 
+/* выбранные видео: полоса всегда у самого низа окна — и когда записей на странице мало */
 .selection-bar {
-  position: sticky;
-  bottom: -60px;   /* нижний отступ .main: прилипает к самому краю окна */
+  position: fixed;
+  left: var(--sidebar);
+  right: 0;
+  bottom: 0;
   z-index: 5;      /* выше значков выбора на карточках */
-  margin: 20px -30px 0;
   padding: 12px 30px;
   background: var(--panel);
   border-top: 1px solid var(--border);
@@ -808,12 +829,25 @@ select { padding-right: 6px; }
   box-shadow: 0 -4px 12px rgba(0, 0, 0, .5);
 }
 
+/* под прибитой полосой не прячутся последние карточки */
+.video-browser.has-selection { padding-bottom: 72px; }
+
 /* ---------------------------------------------------------------- видео по ссылке */
 
-.video-detail { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
-.video-detail .thumb { width: 380px; max-width: 100%; flex: none; }
-.video-detail .detail-info { flex: 1; min-width: 280px; display: flex; flex-direction: column; gap: 10px; }
-.video-detail h2 { margin: 0; font-size: 20px; }
+/* сверху — кадр и справа от него название со сведениями; ниже, во всю ширину, — форма */
+.video-detail { display: flex; flex-direction: column; gap: 18px; }
+.detail-head { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.video-detail .thumb { width: 320px; max-width: 100%; flex: none; }
+.video-detail .detail-info { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 12px; padding-right: 28px; }
+.video-detail h2 { margin: 0; font-size: 19px; line-height: 1.3; overflow-wrap: anywhere; }
+.detail-facts { display: flex; flex-wrap: wrap; gap: 6px; }
+.detail-fact {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 12px;
+  background: var(--raised); color: var(--muted); font-size: 13px;
+}
+.detail-fact .icon { width: 14px; height: 14px; }
+.video-detail .download-form { margin-top: 0; padding-top: 16px; border-top: 1px solid var(--border); }
+.form-pair { display: flex; flex-wrap: wrap; gap: 12px 32px; }
 .download-form { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
 .form-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .form-row label { color: var(--muted); min-width: 70px; }
@@ -884,26 +918,37 @@ select { padding-right: 6px; }
 .progress.failed .bar { background: var(--error); }
 @keyframes slide { from { margin-left: -30%; } to { margin-left: 100%; } }
 
-/* склейка начала эфира с записью — свой цвет: не загрузка (фиолетовая) и не запись (красная) */
-.progress.join .bar { background: var(--join, #1fb6c9); }
+/* склейка начала эфира с записью — фиолетовым, как всё в окне (бирюзовый выбивался) */
+.progress.join .bar { background: var(--accent); }
 .join-line { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
-.join-line-text { flex: none; font-weight: 700; color: var(--join, #1fb6c9); font-size: 13px; }
+.join-line-text { flex: none; font-weight: 700; color: var(--accent-text); font-size: 13px; }
 .join-line .progress { flex: 1; min-width: 80px; }
 /* на карточке библиотеки: метка заполняется по ходу склейки, по низу кадра — полоса */
 .badge.joining {
   color: #fff; font-weight: 700;
-  background: linear-gradient(90deg, var(--join, #1fb6c9) var(--fill, 0%), rgba(0, 0, 0, .8) var(--fill, 0%));
-  box-shadow: inset 0 0 0 1px var(--join, #1fb6c9);
+  background: linear-gradient(90deg, var(--accent) var(--fill, 0%), rgba(0, 0, 0, .8) var(--fill, 0%));
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 /* строка загрузки: итог склейки — меткой рядом с «Готово», примечание — ниже, приглушённо */
 .job .job-status .status-chip {
   display: inline-block; margin-left: 10px; padding: 1px 8px; border-radius: 999px;
   font-size: 12px; font-weight: 600; vertical-align: 1px;
 }
-.status-chip.ok { color: var(--join, #1fb6c9); background: rgba(31, 182, 201, .12); }
+.status-chip.ok { color: var(--accent-text); background: rgba(145, 71, 255, .16); }
 .status-chip.warn { color: var(--warn); background: rgba(255, 183, 77, .12); }
 .job .job-note { margin-top: 4px; font-size: 12px; color: var(--muted); white-space: normal; }
-.thumb .card-join-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; border-radius: 0; }
+/* склейка на карточке: полоса по низу кадра, подпись — прямо на ней; значки длины и
+   размера на это время поднимаются над полосой */
+.thumb .card-join-bar {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 22px; border-radius: 0;
+  background: rgba(0, 0, 0, .78);
+}
+.thumb .card-join-bar .bar { height: 100%; opacity: .85; }
+.card-join-text {
+  position: absolute; inset: 0; display: flex; align-items: center; padding: 0 8px;
+  color: #fff; font-size: 12px; font-weight: 700; text-shadow: 0 1px 2px rgba(0, 0, 0, .8);
+}
+.card.joining .thumb .bottom-left, .card.joining .thumb .bottom-right { bottom: 30px; }
 
 /* ---------------------------------------------------------------- журнал */
 
@@ -958,10 +1003,54 @@ select { padding-right: 6px; }
 .modal.chat-view > * { flex: none; }
 .modal.chat-view > .chatview-list { flex: 1 1 auto; }
 .modal.chat-view h2 { margin: 0 32px 4px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chatview-tools { margin: 12px 0 10px; flex-wrap: wrap; }
-.chatview-search { flex: 1 1 220px; min-width: 160px; }
-.chatview-time { width: 96px; }
-.chatview-time.invalid { border-color: var(--error); }
+.chatview-head { display: flex; align-items: center; gap: 6px; margin-right: 24px; }
+/* история чата не с Twitch, а из стороннего архива — сказано прямо под сведениями */
+.chatview-source { margin-top: 3px; font-size: 12px; color: var(--warn); }
+.chatview-head .btn { flex: none; }
+.chatview-tools { margin: 10px 0; flex-wrap: wrap; gap: 10px; }
+/* поиск — поле со значком лупы и подсказкой Ctrl+F, той же высоты, что выпадающие списки */
+.chatview-searchbox {
+  flex: 1 1 260px; min-width: 200px; height: 34px; display: flex; align-items: center; gap: 8px;
+  padding: 0 8px 0 10px; border: 2px solid var(--control-border); border-radius: var(--radius);
+  background: var(--bg); cursor: text; transition: border-color .15s ease, box-shadow .15s ease;
+}
+.chatview-searchbox:hover { border-color: #7c7c86; }
+.chatview-searchbox:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(145, 71, 255, .22); }
+.chatview-searchbox .icon { width: 16px; height: 16px; color: var(--muted); }
+.chatview-searchbox input {
+  flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: none; background: none;
+  color: var(--text); font: inherit;
+}
+.chatview-searchbox input:focus { box-shadow: none; }
+.chatview-searchbox kbd {
+  padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; color: var(--faint);
+  font: 11px var(--font); white-space: nowrap;
+}
+.chatview-searchbox.flash { animation: chatview-flash .6s ease; }
+@keyframes chatview-flash { 0%, 100% { box-shadow: 0 0 0 3px rgba(145, 71, 255, .22); } 40% { box-shadow: 0 0 0 6px rgba(145, 71, 255, .5); } }
+/* «Перейти к [1:23:45] ▶» */
+.chatview-timebox { display: flex; align-items: center; gap: 6px; }
+.chatview-timebox input.time { width: 92px; }
+.chatview-timebox input.invalid { border-color: var(--error); }
+/* выбранные зрители: плашки с никами — их сообщения вместе; поле — вписать ник */
+.chatview-users { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; font-size: 13px; }
+.chatview-chips {
+  display: inline-flex; flex-wrap: wrap; gap: 6px; padding: 0; border: 0; background: none;
+  color: inherit; font: inherit; cursor: pointer;
+}
+.chatview-chips:disabled { cursor: default; }
+.chatview-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border-radius: 14px;
+  background: var(--raised); border: 1px solid var(--border); color: var(--text); font-weight: 600;
+}
+.chatview-chips:not(:disabled):hover .chatview-chip { border-color: var(--accent); }
+.chatview-chip.active { background: rgba(145, 71, 255, .22); border-color: var(--accent); }
+.chatview-chip-x {
+  display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
+  border-radius: 50%; color: var(--muted); font-size: 14px; line-height: 1;
+}
+.chatview-chip-x:hover { background: rgba(255, 255, 255, .14); color: var(--text); }
+.chatview-user-input { width: 150px; height: 30px; font-size: 13px; }
 .chatview-activity {
   position: relative; height: 44px; flex: none; cursor: pointer;
   background: var(--card); border-radius: var(--radius); overflow: visible;
@@ -999,7 +1088,9 @@ select { padding-right: 6px; }
   padding: 0; border: 0; background: none; font: inherit; font-weight: 700; cursor: pointer;
 }
 .chatview-list .chat-name:hover { text-decoration: underline; }
-.chatview-list .chat-time { display: inline-block; min-width: 56px; }
+/* время — по своей ширине: пустоты между ним и ником нет */
+.chatview-list .chat-time { margin-right: 8px; }
+.chatview-list:focus { outline: none; }
 .chatview-mark { background: rgba(145, 71, 255, .22); box-shadow: inset 3px 0 0 var(--accent); }
 .chatview-empty { padding: 16px 24px; color: var(--faint); }
 
@@ -1094,8 +1185,22 @@ select { padding-right: 6px; }
 
 /* ---------------------------------------------------------------- узкое окно */
 
+/* кнопка сворачивания левой панели — вверху справа, в свёрнутой — по центру */
+.sidebar-top { display: flex; justify-content: flex-end; padding: 6px 6px 0; }
+.sidebar-top .icon-button { color: var(--muted); }
+.sidebar-top .icon-button:hover { color: var(--text); }
+/* свёрнутая панель — только аватарки (имя — подсказкой при наведении) */
+body.sidebar-collapsed { --sidebar: 60px; }
+body.sidebar-collapsed .sidebar-head span, body.sidebar-collapsed .channel-item .meta,
+body.sidebar-collapsed .channel-item .status, body.sidebar-collapsed .sidebar-empty { display: none; }
+body.sidebar-collapsed .sidebar-head { justify-content: center; padding: 10px 0 6px; }
+body.sidebar-collapsed .channel-item { justify-content: center; padding: 6px 0; }
+body.sidebar-collapsed .sidebar-top { justify-content: center; padding: 6px 0 0; }
+
 @media (max-width: 1100px) {
   :root { --sidebar: 60px; }
+  /* узкое окно — панель и так свёрнута */
+  .sidebar-top { display: none; }
   .sidebar-head span, .channel-item .meta, .channel-item .status, .sidebar-empty { display: none; }
   .sidebar-head { justify-content: center; padding: 10px 0 6px; }
   .channel-item { justify-content: center; padding: 6px 0; }

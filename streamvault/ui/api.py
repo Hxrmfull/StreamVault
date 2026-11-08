@@ -40,6 +40,8 @@ MEDIA_EXTENSIONS = (".mp4", ".ts", ".m4a", ".mkv", ".webm", ".mp3", ".chat.html"
 OPEN_CHATS = 2
 # Сообщений одного зрителя в окне чата — все, но не больше стольких.
 USER_MESSAGES = 5000
+# Сколько зрителей выбрать в окне чата сразу.
+USERS_LIMIT = 20
 
 # Настройки, которые меняет окно. Каналы меняются отдельными вызовами.
 EDITABLE = ("language", "root_path", "quality", "twitch_client_id", "twitch_client_secret",
@@ -899,7 +901,11 @@ class Api:
             opened = self._chats.get(str(chat_id))
         if opened is None:
             raise ValueError(tr("чат закрыт — открой запись заново"))
-        by = by if by in ("all", "text", "name", "user") else "all"
+        by = by if by in ("all", "text", "name", "user", "users") else "all"
+        if by == "users":
+            # сообщения выбранных зрителей: text — список ников
+            names = [str(name)[:64] for name in (text if isinstance(text, list) else [text])][:USERS_LIMIT]
+            return opened[2].search(names, limit=USER_MESSAGES * len(names), by="users")
         # сообщения одного зрителя — все, сколько бы их ни было; поиск — первые
         return opened[2].search(str(text)[:100], limit=USER_MESSAGES if by == "user" else SEARCH_LIMIT, by=by)
 
@@ -917,7 +923,8 @@ class Api:
         if not os.path.isfile(json_path):
             raise ValueError(tr("у этой записи нет чата"))
         chat_id, replay = self._open_chat(json_path)
-        return {"id": chat_id, "count": len(replay.messages), "length": replay.length, "json": json_path,
+        return {"id": chat_id, "count": len(replay.messages), "length": replay.length, "json": json_path, "source": getattr(replay, "source", ""),
+                "source_part": getattr(replay, "source_part", False),
                 "images": [image if image.startswith("https://") else self._media_server.image_url(chat_id, index)
                            for index, image in enumerate(replay.images)]}
 

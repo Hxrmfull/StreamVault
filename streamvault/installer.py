@@ -265,7 +265,7 @@ class Installer:
                             self._fetch(source, target, state, check_speed=not last)
                         except _SourceTrouble as trouble:
                             problems.append("%s: %s" % (source.label, trouble.reason))
-                            logging.warning(tr("{name}: {source} — {problem}, пробую дальше",
+                            logging.warning(tr("{name}: {source} — {problem}, следующая попытка",
                                                name=self.NAME, source=source.label,
                                                problem=trouble.reason))
                             if trouble.slow:

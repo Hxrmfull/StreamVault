@@ -107,7 +107,7 @@ class FFmpegLocator:
             chosen = shutil.which(configured) or (configured if os.path.isfile(configured) else None)
             if chosen:
                 return os.path.abspath(chosen)
-            logging.warning(tr("ffmpeg по пути из настроек не найден ({path}), ищу сама",
+            logging.warning(tr("ffmpeg по пути из настроек не найден ({path}), поиск в других местах",
                                path=configured))
         for candidate in [self.own_path, shutil.which("ffmpeg"), *common_locations()]:
             if candidate and os.path.isfile(candidate):

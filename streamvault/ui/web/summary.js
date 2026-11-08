@@ -144,7 +144,7 @@ export function openSummary(item, options) {
         if (part.gaps === null || part.gaps === undefined) {
           const check = button(t("Проверить"), { kind: "ghost", onclick: () => {
             check.disabled = true;
-            setText(check, t("проверяю…"));
+            setText(check, t("проверка…"));
             bridge.call("check_recording", part.path)
               .then((answer) => { if (answer.gaps) load(); })
               .catch((error) => {
@@ -194,7 +194,7 @@ export function openChatSearch(items) {
       results.replaceChildren();
       return;
     }
-    setText(status, t("ищу…"));
+    setText(status, t("поиск…"));
     bridge.call("search_chats", text, by.value).then((answer) => {
       if (current !== generation || !results.isConnected) return;
       show(answer);

@@ -816,7 +816,7 @@ class DownloadManager:
         except FileNotFoundError:
             return
         except (OSError, ValueError) as error:
-            logging.error(tr("{path} не читается ({error}), начинаю с пустой очереди",
+            logging.error(tr("{path} не читается ({error}), очередь начата заново",
                              path=self._state_path, error=error))
             return
         for job in jobs if isinstance(jobs, list) else []:
@@ -939,7 +939,7 @@ class DownloadManager:
             job["url"], job["target"], job["quality"], job["section"],
             self._settings["download_fragments"], self._ffmpeg.directory(),
             auth_args + list(self._settings["ytdlp_extra_args"]))
-        logging.info(tr("скачиваю: {name}", name=job["title"] or job["url"]))
+        logging.info(tr("скачивание: {name}", name=job["title"] or job["url"]))
         try:
             returncode, produced, error, tail = self._run_ytdlp(job_id, runtime, command)
         finally:
@@ -975,7 +975,7 @@ class DownloadManager:
         ffmpeg = self._ffmpeg.path()
         if not all(item.get("url") for item in chosen) or not (hls or (dash and ffmpeg)):
             return False
-        logging.info(tr("скачиваю: {name}", name=job["title"] or job["url"]))
+        logging.info(tr("скачивание: {name}", name=job["title"] or job["url"]))
 
         # скорость — сглаженная за последние секунды, как у yt-dlp; сколько всего — по доле
         meter = {"time": time.monotonic(), "bytes": 0, "speed": None}
@@ -1006,11 +1006,11 @@ class DownloadManager:
                                                 job["section"][1], job["target"], ffmpeg, progress, stopped=stopped)
         except hlssection.PlaylistError as error:
             # плейлист не взять своими запросами — до кусков не дошло: тот же отрезок через ffmpeg
-            logging.info(tr("{name}: {error} — качаю через ffmpeg", name=job["title"] or job["url"], error=error))
+            logging.info(tr("{name}: {error}, скачивание через ffmpeg", name=job["title"] or job["url"], error=error))
             return False
         except dashsection.NoIndex as error:
             # оглавления нет — до скачивания дело не дошло: тот же отрезок обычным путём
-            logging.info(tr("{name}: {error} — качаю через ffmpeg", name=job["title"] or job["url"], error=error))
+            logging.info(tr("{name}: {error}, скачивание через ffmpeg", name=job["title"] or job["url"], error=error))
             return False
         except (hlssection.HlsSectionError, dashsection.DashSectionError) as error:
             self._finish(job_id, runtime, None if runtime["stop"] else FAILED, error=str(error))
@@ -1170,7 +1170,9 @@ class DownloadManager:
             return self._finish(job_id, runtime, None, chat_progress=None)
         length = archive["end"] - archive["start"]
         try:
-            count = convert(jsonl, target, title=job["title"], channel=archive["channel"], length=length)
+            # метка в самом чате: окно покажет, что история — из стороннего архива
+            count = convert(jsonl, target, title=job["title"], channel=archive["channel"], length=length,
+                            description=chatlogs.SOURCE_MARK)
             if not count:
                 return self._finish(job_id, runtime, FAILED, chat_progress=None,
                                     error=tr("в архиве чатов за время этой записи сообщений нет"))
@@ -1185,6 +1187,12 @@ class DownloadManager:
                 joined = main_chat["json"] + ".joined"
                 join_chat(target, main_chat["json"], seam, total or seam + (self._probe_length(video) or 0), joined,
                           shift=0)
+                # метка: из стороннего архива здесь только начало, до стыка
+                with open(joined, encoding="utf-8") as source:
+                    data = json.load(source)
+                data.setdefault("video", {})["description"] = chatlogs.BEGINNING_MARK
+                with open(joined, "w", encoding="utf-8") as output:
+                    json.dump(data, output, ensure_ascii=False)
                 os.replace(joined, main_chat["json"])
             else:
                 os.replace(target, main_chat["json"])
@@ -1456,8 +1464,8 @@ class DownloadManager:
             logging.error(tr("не скачалось: {name} — {error}",
                              name=job["title"] or job["url"], error=job["error"]))
         elif retry is not None:
-            logging.warning(tr("не скачалось: {name} — {error}; попробую снова через {seconds} с "
-                               "(повтор {number} из {total})", name=job["title"] or job["url"],
+            logging.warning(tr("не скачалось: {name} — {error}; повтор через {seconds} с "
+                               "({number} из {total})", name=job["title"] or job["url"],
                                error=job["error"], seconds=retry, number=job["auto_retries"],
                                total=len(BEGINNING_RETRIES)))
         self._emit(job_id)

@@ -4,12 +4,13 @@
  *
  * Сверху — график активности: где чат писал больше всего; щелчок по нему —
  * к этому месту. Лента сообщений со смайлами и значками догружается при
- * прокрутке в обе стороны. Поиск по словам или нику; щелчок по нику — все
- * сообщения этого зрителя; щелчок по найденному — к нему в ленте.
+ * прокрутке в обе стороны. Поиск по словам или нику; щелчок по нику — он
+ * в «Зрителях», и видны сообщения всех выбранных зрителей вместе (ник можно
+ * и вписать); щелчок по найденному — к нему в ленте.
  */
 
-import { bridge, button, channelName, displayTitle, failed, fmt, h, openModal, platformName, setText, t, tp }
-  from "./common.js";
+import { bridge, button, channelName, displayTitle, failed, fmt, h, icon, iconButton, openModal, platformName, setText,
+  t, tp } from "./common.js";
 import { openSummary } from "./summary.js";
 
 const CHUNK = 600;            // секунд чата за один запрос
@@ -18,6 +19,7 @@ const EDGE = 800;             // пикселей до края ленты — �
 const MIN_LINES = 80;         // после перехода — хотя бы столько строк, чтобы было что листать
 const BEFORE = 20;            // переход к месту: показать и пару десятков секунд до него
 const SVG = "http://www.w3.org/2000/svg";
+const USERS_LIMIT = 20;       // зрителей выбрать сразу (ui/api.py: USERS_LIMIT)
 
 // «1:23:45», «83:20», «90» → секунды; не время — null
 function parseTime(text) {
@@ -41,12 +43,20 @@ export function openChatView(item, options) {
   let current = parts.find((part) => part.path === options.path) || parts[0] || item;
 
   const meta = h("div", { class: "muted" });
-  const searchInput = h("input", { type: "search", class: "chatview-search", spellcheck: "false",
-                                   placeholder: t("Слово, фраза или смайл") });
+  const source = h("div", { class: "chatview-source" });
+  source.hidden = true;
+  // поиск — полем со значком, как у остального окна; Ctrl+F ставит сюда курсор
+  const searchInput = h("input", { type: "search", spellcheck: "false", placeholder: t("Слово, фраза или смайл") });
+  const searchBox = h("label", { class: "chatview-searchbox", title: t("Поиск по чату (Ctrl+F)") },
+    icon("search"), searchInput, h("kbd", { text: "Ctrl+F" }));
   const by = h("select", { title: t("Где искать") },
     h("option", { value: "text", text: t("в сообщениях") }), h("option", { value: "name", text: t("по нику") }));
-  const timeInput = h("input", { type: "text", class: "time chatview-time", spellcheck: "false",
-                                 placeholder: "1:23:45", title: t("Перейти к времени: Enter") });
+  // переход ко времени: подпись, поле и кнопка — понятно без подсказки
+  const timeInput = h("input", { type: "text", class: "time", spellcheck: "false", placeholder: "1:23:45",
+                                 "aria-label": t("Время") });
+  const timeGo = iconButton("play", t("Перейти"), () => goToTime());
+  const timeBox = h("div", { class: "chatview-timebox", title: t("Перейти к месту чата: время и Enter") },
+    h("span", { class: "muted", text: t("Перейти к") }), timeInput, timeGo);
   const partSelect = h("select", { title: t("Часть эфира") }, parts.map((part, index) =>
     h("option", { value: String(index), text: t("часть {part} из {count}", { part: index + 1, count: parts.length }) })));
   partSelect.hidden = parts.length < 2;
@@ -60,23 +70,38 @@ export function openChatView(item, options) {
   const peaks = h("div", { class: "chatview-peaks" });
   activity.append(bars, peaks, cursor, hoverTime);
   const status = h("span", { class: "chatview-status" });
-  const filterChip = h("button", { type: "button", class: "chatview-chip" });
-  filterChip.hidden = true;
+  // выбранные зрители: плашки с никами — щелчок по ним показывает сообщения всех
+  // выбранных вместе; ник добавляется щелчком в ленте или вписывается в поле
+  const users = [];
+  const chips = h("button", { type: "button", class: "chatview-chips", title: t("Показать сообщения выбранных зрителей") });
+  const userInput = h("input", { type: "text", class: "chatview-user-input", spellcheck: "false",
+                                 placeholder: t("Добавить ник…"), "aria-label": t("Добавить ник") });
+  const allChat = button(t("Весь чат"), { kind: "ghost", icon: "chat", onclick: () => {
+    searchInput.value = "";
+    ++searchGeneration;
+    showFeed();
+    showPosition();
+  } });
+  const usersBar = h("div", { class: "chatview-users" }, h("span", { class: "muted", text: t("Зрители:") }),
+    chips, userInput, h("span", { class: "spacer" }), allChat);
   const position = h("span", { class: "chatview-position" });
   const list = h("div", { class: "chatview-list" }, h("div", { class: "spinner" }));
   const found = h("div", { class: "chatview-list" });
   found.hidden = true;
 
   modal.body.append(
-    h("h2", { text: displayTitle(item.title) || item.title }), meta,
-    h("div", { class: "toolbar chatview-tools" }, searchInput, by, timeInput, partSelect, h("span", { class: "spacer" }),
+    h("h2", { text: displayTitle(item.title) || item.title }),
+    // сведения о чате — и рядом то, что открывает его иначе: сводка, браузер
+    h("div", { class: "chatview-head" }, h("div", null, meta, source), h("span", { class: "spacer" }),
       button(item.video_kind === "chat" ? t("Сводка чата") : t("Сводка эфира"), { icon: "stats", kind: "ghost",
         onclick: () => openSummary(item) }),
       current.chat && current.chat.html ? button(t("Открыть в браузере"), { icon: "external", kind: "ghost",
         onclick: () => bridge.call("open_file", current.chat.html).catch(failed) }) : null),
-    activity,
-    h("div", { class: "chatview-bar" }, status, filterChip, h("span", { class: "spacer" }), position),
+    h("div", { class: "toolbar chatview-tools" }, searchBox, by, timeBox, partSelect),
+    activity, usersBar,
+    h("div", { class: "chatview-bar" }, status, h("span", { class: "spacer" }), position),
     list, found);
+  list.tabIndex = -1;                 // стрелки и PageDown листают ленту
 
   // ---------------------------------------------------------------- лента
 
@@ -103,7 +128,7 @@ export function openChatView(item, options) {
     if (/^#[0-9a-f]{6}$/i.test(color)) nameEl.style.color = color;
     nameEl.addEventListener("click", (event) => {
       event.stopPropagation();
-      showUser(name);
+      addUser(name);
     });
     row.append(nameEl, ": ");
     for (const part of partsOfMessage) {
@@ -244,14 +269,19 @@ export function openChatView(item, options) {
 
   // ---------------------------------------------------------------- поиск и зритель
 
+  let mode = "feed";            // feed — вся лента, found — найденное, users — сообщения выбранных
+
   function showFeed() {
+    mode = "feed";
     found.hidden = true;
     list.hidden = false;
-    filterChip.hidden = true;
     setText(status, fmt.counted(chat.count, t("сообщение|сообщения|сообщений")));
+    drawUsers();
   }
 
-  function showFound(messages, text) {
+  function showFound(messages, text, kind) {
+    mode = kind || "found";
+    drawUsers();
     list.hidden = true;
     found.hidden = false;
     setText(status, text);
@@ -273,7 +303,6 @@ export function openChatView(item, options) {
     }
     bridge.call("chat_search", chat.id, text, by.value).then((messages) => {
       if (mine !== searchGeneration || closed) return;
-      filterChip.hidden = true;
       // окно отдаёт первые SEARCH_LIMIT — об этом честно
       showFound(messages, messages.length >= 200 ? t("Найдено больше {count} — показаны первые", { count: 200 })
                                                   : t("Найдено: {count}", { count: messages.length }));
@@ -292,40 +321,89 @@ export function openChatView(item, options) {
     }
   });
 
-  function showUser(name) {
+  // плашки выбранных зрителей; «Весь чат» — пока показаны их сообщения
+  function drawUsers() {
+    chips.replaceChildren(...users.map((name) => {
+      const remove = h("span", { class: "chatview-chip-x", role: "button", title: t("Убрать {name}", { name: name }),
+                                 text: "×" });
+      remove.addEventListener("click", (event) => {
+        event.stopPropagation();
+        users.splice(users.indexOf(name), 1);
+        if (!users.length && mode === "users") showFeed(); else if (mode === "users") showUsers(); else drawUsers();
+      });
+      return h("span", { class: "chatview-chip" + (mode === "users" ? " active" : "") }, h("span", { text: name }), remove);
+    }));
+    chips.hidden = !users.length;
+    chips.disabled = mode === "users";
+    allChat.hidden = mode === "feed";
+  }
+
+  function addUser(name) {
+    name = String(name).trim().replace(/^@/, "");
+    if (!name) return;
+    if (!users.some((known) => known.toLowerCase() === name.toLowerCase())) {
+      if (users.length >= USERS_LIMIT) {
+        failed(new Error(t("Зрителей не больше {count}", { count: USERS_LIMIT })));
+        return;
+      }
+      users.push(name);
+    }
+    showUsers();
+  }
+
+  // сообщения всех выбранных зрителей вместе, по времени
+  function showUsers() {
+    if (!users.length) {
+      showFeed();
+      return;
+    }
     searchInput.value = "";
-    ++searchGeneration;
-    bridge.call("chat_search", chat.id, name, "user").then((messages) => {
-      if (closed) return;
-      showFound(messages, t("Сообщения {name}: {count}", { name: name, count: fmt.count(messages.length) }));
-      setText(filterChip, "× " + t("ко всему чату"));
-      filterChip.hidden = false;
+    const mine = ++searchGeneration;
+    bridge.call("chat_search", chat.id, users.slice(), "users").then((messages) => {
+      if (closed || mine !== searchGeneration) return;
+      showFound(messages, users.length === 1
+        ? t("Сообщения {name}: {count}", { name: users[0], count: fmt.count(messages.length) })
+        : t("Сообщения выбранных зрителей ({users}): {count}", { users: users.length, count: fmt.count(messages.length) }),
+        "users");
     }).catch(failed);
   }
-  filterChip.addEventListener("click", () => {
-    showFeed();
-    showPosition();
-  });
-
-  timeInput.addEventListener("keydown", (event) => {
+  chips.addEventListener("click", () => showUsers());
+  userInput.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
+    // можно и несколько сразу: через запятую или пробел
+    for (const name of userInput.value.split(/[\s,]+/).filter(Boolean)) addUser(name);
+    userInput.value = "";
+  });
+
+  function goToTime() {
     const seconds = parseTime(timeInput.value);
     if (seconds === null) {
       timeInput.classList.add("invalid");
+      timeInput.focus();
       return;
     }
     timeInput.classList.remove("invalid");
     searchInput.value = "";
     jumpTo(seconds);
+  }
+  timeInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    goToTime();
   });
+  timeInput.addEventListener("input", () => timeInput.classList.remove("invalid"));
 
-  // Ctrl+F — к поиску, как в браузере
+  // Ctrl+F — к поиску, как в браузере: курсор в поле, и поле на миг подсвечено
   function onKey(event) {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+    if ((event.ctrlKey || event.metaKey) && (event.code === "KeyF" || event.key.toLowerCase() === "f")) {
       event.preventDefault();
+      event.stopPropagation();
       searchInput.focus();
       searchInput.select();
+      searchBox.classList.remove("flash");
+      void searchBox.offsetWidth;          // анимация заново, даже если уже была
+      searchBox.classList.add("flash");
     }
   }
   document.addEventListener("keydown", onKey, true);
@@ -395,18 +473,25 @@ export function openChatView(item, options) {
                    fmt.counted(chat.count, t("сообщение|сообщения|сообщений")),
                    chat.length ? t("длина {length}", { length: fmt.duration(chat.length) }) : ""]
       .filter(Boolean).join(" · "));
+    // история из стороннего архива, а не с Twitch: метка в самом файле чата
+    source.hidden = !chat.source;
+    setText(source, chat.source_part
+      ? t("Чат начала эфира загружен из стороннего архива {site}, не с Twitch", { site: chat.source })
+      : t("История чата загружена из стороннего архива {site}, не с Twitch", { site: chat.source }));
     bridge.call("chat_activity", chat.id, chat.length || 1).then((answer) => { if (!closed) drawActivity(answer); })
       .catch(() => { activity.hidden = true; });
     await jumpTo(start || 0, mark);
     if (options.user) {
-      showUser(options.user);
+      addUser(options.user);
       options.user = null;
     }
   }
   partSelect.addEventListener("change", () => openPart(parts[Number(partSelect.value)] || parts[0], 0));
   partSelect.value = String(Math.max(0, parts.indexOf(current)));
+  drawUsers();
   openPart(current, options.start, options.mark);
-  setTimeout(() => searchInput.focus(), 0);
+  // курсор не в поиске, а в ленте: стрелки листают, Ctrl+F — к поиску
+  setTimeout(() => list.focus({ preventScroll: true }), 0);
   return modal;
 }
 

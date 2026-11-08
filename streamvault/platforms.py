@@ -168,7 +168,7 @@ def parse_channel(item, default_platform=DEFAULT_PLATFORM):
                 # сам домен либо любой его поддомен: m.twitch.tv, www.youtube.com
                 if host == known or host.endswith("." + known):
                     return _checked(name, canonical_channel(name, item))
-        return None, tr("не понимаю, какой платформе принадлежит ссылка: {link}", link=item)
+        return None, tr("непонятно, какой платформе принадлежит ссылка: {link}", link=item)
 
     platform, separator, channel = item.partition(":")
     if not separator:
@@ -300,7 +300,7 @@ def normalize_channels(raw, enabled=False):
             # один канал, записанный в разном регистре, — всё равно один канал
             key = (platform, channel.lower())
             if key in seen:
-                logging.info(tr("{platform}:{channel} указан дважды, второй раз пропускаю",
+                logging.info(tr("{platform}:{channel} указан дважды, повтор пропущен",
                                 platform=platform, channel=channel))
                 continue
             seen.add(key)
@@ -332,7 +332,7 @@ def refresh_for(platform, overrides, floor):
         value = int(value)
     except (TypeError, ValueError):
         logging.warning(tr("интервал опроса для {platform} задан непонятно ({value}), "
-                           "беру {default} с", platform=platform, value=repr(value),
+                           "взято {default} с", platform=platform, value=repr(value),
                            default=default))
         value = default
     return max(floor, value)

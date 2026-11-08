@@ -38,6 +38,9 @@ from ..live.livechat import parse_line
 
 BASE = "https://logs.zonian.dev"
 SITE = "logs.zonian.dev"
+# метка в video.description чата, взятого отсюда: TwitchDownloader её сохраняет, окно чата показывает
+SOURCE_MARK = "StreamVault: chat from the public chat archive " + SITE
+BEGINNING_MARK = "StreamVault: beginning chat from the public chat archive " + SITE
 TIMEOUT = 30
 HEADERS = {"User-Agent": "StreamVault (chat archive)"}
 DAY_LIMIT = 3 * 1024 ** 3          # байт чата за сутки (~7–8 млн сообщений): больше — не похоже на архив
@@ -92,7 +95,7 @@ def _get(path, stream=False):
         raise ArchiveError(tr("архив чатов не отвечает: {error}", error=error.__class__.__name__))
     if 300 <= response.status_code < 400:
         response.close()
-        raise ArchiveError(tr("архив чатов отправил на другой адрес — не иду туда"))
+        raise ArchiveError(tr("архив чатов отправил на другой адрес, переход отклонён"))
     return response
 
 

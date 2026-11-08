@@ -440,6 +440,9 @@ class Library:
             "channel_id": "%s:%s" % (platform, label),
             "title": "",
             "timestamp": None,
+            # когда файл появился на диске (создан): «сначала недавно добавленные» —
+            # только что скачанная старая запись эфира тоже наверху
+            "added": getattr(stat, "st_birthtime", None) or stat.st_ctime,
             "part": None,
             "size": stat.st_size,
             "duration": None,

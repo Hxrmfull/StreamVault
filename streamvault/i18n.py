@@ -107,14 +107,14 @@ STRINGS = {
         'the section starts after the end of the recording: it is {length} long',
     'загрузка добавлена: {name}': 'download added: {name}',
     'загрузки {id} нет в списке': 'download {id} is not in the list',
-    'скачиваю: {name}': 'downloading: {name}',
+    'скачивание: {name}': 'downloading: {name}',
     'yt-dlp не установлен: python -m pip install yt-dlp':
         'yt-dlp is not installed: python -m pip install yt-dlp',
     'yt-dlp завершился с кодом {code}': 'yt-dlp exited with code {code}',
     'скачано: {path}': 'downloaded: {path}',
     'папка для загрузок недоступна: {path} ({error})':
         'downloads folder is not available: {path} ({error})',
-    '{path} не читается ({error}), начинаю с пустой очереди':
+    '{path} не читается ({error}), очередь начата заново':
         '{path} cannot be read ({error}), starting with an empty queue',
     'токен Twitch не годится: {error}': 'the Twitch token is not valid: {error}',
     'не скачалось: {name} — {error}': 'download failed: {name} — {error}',
@@ -132,7 +132,7 @@ STRINGS = {
     'лучшее': 'best',
     'токен Twitch состоит только из латинских букв и цифр — скопируй значение куки auth-token целиком':
         'a Twitch token contains only Latin letters and digits — copy the whole value of the auth-token cookie',
-    'не понимаю время: «{text}» (нужно Ч:ММ:СС, ММ:СС или секунды)':
+    'непонятное время: «{text}» (нужно Ч:ММ:СС, ММ:СС или секунды)':
         'cannot read the time “{text}” (use H:MM:SS, MM:SS or seconds)',
     'отрезок пишется как НАЧАЛО-КОНЕЦ, например 1:00:00-1:30:00':
         'write a section as START-END, for example 1:00:00-1:30:00',
@@ -142,7 +142,7 @@ STRINGS = {
     'не удалось запустить yt-dlp: {error}': 'could not start yt-dlp: {error}',
     'yt-dlp не ответил за {seconds} с': 'yt-dlp did not answer within {seconds} s',
     'подписчик на события {kind} упал': 'the {kind} event subscriber crashed',
-    'ffmpeg по пути из настроек не найден ({path}), ищу сама':
+    'ffmpeg по пути из настроек не найден ({path}), поиск в других местах':
         'ffmpeg was not found at the path from the settings ({path}), searching automatically',
     '{host} ответил {status}': '{host} answered {status}',
     'перенаправление на чужой адрес ({url}) — туда программа не обращается':
@@ -185,9 +185,9 @@ STRINGS = {
         'Twitch token: network unavailable ({error}), retrying in {delay} s',
     'токен Twitch: непонятный ответ, повтор через {delay} с':
         'Twitch token: unreadable answer, retrying in {delay} s',
-    'конвертирую в {format}: {name}': 'converting to {format}: {name}',
+    'конвертация в {format}: {name}': 'converting to {format}: {name}',
     'готово: {name}': 'done: {name}',
-    'запись из кусков mp4 не перепаковалась в .ts, переношу как есть: {name}':
+    'запись из кусков mp4 не перепаковалась в .ts, перенесена как есть: {name}':
         'the recording of mp4 pieces was not repacked into .ts, moving it as is: {name}',
     'запись из кусков mp4 — в настоящий .ts: {name}': 'recording of mp4 pieces made into a real .ts: {name}',
     'запись эфира на площадке ещё не дошла до начала записи ({have} из {need})':
@@ -220,7 +220,7 @@ STRINGS = {
         'no seam between the beginning and the recording (sound match {score})',
     'стык начала и записи не найден: в начале записи тишина':
         'no seam between the beginning and the recording: the recording starts with silence',
-    'звук не ложится в m4a как есть — перекодирую в AAC: {name}':
+    'звук не ложится в m4a как есть, перекодирование в AAC: {name}':
         'the sound does not fit into m4a as is — re-encoding to AAC: {name}',
     'формат после записи: {formats}': 'format after recording: {formats}',
     'конвертируются только записи .ts': 'only .ts recordings are converted',
@@ -232,7 +232,7 @@ STRINGS = {
     'такой формат не делится: {name}': 'this format cannot be split: {name}',
     'чат записи ещё доделывается — попробуй через минуту':
         "the recording's chat is still being finished — try again in a minute",
-    'делю на части ({count}): {name}': 'splitting into pieces ({count}): {name}',
+    'деление на части ({count}): {name}': 'splitting into pieces ({count}): {name}',
     'эта запись уже делится: {name}': 'this recording is already being split: {name}',
     'начало эфира ещё не склеено с этой записью — подожди склейки или выключи её у канала':
         "the stream beginning is not joined with this recording yet — wait for the join or turn it off for the channel",
@@ -243,12 +243,12 @@ STRINGS = {
     'клип и видео с чатом поверх не делятся': 'clips and videos with chat on top are not split',
     'файла уже нет: {name}': 'the file is gone: {name}',
     'найдена необработанная запись: {name}': 'found an unprocessed recording: {name}',
-    'файл исчез, пропускаю: {path}': 'the file is gone, skipping: {path}',
-    'пустая запись, удаляю: {name}': 'empty recording, deleting: {name}',
+    'файл исчез, пропущен: {path}': 'the file is gone, skipping: {path}',
+    'пустая запись, удаление: {name}': 'empty recording, deleting: {name}',
     'перемещено: {name}': 'moved: {name}',
     'ffmpeg не справился с {name} (код {code})': 'ffmpeg failed on {name} (code {code})',
     'сбой обработки {path}: {error}': 'processing error {path}: {error}',
-    'доделываю оставшиеся записи ({count})': 'finishing the remaining recordings ({count})',
+    'обработка оставшихся записей ({count})': 'finishing the remaining recordings ({count})',
     'не читается {path} ({error})': 'cannot read {path} ({error})',
     'убран недописанный файл прошлого запуска: {name}':
         'removed an unfinished file from the previous run: {name}',
@@ -267,27 +267,27 @@ STRINGS = {
         '{tag}: checking every {seconds} s via {probe}, quality {quality}',
     '{tag}: наблюдение остановлено': '{tag}: watching stopped',
     '{tag} в эфире: {title}': '{tag} is live: {title}',
-    '{tag}: проверка через {probe} недоступна, перехожу на {fallback}':
+    '{tag}: проверка через {probe} недоступна, переход на {fallback}':
         '{tag}: checking via {probe} is unavailable, switching to {fallback}',
     '{tag}: канал в эфире, но записать его не удаётся, следующая попытка через {seconds} с':
         '{tag}: the channel is live but cannot be recorded, next attempt in {seconds} s',
-    '{tag}: останавливаю запись': '{tag}: stopping the recording',
+    '{tag}: остановка записи': '{tag}: stopping the recording',
     '{tag}: streamlink завершился за {seconds} с без данных ({count} подряд)':
         '{tag}: streamlink exited after {seconds} s without data ({count} in a row)',
     'streamlink не найден. Установи: python -m pip install streamlink':
         'streamlink not found. Install it: python -m pip install streamlink',
-    '{tag}: не в эфире, жду выхода': '{tag}: offline, waiting for the stream',
+    '{tag}: не в эфире, ожидание эфира': '{tag}: offline, waiting for the stream',
     'без названия': 'untitled',
-    '{tag}: три пустые попытки подряд, возвращаюсь к проверкам':
+    '{tag}: три пустые попытки подряд, возврат к проверкам':
         '{tag}: three empty attempts in a row, back to checking',
     'streamlink не найден': 'streamlink not found',
     'сбой: {error}': 'error: {error}',
     'записать не удаётся': 'cannot be recorded',
-    '{tag}: Twitch раз за разом не принимает свежий токен, перехожу на проверку без API':
+    '{tag}: Twitch раз за разом не принимает свежий токен, переход на проверку без API':
         '{tag}: Twitch keeps rejecting a fresh token, switching to checks without the API',
-    '{tag}: токен отклонён, обновляю': '{tag}: token rejected, refreshing',
+    '{tag}: токен отклонён, обновление': '{tag}: token rejected, refreshing',
     '{tag}: сбой, повтор через {seconds} с': '{tag}: error, retrying in {seconds} s',
-    '{tag}: {reason} — проверь имя. Перепроверю через {minutes} мин':
+    '{tag}: {reason} — проверь имя. Повторная проверка через {minutes} мин':
         '{tag}: {reason} — check the name. Will check again in {minutes} min',
     '{tag}: нет связи, повтор через {seconds} с': '{tag}: no connection, retrying in {seconds} s',
     'платформа отвечает нештатно': 'the platform answers abnormally',
@@ -301,24 +301,24 @@ STRINGS = {
     'канала {channel} нет в списке': 'channel {channel} is not in the list',
     'папка для записей недоступна: {path} ({error})':
         'recordings folder is not available: {path} ({error})',
-    'наблюдаю за каналами: {channels}': 'watching channels: {channels}',
+    'наблюдение за каналами: {channels}': 'watching channels: {channels}',
     '{channel}: автозапись включена': '{channel}: auto-record on',
     '{channel}: автозапись выключена': '{channel}: auto-record off',
     'канал {channel} уже есть в списке': 'channel {channel} is already in the list',
     'поток {name} упал': 'thread {name} crashed',
     'пустая строка': 'empty input',
-    'не понимаю, какой платформе принадлежит ссылка: {link}':
+    'непонятно, какой платформе принадлежит ссылка: {link}':
         'cannot tell which platform this link belongs to: {link}',
     'неизвестная платформа «{platform}» в «{text}»': 'unknown platform “{platform}” in “{text}”',
     'не указан канал в «{text}»': 'no channel given in “{text}”',
-    'интервал опроса для {platform} задан непонятно ({value}), беру {default} с':
+    'интервал опроса для {platform} задан непонятно ({value}), взято {default} с':
         'the check interval for {platform} is unreadable ({value}), using {default} s',
-    '{platform}:{channel} указан дважды, второй раз пропускаю':
+    '{platform}:{channel} указан дважды, повтор пропущен':
         '{platform}:{channel} is listed twice, skipping the second one',
-    'настройки: {key} задан непонятно ({value}), оставляю {kept}':
+    'настройки: {key} задан непонятно ({value}), оставлено {kept}':
         'settings: {key} is unreadable ({value}), keeping {kept}',
     '{path}: ожидался объект в фигурных скобках': '{path}: an object in curly braces was expected',
-    'настройки: незнакомый параметр {key}, оставляю как есть':
+    'настройки: незнакомый параметр {key} оставлен как есть':
         'settings: unknown option {key}, leaving it as is',
     '{path} испорчен: {error}': '{path} is damaged: {error}',
     '{path} не читается: {error}': '{path} cannot be read: {error}',
@@ -363,7 +363,7 @@ STRINGS = {
         'ffmpeg not found: recordings will not be converted to mp4 until it is installed or its path is set in the settings',
     'pystray не установлен — значка в трее не будет: python -m pip install pystray':
         'pystray is not installed — there will be no tray icon: python -m pip install pystray',
-    'закрываю: останавливаю записи и загрузки, доделываю конвертацию':
+    'закрытие программы: записи и загрузки останавливаются, конвертация доделывается':
         'closing: stopping recordings and downloads, finishing conversion',
     'завершено': 'finished',
     'Настройки не читаются: {error}': 'Settings cannot be read: {error}',
@@ -397,7 +397,7 @@ STRINGS = {
     '{name} {version} установлен: {path}': '{name} {version} installed: {path}',
     '{name} не установлен: {error}': '{name} was not installed: {error}',
     'установка {name} упала': '{name} installation crashed',
-    '{name}: {source} — {problem}, пробую дальше': '{name}: {source} — {problem}, trying the next one',
+    '{name}: {source} — {problem}, следующая попытка': '{name}: {source} — {problem}, trying the next one',
     '{name} не скачался ни с одного источника: {problems}':
         '{name} could not be downloaded from any source: {problems}',
     '{name}: подозрительный размер файла — {size} байт': '{name}: suspicious file size — {size} bytes',
@@ -492,7 +492,7 @@ STRINGS = {
     'после обработки {name}: сбой': 'after processing {name}: crash',
     'сообщение|сообщения|сообщений': 'message|messages',
     'чат {channel}: не пишется ({error})': 'chat {channel}: cannot be written ({error})',
-    'чат {channel}: связь прервалась ({error}), переподключаюсь':
+    'чат {channel}: связь прервалась ({error}), переподключение':
         'chat {channel}: connection lost ({error}), reconnecting',
     'чат эфира готов: {name}': 'stream chat ready: {name}',
     'чат эфира не сохранился: {name} — {error}': 'stream chat was not saved: {name} — {error}',
@@ -520,12 +520,12 @@ STRINGS = {
     'запись открыта в другой программе': 'the recording is open in another program',
     'не удалить {name}: файл открыт в другой программе': 'cannot delete {name}: the file is open in another program',
     'фрагменты записи заданы диапазонами байт': 'the recording pieces are given as byte ranges',
-    'не скачалось: {name} — {error}; попробую снова через {seconds} с (повтор {number} из {total})':
+    'не скачалось: {name} — {error}; повтор через {seconds} с ({number} из {total})':
         'not downloaded: {name} — {error}; trying again in {seconds} s (retry {number} of {total})',
     'Начало эфира склеено с записью': 'Stream beginning joined to the recording',
     'Начало эфира не склеено с записью': 'Stream beginning not joined to the recording',
     '«{name}» не похоже на имя канала {platform}': '"{name}" does not look like a {platform} channel name',
-    '{name}: {error} — качаю через ffmpeg': '{name}: {error} — downloading through ffmpeg',
+    '{name}: {error}, скачивание через ffmpeg': '{name}: {error} — downloading through ffmpeg',
     'начало эфира склеено с записью — загрузка теперь о ней: {name}':
         'the stream beginning is joined to the recording — the download now points to it: {name}',
     'ffmpeg не собрал начало записи: {error}': 'ffmpeg could not assemble the recording beginning: {error}',
@@ -536,11 +536,11 @@ STRINGS = {
     'убран файл прерванной склейки: {name}': 'removed a file of an interrupted join: {name}',
     'плейлист записи не скачался: {error}': 'the recording playlist did not download: {error}',
     'это список качеств, а не плейлист записи': 'this is a list of qualities, not the recording playlist',
-    'Windows завершает работу: закрываю записи, конвертация — при следующем запуске':
+    'Windows завершает работу: записи закрываются, конвертация — при следующем запуске':
         'Windows is shutting down: closing recordings, conversion will run on the next start',
-    '{tag}: жду запись эфира на площадке, чтобы добрать его начало ({length})':
+    '{tag}: ожидание записи эфира на площадке, чтобы добрать его начало ({length})':
         '{tag}: waiting for the platform to publish the stream to fetch its beginning ({length})',
-    '{tag}: запись эфира на площадке не проверить ({error}) — попробую позже':
+    '{tag}: запись эфира на площадке не проверить ({error}), повтор позже':
         '{tag}: could not check the stream recording on the platform ({error}) — will try later',
     'не сохранить, чего ждёт запись с начала эфира: {error}':
         'could not save what the stream-beginning download is waiting for: {error}',
@@ -564,12 +564,12 @@ STRINGS = {
     'обработка не удалась (попыток: {count}), файл оставлен в in-progress: {path}':
         'processing failed (attempts: {count}), the file is left in in-progress: {path}',
     '{tag}: эфир закончился': '{tag}: the stream has ended',
-    '{tag}: эфир продолжается, пишу часть {part}': '{tag}: the stream continues, recording part {part}',
-    '{tag}: эфир продолжается, пробую снова': '{tag}: the stream continues, trying again',
+    '{tag}: эфир продолжается, запись части {part}': '{tag}: the stream continues, recording part {part}',
+    '{tag}: эфир продолжается, новая попытка': '{tag}: the stream continues, trying again',
     'Записать можно в окне StreamVault': 'You can record it in the StreamVault window',
     'для чата нужен TwitchDownloader — его можно скачать в настройках, раздел «Инструменты»':
         'chat needs TwitchDownloader — it can be downloaded in the settings, Tools section',
-    'чат {channel}: сбой, переподключаюсь': 'chat {channel}: failure, reconnecting',
+    'чат {channel}: сбой, переподключение': 'chat {channel}: failure, reconnecting',
     'чат закрыт — открой запись заново': 'the chat was closed — open the recording again',
     'у этой записи нет чата': 'this recording has no chat',
     'архив чатов есть только у Twitch: у Kick, YouTube и VK Video Live таких архивов нет':
@@ -578,7 +578,7 @@ STRINGS = {
     'архив чатов не отвечает: {error}': 'the chat archive does not respond: {error}',
     'архив чатов ответил непонятно': 'the chat archive gave an unclear answer',
     'архив чатов ответил ошибкой {code}': 'the chat archive answered with error {code}',
-    'архив чатов отправил на другой адрес — не иду туда': 'the chat archive redirected to another address — not going there',
+    'архив чатов отправил на другой адрес, переход отклонён': 'the chat archive redirected to another address — not going there',
     'архив чатов — только для своих записей эфиров': 'the chat archive is only for your own stream recordings',
     'в архиве чатов за время этой записи сообщений нет': 'the chat archive has no messages for the time of this recording',
     'в архиве чатов нет чата канала {name} за {date}': 'the chat archive has no chat of {name} for {date}',
@@ -631,7 +631,7 @@ STRINGS = {
         'VK Video Live did not say which recording this clip is from',
     'у YouTube нет списка клипов канала — вместо них вкладка Shorts':
         'YouTube has no list of channel clips — the Shorts tab is there instead',
-    '{tag}: место на диске кончается — останавливаю запись':
+    '{tag}: место на диске кончается, запись остановлена':
         '{tag}: the disk is running out of space — stopping the recording',
     '{value} ГБ': '{value} GB',
     '{value} МБ': '{value} MB',
@@ -678,7 +678,7 @@ STRINGS = {
         'watching a recording in progress needs ffmpeg — it can be downloaded in the settings',
     '{key} — нужно число': '{key} must be a number',
     'деление записи: {modes}': 'splitting recordings: {modes}',
-    'конвертирую в {format} и делю на {count} {pieces}: {name}':
+    'конвертация в {format} и деление на {count} {pieces}: {name}':
         'converting to {format} and splitting into {count} {pieces}: {name}',
     'часть|части|частей': 'piece|pieces',
     'чат не поделился по частям записи: {error}':
@@ -719,7 +719,7 @@ STRINGS = {
     'у канала выключен архив прошедших эфиров': 'the channel has past broadcasts turned off',
     'у этой площадки начала эфира не взять': 'this platform cannot give the start of a stream',
     # консольные команды (cli.py)
-    '{tag}: эфир прервался — жду его возвращения {minutes} мин':
+    '{tag}: эфир прервался, ожидание возвращения {minutes} мин':
         '{tag}: the stream dropped — waiting {minutes} min for it to come back',
     '{tag}: эфир вернулся': '{tag}: the stream is back',
     # склейка начала эфира с записью (live/joining.py)
@@ -734,14 +734,14 @@ STRINGS = {
     'чат не склеился: {error}': 'the chat was not joined: {error}',
     'начало эфира склеено с записью: {name} — стык на {at}, вышло {length}':
         'stream beginning joined to the recording: {name} — seam at {at}, {length} in total',
-    'склеиваю начало эфира с записью: {name}': 'joining the stream beginning to the recording: {name}',
+    'склейка начала эфира с записью: {name}': 'joining the stream beginning to the recording: {name}',
     'склейка начала эфира: сбой': 'joining the stream beginning: failure',
     'стык начала и записи не найден (разница {score})':
         'the seam between the beginning and the recording was not found (difference {score})',
     'как делить: off, size, duration или count': 'how to split: off, size, duration or count',
     # живая строка консоли (console.py)
     'чат {count}': 'chat {count}',
-    'наблюдаю за каналами: {count}, в эфире: {live}': 'watching channels: {count}, live: {live}',
+    'наблюдение за каналами: {count}, в эфире: {live}': 'watching channels: {count}, live: {live}',
     'обработка: {name}': 'processing: {name}',
     'ждут обработки: {count}': 'waiting for processing: {count}',
     'в очереди: {count}': 'queued: {count}',
@@ -802,7 +802,7 @@ STRINGS = {
     'ключи Twitch перенесены': 'Twitch keys imported',
     'не задан ни один канал: добавь каналы в {path} (channels) или передай -u':
         'no channels: add them to {path} (channels) or pass -u',
-    'повторный Ctrl+C — выхожу, не дожидаясь обработки. Необработанные записи подхватятся при следующем запуске':
+    'повторный Ctrl+C — выход без ожидания обработки. Необработанные записи подхватятся при следующем запуске':
         'Ctrl+C again — exiting without waiting for processing. Unprocessed recordings will be picked up on the next start',
     'осталось необработанных записей: {count}. Они подхватятся при следующем запуске':
         'unprocessed recordings left: {count}. They will be picked up on the next start',
@@ -815,7 +815,7 @@ STRINGS = {
     '{size}/с': '{size}/s',
     'осталось {time}': '{time} left',
     'склейка': 'merging',
-    'начинаю': 'starting',
+    'запуск': 'starting',
     'уже скачано: {path} (заново — с --force)':
         'already downloaded: {path} (again with --force)',
     'остановлено. Скачанное сохранено: та же команда продолжит загрузку с того же места':

@@ -181,7 +181,7 @@ class Beginning:
             request["report"] = lambda status: None
             request.setdefault("ended", time.time())
             self._waiting[channel_id(request["platform"], request["channel"])] = request
-            logging.info(tr("{tag}: жду запись эфира на площадке, чтобы добрать его начало ({length})",
+            logging.info(tr("{tag}: ожидание записи эфира на площадке, чтобы добрать его начало ({length})",
                             tag=request["tag"], length=clock(request["length"] - OVERLAP)))
         with self._lock:
             self._save()
@@ -207,7 +207,7 @@ class Beginning:
             return sites.archive_for(request["platform"], request["channel"], request["started"],
                                      request["meta"], self._downloads)
         except Exception as error:
-            logging.warning(tr("{tag}: запись эфира на площадке не проверить ({error}) — попробую позже",
+            logging.warning(tr("{tag}: запись эфира на площадке не проверить ({error}), повтор позже",
                                tag=request["tag"], error=error))
             return None, str(error)
 

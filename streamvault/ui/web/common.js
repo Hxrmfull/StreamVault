@@ -80,6 +80,10 @@ export const ICONS = {
   search: "M10 4a6 6 0 104.47 10.03l4.82 4.82 1.41-1.41-4.82-4.82A6 6 0 0010 4zm0 2a4 4 0 110 8 4 4 0 010-8z",
   power: "M11 3h2v9h-2zM7.05 6.05l1.41 1.41a6 6 0 107.08 0l1.41-1.41a8 8 0 11-9.9 0z",
   play: "M8 5v14l11-7z",
+  user: "M12 4a4 4 0 110 8 4 4 0 010-8zm0 10c4.4 0 8 1.8 8 4v2H4v-2c0-2.2 3.6-4 8-4z",
+  calendar: "M7 2h2v2h6V2h2v2h3v16H4V4h3zm-1 8v8h12v-8zm0-4v2h12V6z",
+  clock: "M12 3a9 9 0 110 18 9 9 0 010-18zm0 2a7 7 0 100 14 7 7 0 000-14zm-1 2h2v5.4l3.5 2.1-1 1.7L11 13.5z",
+  eye: "M12 5c5 0 9 4.5 10 7-1 2.5-5 7-10 7S3 14.5 2 12c1-2.5 5-7 10-7zm0 3a4 4 0 100 8 4 4 0 000-8zm0 2a2 2 0 110 4 2 2 0 010-4z",
   more: "M6 10a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4z",
   volume: "M4 9h4l5-4v14l-5-4H4zm12.5-1.1a5 5 0 010 8.2l-1.2-1.6a3 3 0 000-5z",
   muted: "M4 9h4l5-4v14l-5-4H4zm11.6.6L17 8.2l2 2 2-2 1.4 1.4-2 2 2 2-1.4 1.4-2-2-2 2-1.4-1.4 2-2z",
@@ -396,7 +400,7 @@ export const CHAT_MODES = [["none", "без чата"], ["text", "чат для 
 export const CHAT_STAGES = { download: "скачивание чата", images: "загрузка смайлов и значков",
                              embedding: "встраивание смайлов", commenters: "сведения о зрителях",
                              writing: "сохранение чата",
-                             archive: "загрузка чата из архива чатов",
+                             archive: "загрузка чата из стороннего архива",
                              html: "подготовка чата для браузера",
                              // у этого шага процентов нет — TwitchDownloader пишет только номер шага
                              html_info: "подготовка чата для браузера: сведения о записи, шаг 1 из 3",
@@ -625,7 +629,7 @@ export function stateText(channel) {
       ? t("в эфире, но записать не удаётся: {reason}", { reason: channel.message })
       : t("в эфире, но записать не удаётся");
     case "offline": return t("не в эфире");
-    case "starting": return t("проверяю…");
+    case "starting": return t("проверка…");
     case "not_found": return channel.message || t("канал не найден");
     case "error": return channel.message || t("ошибка");
     case "paused": return t("автозапись выключена");

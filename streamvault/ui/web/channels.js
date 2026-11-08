@@ -123,7 +123,7 @@ export function refreshLive() {
     const name = processing.current ? processing.current.file.split(/[\\/]/).pop() : "";
     view.processing.append(h("div", { class: "processing-strip" },
       h("span", { class: "spinner small" }),
-      processing.current ? h("span", null, t("Обрабатываю запись: "), h("span", { text: name })) : null,
+      processing.current ? h("span", null, t("Обработка записи: "), h("span", { text: name })) : null,
       processing.pending ? h("span", { class: "faint", text: t("в очереди: {count}", { count: processing.pending }) }) : null));
   }
 }
@@ -194,7 +194,7 @@ export function updateLiveCard(card, channel) {
     card._action.title = starting ? t("Запись запускается — нажми, чтобы отменить")
       : recording ? t("Остановить запись; записанное сохранится") : t("Записать идущий эфир сейчас");
     card._action.replaceChildren(starting ? h("span", { class: "spinner small" }) : icon(recording ? "stop" : "record"),
-      busy ? t("Подождите…") : starting ? t("Запускаю…") : recording ? t("Остановить") : t("Записать"));
+      busy ? t("Подождите…") : starting ? t("Запуск…") : recording ? t("Остановить") : t("Записать"));
   }
 }
 
@@ -587,7 +587,7 @@ function beginningLine(beginning) {
   if (!beginning) return null;
   const length = beginning.length ? fmt.duration(beginning.length) : "";
   const text = {
-    searching: t("Начало эфира ({length}): ищу его запись на площадке", { length: length }),
+    searching: t("Начало эфира ({length}): поиск его записи на площадке", { length: length }),
     waiting: t("Начало эфира ({length}) скачается, когда площадка выложит запись эфира", { length: length }),
     queued: t("Начало эфира ({length}) скачивается — «Загрузки»", { length: length }),
     unavailable: t("Начало эфира не взять: {reason}", { reason: beginning.reason || t("записи эфира на площадке нет") }),
@@ -613,7 +613,7 @@ export function refreshRecordButton() {
     : recording ? t("Остановить запись; записанное сохранится")
     : live ? t("Записать идущий эфир сейчас") : t("Проверить, не в эфире ли канал, и записать");
   view.recordButton.replaceChildren(starting ? h("span", { class: "spinner small" }) : icon(recording ? "stop" : "record"),
-    busy ? (recording || starting ? t("Останавливаю…") : t("Проверяю эфир…"))
+    busy ? (recording || starting ? t("Остановка…") : t("Проверка эфира…"))
          : starting ? t("Запись начинается…") : recording ? t("Остановить запись") : t("Начать запись"));
 }
 
@@ -628,7 +628,7 @@ export function downloadAllListing() {
     t("Скачать всё"), () => {
       const buttonEl = view.allButton;
       buttonEl.disabled = true;
-      buttonEl.replaceChildren(icon("download"), t("Собираю список…"));
+      buttonEl.replaceChildren(icon("download"), t("Сбор списка…"));
       bridge.call("download_all", platform, channel, kind, period)
         .then((result) => toast(result.added
           ? t("Добавлено в загрузки: {count}, уже было: {known}", { count: result.added, known: result.known })
@@ -680,13 +680,15 @@ export function createVideoBrowser(key, load) {
     choice.group, qualityLabel, choice.qualities, chatLabel, choice.chatMode,
     button(t("Снять выбор"), { kind: "ghost", onclick: () => { selected.clear(); refresh(); } }),
     button(t("Скачать"), { kind: "primary", icon: "download", onclick: () => downloadSelected() }));
-  const el = h("div", null, grid, status, moreBox, bar);
+  const el = h("div", { class: "video-browser" }, grid, status, moreBox, bar);
   let loading = false;
 
   function refresh() {
     syncList(grid, listing.entries, (entry) => entry.url || entry.id, createVideoCard, updateCard);
     grid.classList.toggle("selecting", selected.size > 0);
     bar.hidden = selected.size === 0;
+    // полоса прибита к низу окна — под ней не должны прятаться последние карточки
+    el.classList.toggle("has-selection", selected.size > 0);
     // «только чат» — если хоть у одного выбранного видео чат бывает
     choice.setWithChat([...selected.values()].some(chatSupported));
     setText(count, t("Выбрано: {count}", { count: selected.size }));
@@ -841,7 +843,7 @@ export function videoDetail(entry, onDone) {
   setSrc(img, entry.thumbnail);
   // что скачать — переключателем; качество — только у видео (common.js: downloadChoice)
   const choice = downloadChoice(chatSupported(entry));
-  const loadingNote = h("span", { class: "faint" }, h("span", { class: "spinner small" }), t(" узнаю варианты качества…"));
+  const loadingNote = h("span", { class: "faint" }, h("span", { class: "spinner small" }), t(" загрузка вариантов качества…"));
 
   const useSection = h("input", { type: "checkbox" });
   const from = h("input", { type: "text", class: "time", placeholder: "0:00:00" });
@@ -864,7 +866,7 @@ export function videoDetail(entry, onDone) {
   choice.onchange();
 
   const form = h("form", { class: "download-form" },
-    choice.group, choice.qualityRow, choice.chatRow, chatHint,
+    choice.group, h("div", { class: "form-pair" }, choice.qualityRow, choice.chatRow), chatHint,
     h("label", { class: "switch" }, useSection, h("span", { class: "track" }), t("Только отрезок")),
     sectionRow, error,
     h("div", { class: "toolbar" }, submit,
@@ -912,15 +914,22 @@ export function videoDetail(entry, onDone) {
   }
   showJob();
 
-  const meta = h("div", { class: "muted" });
-  const info = h("div", { class: "detail-info" },
-    h("h2", { text: displayTitle(entry.title) || t("Без названия") }),
-    meta, form);
+  // справа от кадра — название и сведения плашками, ниже — что и как скачать: под
+  // кадром не остаётся пустоты, а форма получает всю ширину окна
+  const meta = h("div", { class: "detail-facts" });
+  const title = h("h2", { text: displayTitle(entry.title) || t("Без названия") });
+  const info = h("div", { class: "detail-info" }, title, meta);
   function showMeta() {
-    setText(meta, [entryChannelName(entry.platform, entry.channel), platformName(entry.platform),
-                   entry.timestamp ? fmt.date(entry.timestamp) : "",
-                   entry.duration ? fmt.duration(entry.duration) : "",
-                   entry.view_count ? fmt.views(entry.view_count) : ""].filter(Boolean).join(" · "));
+    setText(title, displayTitle(entry.title) || t("Без названия"));
+    const fact = (iconName, text, hint) => text ? h("span", { class: "detail-fact", title: hint || "" },
+      iconName ? icon(iconName) : null, h("span", { text: text })) : null;
+    meta.replaceChildren(...[
+      fact("user", entryChannelName(entry.platform, entry.channel), t("Канал")),
+      fact(null, platformName(entry.platform)),
+      fact("calendar", entry.timestamp ? fmt.date(entry.timestamp) : "", t("Когда")),
+      fact("clock", entry.duration ? fmt.duration(entry.duration) : "", t("Длительность")),
+      fact("eye", entry.view_count ? fmt.views(entry.view_count) : "", t("Просмотры")),
+    ].filter(Boolean));
   }
   showMeta();
 
@@ -945,7 +954,9 @@ export function videoDetail(entry, onDone) {
   });
 
   return h("div", { class: "video-detail" },
-    h("div", { class: "thumb" }, h("div", { class: "placeholder" }, icon("video")), img), info);
+    h("div", { class: "detail-head" },
+      h("div", { class: "thumb" }, h("div", { class: "placeholder" }, icon("video")), img), info),
+    form);
 }
 
 export async function renderLink(main, url) {

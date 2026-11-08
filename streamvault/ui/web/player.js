@@ -226,7 +226,7 @@ export function openWatch(item, options) {
 
   // ---------------------------------------------------------------- чат
 
-  const status = h("div", { class: "watch-chat-status", text: t("загружаю чат…") });
+  const status = h("div", { class: "watch-chat-status", text: t("загрузка чата…") });
   const list = h("div", { class: "watch-chat-list" });
   const resume = h("button", { type: "button", class: "watch-resume" }, t("Чат приостановлен из-за прокрутки"));
   resume.addEventListener("click", () => {
@@ -476,7 +476,7 @@ export function openWatch(item, options) {
     clipSave.disabled = true;
     bridge.call("cut_clip", item.path, clipStart, clipEnd, Boolean(chat) && clipChat.checked)
       .then(() => {
-        toast(t("Вырезаю клип — он ляжет рядом с записью"), "ok", "#downloads");
+        toast(t("Клип вырезается, он ляжет рядом с записью"), "ok", "#downloads");
         clipStart = clipEnd = null;
         clipBar.hidden = true;
         refreshClip();
@@ -675,7 +675,7 @@ export function openWatch(item, options) {
           bridge.call("convert_recording", item.path)
             .then(() => {
               showEditsNext();
-              toast(t("Конвертирую: {name} — ход виден в «Загрузках»", { name: item.name }), "ok", "#downloads");
+              toast(t("Конвертация: {name}, ход виден в «Загрузках»", { name: item.name }), "ok", "#downloads");
               modal.close();
             })
             .catch((error) => {

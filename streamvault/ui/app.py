@@ -188,9 +188,9 @@ def run(settings_path=DEFAULT_SETTINGS_PATH, browser=False, port=0, open_browser
         # закрываются сразу, а конвертация доделается при следующем запуске
         ending = util.session_ending()
         if ending:
-            logging.info(tr("Windows завершает работу: закрываю записи, конвертация — при следующем запуске"))
+            logging.info(tr("Windows завершает работу: записи закрываются, конвертация — при следующем запуске"))
         else:
-            logging.info(tr("закрываю: останавливаю записи и загрузки, доделываю конвертацию"))
+            logging.info(tr("закрытие программы: записи и загрузки останавливаются, конвертация доделывается"))
         installer.cancel()
         ytdlp_updater.cancel()
         twitchdownloader_installer.cancel()

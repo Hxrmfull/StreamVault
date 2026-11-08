@@ -5,6 +5,62 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.13.0 — 2026-11-08
+
+### Added
+
+- **"Joining" tab in Downloads:** a downloaded stream beginning moves there
+  right away, so it is clear the join is coming: "joining after the
+  recording ends" while recording, "the recording is being processed,
+  joining starts soon" after it, then the join itself with its progress.
+  When the join is done, the row goes back to "Downloads".
+- **The left panel collapses to avatars:** a button at its top; the choice is
+  remembered between starts. Channel names show on hover.
+- **Several viewers at once in the chat window:** clicking a name adds the
+  viewer to "Viewers"; their messages show together, in time order. Names
+  can also be typed in (several at once, separated by commas). Each chip has
+  a × to remove the viewer, a click on the chips shows their messages again,
+  "Whole chat" goes back to the feed.
+- A chat taken from the chat archive is clearly marked as third-party: the
+  menu item is "Get the chat from a third-party archive" with "logs.zonian.dev,
+  a third-party service, not Twitch" under it, the Downloads row names the
+  archive, and the chat window says the history came from it (a mark inside
+  the chat file, so it stays after a restart; for a joined beginning, only
+  the beginning's chat).
+- Every Downloads tab shows how many rows it has, not only the running ones,
+  and while something runs in a tab its name shimmers in the program's purple.
+
+### Fixed
+
+- A downloaded video without chat could get its chat only from its row in
+  Downloads; the library card's menu now has "Get the chat" too.
+- Library sorting "Newest first" went by the stream date, so a VOD from a week
+  ago, downloaded just now, ended up far down. The default is now "Recently
+  added first" (when the file appeared on disk); sorting by the stream date,
+  newest or oldest, is still there.
+- A downloaded stream beginning said "Done" while it was still waiting for
+  the recording to end, and a join seemed to hang at 99%: after the video is
+  joined the program checks its length, joins the chat and replaces the
+  files, which now shows as its own stage ("video joined, checking and
+  replacing files…").
+- Statuses and log lines no longer speak in the first person ("downloading
+  chat", "preparing to join…", "joined, waiting for the player to be
+  closed" instead of "I'm …" forms in the Russian interface).
+- The join is shown in the program's purple instead of teal.
+- The download window had a lot of empty space under the frame: the title and
+  details (as small chips) are now to the right of the frame, and the
+  download choices span the whole width below.
+- The bar of selected videos on a channel page moved up when there were few
+  videos; it now stays at the bottom of the window.
+- Chat window: the search field matches the other fields, with a search icon
+  and a Ctrl+F hint, and Ctrl+F visibly puts the cursor there (the field was
+  already focused on opening, so the shortcut seemed to do nothing). Going to
+  a time is now labelled "Go to" with a button. The empty space between the
+  time and the name is gone. "Summary" and "Open in the browser" moved next
+  to the chat details.
+- Library card: the join progress is no longer a badge at the top of the
+  frame but a strip along its bottom, with the text on it.
+
 ## 0.12.0 — 2026-11-08
 
 ### Added
