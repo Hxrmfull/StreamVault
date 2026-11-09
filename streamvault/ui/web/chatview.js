@@ -19,6 +19,9 @@ const KEEP_CHUNKS = 8;        // столько кусков в ленте, да
 const EDGE = 800;             // пикселей до края ленты — пора догружать
 const MIN_LINES = 80;         // после перехода — хотя бы столько строк, чтобы было что листать
 const BEFORE = 20;            // переход к месту: показать и пару десятков секунд до него
+// протяжка по графику: лента — маленькими кусками, только на экран; остальное — после
+const SCRUB_CHUNK = 90;
+const SCRUB_LINES = 40;
 const SVG = "http://www.w3.org/2000/svg";
 const USERS_LIMIT = 20;       // зрителей выбрать сразу (ui/api.py: USERS_LIMIT)
 
@@ -52,12 +55,12 @@ export function openChatView(item, options) {
     icon("search"), searchInput, h("kbd", { text: "Ctrl+F" }));
   const by = h("select", { title: t("Где искать") },
     h("option", { value: "text", text: t("в сообщениях") }), h("option", { value: "name", text: t("по нику") }));
-  // переход ко времени: часы, минуты, секунды — по две цифры, двоеточия уже стоят
-  const timeParts = [t("часы"), t("минуты"), t("секунды")].map((label) =>
-    h("input", { type: "text", inputmode: "numeric", maxlength: "2", spellcheck: "false", autocomplete: "off",
-                 placeholder: "00", "aria-label": label }));
-  const timeField = h("div", { class: "chatview-time" },
-    timeParts[0], h("span", { text: ":" }), timeParts[1], h("span", { text: ":" }), timeParts[2]);
+  // переход ко времени: маска «00:00:00» уже стоит, цифры заполняют её слева направо,
+  // каретка — сразу за набранным. Поверх поля — та же строка: набранное ярко, остальное бледно
+  const timeInput = h("input", { type: "text", inputmode: "numeric", spellcheck: "false", autocomplete: "off",
+                                 "aria-label": t("Время") });
+  const timeShown = h("div", { class: "chatview-time-shown", "aria-hidden": "true" });
+  const timeField = h("label", { class: "chatview-time" }, timeShown, timeInput);
   const timeGo = iconButton("play", t("Перейти"), () => goToTime());
   const timeBox = h("div", { class: "chatview-timebox", title: t("Перейти к месту чата: время и Enter") },
     h("span", { class: "muted", text: t("Перейти к") }), timeField, timeGo);
@@ -175,7 +178,7 @@ export function openChatView(item, options) {
 
   // перейти к месту: лента заново, от чуть раньше него; quiet — без крутилки
   // (протяжка по графику: старое место видно, пока не пришло новое)
-  async function jumpTo(seconds, mark, quiet) {
+  async function jumpTo(seconds, mark, quiet, light) {
     const mine = ++generation;
     seconds = Math.max(0, Math.min(seconds, chat.length || seconds));
     if (mode !== "feed") showFeed();
@@ -187,12 +190,22 @@ export function openChatView(item, options) {
     loading = true;
     try {
       // реже пишут — берём кусками, пока не наберётся, что листать
+      const step = light ? SCRUB_CHUNK : CHUNK;
       do {
-        const messages = await fetch(to, to + CHUNK);
+        let messages = await fetch(to, to + step);
         if (mine !== generation || closed) return;
+        to += step;
+        if (light && nodes.length + messages.length > SCRUB_LINES) {
+          // при протяжке — только строки на экран: лента дальше догрузится с этого места
+          const cutoff = messages[SCRUB_LINES - nodes.length][0];
+          // много сообщений в одну секунду — не резать посреди неё, иначе кусок вышел бы пустым
+          if (cutoff > messages[0][0]) {
+            messages = messages.filter((message) => message[0] < cutoff);
+            to = cutoff;
+          }
+        }
         nodes.push(...messages.map((message) => line(message)));
-        to += CHUNK;
-      } while (nodes.length < MIN_LINES && to < (chat.length || 0));
+      } while (nodes.length < (light ? SCRUB_LINES : MIN_LINES) && to < (chat.length || 0));
     } catch (error) {
       if (mine === generation) list.replaceChildren(h("div", { class: "warn-text", text: error.message || String(error) }));
       return;
@@ -211,8 +224,8 @@ export function openChatView(item, options) {
         (exact || target).classList.add("chatview-mark");
       }
     }
-    // сверху пусто — догрузить и туда, чтобы можно было листать назад
-    if (from > 0 && list.scrollTop < EDGE) loadBefore();
+    // сверху пусто — догрузить и туда, чтобы можно было листать назад (при протяжке — после неё)
+    if (!light && from > 0 && list.scrollTop < EDGE) loadBefore();
     showPosition();
   }
 
@@ -279,6 +292,7 @@ export function openChatView(item, options) {
       const node = nodes[low];
       const seconds = node && node.dataset.offset !== undefined ? Number(node.dataset.offset) : null;
       setText(position, seconds === null ? "" : fmt.duration(seconds));
+      if (dragging) return;              // при протяжке черта — под мышью, а не у отстающей ленты
       cursor.hidden = seconds === null || !chat.length;
       if (seconds !== null && chat.length) cursor.style.left = Math.min(100, seconds / chat.length * 100) + "%";
     });
@@ -473,77 +487,116 @@ export function openChatView(item, options) {
     suggest.hidden = true;
   });
 
+  const timeDigits = ["0", "0", "0", "0", "0", "0"];
+  let timeTyped = 0;                   // сколько цифр маски набрано
+
+  // где каретка после n набранных цифр: двоеточия перешагиваются
+  const caretAt = (typed) => typed + Math.min(2, Math.floor(typed / 2));
+
+  function drawTime() {
+    const text = timeDigits.slice(0, 2).join("") + ":" + timeDigits.slice(2, 4).join("") + ":"
+      + timeDigits.slice(4).join("");
+    timeInput.value = text;
+    const at = timeTyped ? caretAt(timeTyped) : 0;
+    timeShown.replaceChildren(h("span", { class: "typed", text: text.slice(0, at) }), text.slice(at));
+    if (document.activeElement === timeInput) timeInput.setSelectionRange(at, at);
+  }
+
+  function typeDigit(digit) {
+    if (timeTyped >= 6) return;
+    // десятки минут и секунд — не больше 5: «7» там — это «07»
+    if (timeTyped % 2 === 0 && timeTyped > 0 && digit > "5") {
+      timeDigits[timeTyped] = "0";
+      timeTyped++;
+    }
+    timeDigits[timeTyped] = digit;
+    timeTyped++;
+  }
+
+  function clearTime() {
+    timeDigits.fill("0");
+    timeTyped = 0;
+  }
+
   function goToTime() {
-    const [hours, minutes, seconds] = timeParts.map((part) => part.value);
-    if (!hours && !minutes && !seconds) {
-      timeParts[0].focus();             // пусто — не ошибка: просто курсор в поле
+    if (!timeTyped) {
+      timeInput.focus();               // пусто — не ошибка: просто курсор в поле
       return;
     }
-    if (Number(minutes) > 59 || Number(seconds) > 59) {
+    const [hours, minutes, seconds] = [0, 2, 4].map((at) => Number(timeDigits[at] + timeDigits[at + 1]));
+    if (minutes > 59 || seconds > 59) {
       timeField.classList.add("invalid");
-      timeParts[Number(minutes) > 59 ? 1 : 2].focus();
+      timeInput.focus();
       return;
     }
     timeField.classList.remove("invalid");
     searchInput.value = "";
     ++searchGeneration;
-    jumpTo(Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds));
+    jumpTo(hours * 3600 + minutes * 60 + seconds);
   }
 
-  // время в поле — из любой записи: «1:23:45», «83:20», «90» → по ячейкам
+  // время в поле — из любой записи: «1:23:45», «83:20», «90»
   function fillTime(text) {
     let total = parseTime(text);
     if (total === null) return false;
-    total = Math.floor(total);
+    total = Math.min(Math.floor(total), 99 * 3600 + 3599);
     const values = [Math.floor(total / 3600), Math.floor(total / 60) % 60, total % 60];
-    timeParts.forEach((part, index) => { part.value = String(values[index]).padStart(2, "0").slice(-2); });
+    values.map((value) => String(value).padStart(2, "0")).join("").split("")
+      .forEach((digit, index) => { timeDigits[index] = digit; });
+    timeTyped = 6;
     return true;
   }
 
-  // ячейки по две цифры: набрал две — курсор дальше; «:» или пробел — тоже дальше;
-  // Backspace в пустой — назад; стрелки переходят между ячейками
-  timeParts.forEach((part, index) => {
-    const next = timeParts[index + 1], previous = timeParts[index - 1];
-    part.addEventListener("focus", () => part.select());
-    part.addEventListener("input", () => {
-      timeField.classList.remove("invalid");
-      const digits = part.value.replace(/\D/g, "");
-      if (digits !== part.value) part.value = digits;
-      if (digits.length === 2 && next) next.focus();
-    });
-    part.addEventListener("paste", (event) => {
-      const text = (event.clipboardData || window.clipboardData).getData("text");
-      if (!/[:.]/.test(text)) return;     // одно число — как обычный ввод в ячейку
-      event.preventDefault();
-      if (fillTime(text)) timeParts[2].focus();
-    });
-    part.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        goToTime();
-      } else if ((event.key === ":" || event.key === " " || event.key === ".") && next) {
-        event.preventDefault();
-        if (part.value.length === 1) part.value = "0" + part.value;
-        next.focus();
-      } else if (event.key === "Backspace" && !part.value && previous) {
-        event.preventDefault();
-        previous.focus();
-        previous.value = previous.value.slice(0, -1);
-      } else if (event.key === "ArrowLeft" && part.selectionStart === 0 && part.selectionEnd === 0 && previous) {
-        event.preventDefault();
-        previous.focus();
-      } else if (event.key === "ArrowRight" && part.selectionStart === part.value.length && next) {
-        event.preventDefault();
-        next.focus();
-      }
-    });
-  });
-  // щелчок мимо ячеек (по двоеточию, по краю) — в первую незаполненную
-  timeField.addEventListener("mousedown", (event) => {
-    if (event.target.tagName === "INPUT") return;
+  timeInput.addEventListener("keydown", (event) => {
+    if (event.ctrlKey || event.metaKey || event.altKey) {
+      // Ctrl+A, Ctrl+C, Ctrl+V — как обычно; остальное поле не трогает
+      return;
+    }
+    if (event.key === "Tab") return;
     event.preventDefault();
-    (timeParts.find((part) => part.value.length < 2) || timeParts[2]).focus();
+    timeField.classList.remove("invalid");
+    const all = timeInput.selectionStart === 0 && timeInput.selectionEnd === timeInput.value.length && timeTyped;
+    if (event.key === "Enter") {
+      goToTime();
+      return;
+    }
+    if (event.key === "Escape") {
+      if (timeTyped) {
+        event.stopPropagation();       // сначала очистить поле, окно — следующим Escape
+        clearTime();
+      } else {
+        timeInput.blur();
+      }
+    } else if (/^[0-9]$/.test(event.key)) {
+      if (all) clearTime();            // всё выделено — набранное заменяется
+      typeDigit(event.key);
+    } else if (event.key === "Backspace" || event.key === "Delete") {
+      if (all) clearTime();
+      else if (timeTyped) timeDigits[--timeTyped] = "0";
+    } else if ((event.key === ":" || event.key === " " || event.key === ".") && timeTyped % 2 === 1 && timeTyped < 6) {
+      // «1:» — это «01:»: одна цифра в группе встаёт на место единиц
+      timeDigits[timeTyped] = timeDigits[timeTyped - 1];
+      timeDigits[timeTyped - 1] = "0";
+      timeTyped++;
+    }
+    drawTime();
   });
+  timeInput.addEventListener("paste", (event) => {
+    event.preventDefault();
+    const text = (event.clipboardData || window.clipboardData).getData("text");
+    if (fillTime(text)) {
+      timeField.classList.remove("invalid");
+      drawTime();
+    }
+  });
+  // каретка всегда за набранным: щелчок и фокус её туда и ставят (выделение мышью — можно)
+  const placeCaret = () => setTimeout(() => {
+    if (document.activeElement === timeInput && timeInput.selectionStart === timeInput.selectionEnd) drawTime();
+  }, 0);
+  timeInput.addEventListener("focus", placeCaret);
+  timeInput.addEventListener("mouseup", placeCaret);
+  timeInput.addEventListener("input", drawTime);   // что-то вставилось мимо keydown — вернуть маску
+  drawTime();
 
   // Ctrl+F — к поиску, как в браузере: курсор в поле, и поле на миг подсвечено
   function onKey(event) {
@@ -629,11 +682,19 @@ export function openChatView(item, options) {
       while (scrubTarget !== null && !closed) {
         const target = scrubTarget;
         scrubTarget = null;
-        await jumpTo(target, null, true);
+        await jumpTo(target, null, true, true);
       }
     } finally {
       scrubBusy = false;
     }
+    if (!dragging) afterScrub();
+  }
+  // отпустили — догрузить ленту вокруг места, черта — к ней
+  function afterScrub() {
+    if (closed) return;
+    if (list.scrollTop < EDGE) loadBefore();
+    else if (list.scrollHeight - list.scrollTop - list.clientHeight < EDGE) loadAfter();
+    showPosition();
   }
   function scrubAt(event) {
     const seconds = timeAt(event);
@@ -660,8 +721,11 @@ export function openChatView(item, options) {
     if (dragging) scrubAt(event); else showHover(event);
   });
   const stopDrag = () => {
+    if (!dragging) return;
     dragging = false;
     activity.classList.remove("dragging");
+    // лента уже на месте — догрузка вокруг; ещё грузится — сделает scrubTo по окончании
+    if (!scrubBusy) afterScrub();
     if (!activity.matches(":hover")) hoverTime.hidden = true;
   };
   activity.addEventListener("pointerup", stopDrag);

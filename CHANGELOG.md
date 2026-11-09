@@ -5,6 +5,29 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- The left channel panel collapses and expands smoothly: the width slides,
+  the labels fade, avatars and buttons stay in place.
+
+### Fixed
+
+- The desktop icon jumped to a free spot after every update: the installer
+  re-created the shortcut. An existing shortcut is now left alone on update.
+- Dragging along the chat window's activity graph lagged behind the mouse,
+  especially in big chats: each step rebuilt the whole feed, and the line
+  jumped back to the not yet updated feed. Now the line stays under the
+  mouse, a drag puts only the lines that fit on screen into the feed, and
+  the rest loads once the button is released. In a 40,000-message chat
+  that is about 8 ms per step instead of 130.
+- The "Go to" field in the chat window: the caret sat between the zeros of
+  an empty cell. It is now one field with a ready "00:00:00" mask: digits
+  fill it from the left, typed ones bright and the rest dim, and the caret
+  always right after the last digit. A "7" in the tens of minutes or seconds
+  becomes "07", "1:" becomes "01:", Backspace erases the last digit.
+
 ## 0.14.0 — 2026-11-09
 
 ### Added

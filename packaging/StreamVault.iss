@@ -71,7 +71,9 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
+; Ярлык на рабочем столе уже есть (обновление) — не пересоздаётся: пересозданный
+; Windows ставит на свободное место, и значок прыгал после каждого обновления
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon; Check: NoDesktopIconYet
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
@@ -93,6 +95,11 @@ begin
       Result := True;
       Exit;
     end;
+end;
+
+function NoDesktopIconYet: Boolean;
+begin
+  Result := not FileExists(ExpandConstant('{autodesktop}\{#AppName}.lnk'));
 end;
 
 // «Запускать вместе с Windows» из окна программы пишет её путь в автозапуск;

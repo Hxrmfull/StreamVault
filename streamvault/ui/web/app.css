@@ -1052,23 +1052,28 @@ select { padding-right: 6px; }
 }
 .chatview-searchbox.flash { animation: chatview-flash .6s ease; }
 @keyframes chatview-flash { 0%, 100% { box-shadow: 0 0 0 3px rgba(145, 71, 255, .22); } 40% { box-shadow: 0 0 0 6px rgba(145, 71, 255, .5); } }
-/* «Перейти к [чч:мм:сс] ▶»: три ячейки по две цифры в одной рамке, двоеточия стоят сами */
+/* «Перейти к [00:00:00] ▶»: маска уже стоит; поле прозрачное, видна строка под ним —
+   набранное ярко, остальное бледно; каретка — от самого поля */
 .chatview-timebox { display: flex; align-items: center; gap: 6px; }
 .chatview-time {
-  display: flex; align-items: center; height: 34px; padding: 0 8px; cursor: text;
+  position: relative; display: block; width: 92px; height: 34px; cursor: text;
   border: 2px solid var(--control-border); border-radius: var(--radius); background: var(--bg);
-  font-variant-numeric: tabular-nums; transition: border-color .15s ease, box-shadow .15s ease;
+  transition: border-color .15s ease, box-shadow .15s ease;
 }
 .chatview-time:hover { border-color: #7c7c86; }
 .chatview-time:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(145, 71, 255, .22); }
 .chatview-time.invalid { border-color: var(--error); }
-.chatview-time span { color: var(--muted); padding: 0 1px; }
+.chatview-time input, .chatview-time-shown {
+  position: absolute; inset: 0; width: 100%; height: 100%; padding: 0 10px; border: 0; margin: 0;
+  font: inherit; font-variant-numeric: tabular-nums; letter-spacing: .02em; line-height: 30px; text-align: left;
+}
 .chatview-time input {
-  width: 2.4ch; height: 100%; padding: 0; border: 0; outline: none; background: none; box-shadow: none;
-  color: var(--text); font: inherit; text-align: center;
+  background: none; outline: none; box-shadow: none; color: transparent; caret-color: var(--text);
 }
 .chatview-time input:focus { box-shadow: none; }
-.chatview-time input::placeholder { color: var(--faint); }
+.chatview-time input::selection { background: rgba(145, 71, 255, .45); }
+.chatview-time-shown { color: var(--faint); pointer-events: none; white-space: pre; }
+.chatview-time-shown .typed { color: var(--text); }
 /* лента и справа панель «Зрители»: поле для ника, плашки, их сообщения */
 .chatview-main { display: flex; min-height: 0; margin: 10px -24px 0; border-top: 1px solid var(--border); }
 .chatview-feed { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
@@ -1261,13 +1266,31 @@ select { padding-right: 6px; }
 }
 .sidebar-bottom .icon-button { color: var(--muted); }
 .sidebar-bottom .icon-button:hover { color: var(--text); }
-/* свёрнутая панель — только аватарки (имя — подсказкой при наведении); значок «+» остаётся */
+/* свёрнутая панель — только аватарки (имя — подсказкой при наведении); значок «+» остаётся.
+   Сворачивается плавно: ширина едет, подписи гаснут, аватарки и кнопки не прыгают —
+   встают по центру узкой панели отступами, а не сменой выравнивания */
 body.sidebar-collapsed { --sidebar: 60px; }
+.sidebar { overflow-x: hidden; }
+.sidebar-head > span, .channel-item .meta, .channel-item .status, .sidebar-empty { transition: opacity .18s ease; }
+.channel-item { overflow: hidden; }
 body.sidebar-collapsed .sidebar-head > span, body.sidebar-collapsed .channel-item .meta,
-body.sidebar-collapsed .channel-item .status, body.sidebar-collapsed .sidebar-empty { display: none; }
-body.sidebar-collapsed .sidebar-head { justify-content: center; padding: 10px 0 6px; }
-body.sidebar-collapsed .channel-item { justify-content: center; padding: 6px 0; }
-body.sidebar-collapsed .sidebar-bottom { justify-content: center; padding: 8px 0; }
+body.sidebar-collapsed .channel-item .status, body.sidebar-collapsed .sidebar-empty { opacity: 0; pointer-events: none; }
+body.sidebar-collapsed .sidebar-head > span { flex: 1 1 0; min-width: 0; overflow: hidden; white-space: nowrap; }
+body.sidebar-collapsed .sidebar-empty { white-space: nowrap; overflow: hidden; }
+/* «+» и кнопка сворачивания (28 пикселей) — по центру 60: (60 − 28) / 2 */
+body.sidebar-collapsed .sidebar-head { padding: 10px 16px 6px 0; }
+/* аватарка 30 пикселей — по центру: (60 − 30) / 2 */
+body.sidebar-collapsed .channel-item { padding: 5px 15px; }
+body.sidebar-collapsed .sidebar-bottom { padding: 8px 16px; }
+body.sidebar-animate .sidebar { transition: width .22s ease; }
+body.sidebar-animate .sidebar-head, body.sidebar-animate .channel-item, body.sidebar-animate .sidebar-bottom {
+  transition: padding .22s ease;
+}
+body.sidebar-animate .selection-bar { transition: left .22s ease; }
+@media (prefers-reduced-motion: reduce) {
+  body.sidebar-animate .sidebar, body.sidebar-animate .sidebar-head, body.sidebar-animate .channel-item,
+  body.sidebar-animate .sidebar-bottom, body.sidebar-animate .selection-bar { transition: none; }
+}
 
 @media (max-width: 1100px) {
   :root { --sidebar: 60px; }

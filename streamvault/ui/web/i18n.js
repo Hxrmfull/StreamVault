@@ -571,9 +571,7 @@
     "Чат не открылся": "The chat did not open",
     "Файла чата рядом с записью нет: его не записали, перенесли или удалили. Скачать чат можно в меню «⋯» записи в библиотеке.":
       "There is no chat file next to the recording: it was not recorded, or it was moved or deleted. The chat can be downloaded from the recording’s “⋯” menu in the library.",
-    "часы": "hours",
-    "минуты": "minutes",
-    "секунды": "seconds",
+    "Время": "Time",
     "Когда": "When",
     "Перейти": "Go",
     "Перейти к": "Go to",

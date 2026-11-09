@@ -397,6 +397,8 @@ function setupSidebarToggle() {
   let collapsed = false;
   try { collapsed = localStorage.getItem("sidebar-collapsed") === "1"; } catch (error) { /* не помним — развёрнута */ }
   apply(collapsed);
+  // плавно — только по нажатию: при запуске панель сразу такая, какой её оставили
+  requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.add("sidebar-animate")));
   toggle.addEventListener("click", () => {
     collapsed = !document.body.classList.contains("sidebar-collapsed");
     apply(collapsed);
