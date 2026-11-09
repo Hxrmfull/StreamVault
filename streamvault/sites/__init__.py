@@ -215,6 +215,17 @@ def enrich_listing(platform, channel, kind, result):
         logging.debug("список %s:%s не дополнен: %s", platform, channel, error)
 
 
+def video_url(platform, video_id, channel=""):
+    """
+    Ссылка на видео площадки по id из имени скачанного файла («[id]»), когда
+    строки загрузки с его ссылкой уже нет: (ссылка, вид — vod, clip, video)
+    или None, если по id её не собрать.
+    """
+    module = SITES.get(platform)
+    make = getattr(module, "video_url", None) if module is not None else None
+    return make(str(video_id or ""), str(channel or "")) if make else None
+
+
 def recording_chat(platform, kind, live_status=""):
     """Бывает ли чат у загрузки этого вида."""
     module = SITES.get(platform)

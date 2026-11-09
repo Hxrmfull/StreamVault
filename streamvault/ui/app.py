@@ -177,6 +177,8 @@ def run(settings_path=DEFAULT_SETTINGS_PATH, browser=False, port=0, open_browser
               positions=Positions(os.path.join(app_dir, "cache", "positions.json")),
               editor=editor, integrity=integrity, checker=checker,
               storyboards=Storyboards(os.path.join(app_dir, "cache"), ffmpeg.path), chat_index=chat_index)
+    # чат записи готов — точные разрывы связи с чатом докачиваются сами
+    bus.subscribe(lambda event: api.fill_recorded_gaps(event["path"]) if event["type"] == "chat_ready" else None)
     logging.info(tr("StreamVault {version} запущен", version=__version__))
 
     try:

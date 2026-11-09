@@ -72,7 +72,7 @@ themselves from the app.
   public chat archive (logs.zonian.dev) — Twitch only: Kick, YouTube and
   VK Video Live have no such archives. Gaps in a recorded chat (dropped
   connection, suspicious silence) are found and filled from the Twitch VOD
-  or the archive; Kick and YouTube are not supported yet, VK Video Live has
+  or the archive, dropped connections by themselves right after recording; Kick and YouTube are not supported yet, VK Video Live has
   no source for them.
 - **Downloads:** VODs, highlights and clips from a link or a channel tab,
   quality choice, only a section of a video, "Download all" for a whole tab.

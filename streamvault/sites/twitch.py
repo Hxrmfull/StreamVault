@@ -6,6 +6,7 @@ Twitch. Без своих ключей — GQL сайта twitch.tv с его о
 """
 
 import logging
+import re
 import threading
 
 import requests
@@ -48,6 +49,17 @@ BEGINNING = "live"
 GQL_STREAM = ("query($login: String!) { user(login: $login) "
               "{ stream { createdAt archiveVideo { id } } } }")
 VIDEO = "https://www.twitch.tv/videos/{id}"
+CLIP = "https://clips.twitch.tv/{id}"
+
+
+def video_url(video_id, channel=""):
+    """По id из имени файла: запись эфира — «v123» или число, клип — слово из букв и цифр."""
+    match = re.fullmatch(r"v?(\d+)", video_id)
+    if match:
+        return VIDEO.format(id=match.group(1)), "vod"
+    if re.fullmatch(r"[A-Za-z0-9_-]{3,100}", video_id):
+        return CLIP.format(id=video_id), "clip"
+    return None
 
 UNSUPPORTED = {}
 

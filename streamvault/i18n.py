@@ -827,6 +827,15 @@ STRINGS = {
     'длительность': 'duration',
     'качество': 'quality',
     'пусто': 'empty',
+    'пропуски чата докачиваются, ход во вкладке «Чаты»': 'chat gaps are being filled, progress in the “Chats” tab',
+    'чат из архива загружается, ход во вкладке «Чаты»': 'the chat is loading from the archive, progress in the “Chats” tab',
+    'по имени файла видео на площадке не найти': 'the video cannot be found on the platform by the file name',
+    'разрывы связи с чатом при записи: {count} — докачиваются сами: {name}':
+        'connection drops in the chat while recording: {count}, filling them automatically: {name}',
+    'так чат берётся только у скачанных видео': 'this way the chat is taken only for downloaded videos',
+    'в имени файла нет id видео — без него видео на площадке не найти':
+        'the file name has no video id; without it the video cannot be found on the platform',
+    'чат у этого видео уже есть': 'this video already has a chat',
     'пропуски чата докачиваются только у своих записей эфиров': 'chat gaps are filled only for your own stream recordings',
     'у записи нет чата, его можно скачать целиком': 'the recording has no chat; it can be downloaded whole',
     'пропусков в чате не найдено': 'no gaps found in the chat',

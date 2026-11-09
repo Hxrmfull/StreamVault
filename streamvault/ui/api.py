@@ -10,6 +10,7 @@
 
 import collections
 import copy
+import glob
 import logging
 import os
 import re
@@ -115,6 +116,7 @@ class Api:
         "watch_live", "live_status", "chat_activity", "storyboard", "check_recording",
         "search_chats", "broadcast_summary",
         "library", "library_preview", "library_chat", "delete_file", "chat_gaps_status", "recording_chat_gaps",
+        "file_chat_status", "file_chat",
         "ffmpeg_status", "install_ffmpeg", "cancel_ffmpeg_install", "choose_ffmpeg",
         "check_ffmpeg", "ytdlp_status", "update_ytdlp", "cancel_ytdlp_update",
         "twitchdownloader_status", "install_twitchdownloader", "cancel_twitchdownloader_install",
@@ -428,6 +430,51 @@ class Api:
         """Чат к уже скачанной записи или клипу."""
         self._downloads.fetch_chat(str(job_id), mode if mode in chat.MODES else None)
 
+    def _file_video(self, path):
+        """
+        Скачанное видео без строки в «Загрузках» (список очистили): площадка
+        и канал — по папке, ссылка — по id в имени файла. (путь, площадка,
+        канал, сведения из имени, ссылка, вид); чат не взять — ValueError.
+        """
+        from ..library import parse_download_name
+        path = self._media(path)
+        try:
+            relative = os.path.relpath(path, self._downloads.downloads_dir()).split(os.sep)
+        except ValueError:
+            relative = [".."]
+        if relative[0] == ".." or len(relative) < 3:
+            raise ValueError(tr("так чат берётся только у скачанных видео"))
+        platform, label = relative[0], relative[1]
+        named = parse_download_name(os.path.splitext(os.path.basename(path))[0])
+        if not named.get("video_id"):
+            raise ValueError(tr("в имени файла нет id видео — без него видео на площадке не найти"))
+        found = sites.video_url(platform, named["video_id"], label)
+        if found is None:
+            raise ValueError(tr("по имени файла видео на площадке не найти"))
+        if not sites.recording_chat(platform, found[1]):
+            raise ValueError(tr("у этого видео чата не бывает"))
+        if chat.existing(path).get("json"):
+            raise ValueError(tr("чат у этого видео уже есть"))
+        return path, platform, label, named, found[0], found[1]
+
+    def file_chat_status(self, path):
+        """Можно ли скачать чат к видео без строки в «Загрузках»: {"ok", "reason"} — без сети."""
+        try:
+            self._file_video(path)
+        except ValueError as error:
+            return {"ok": False, "reason": str(error)}
+        return {"ok": True, "reason": ""}
+
+    def file_chat(self, path):
+        """Чат к скачанному видео, у которого нет строки в «Загрузках»: «только чат» рядом с ним."""
+        path, platform, label, named, url, kind = self._file_video(path)
+        mode = self._settings["chat_mode"] if self._settings["chat_mode"] != chat.NONE else chat.TEXT
+        meta = {"id": named["video_id"], "title": named.get("title") or "", "channel": label, "folder": label,
+                "platform": platform, "kind": kind, "timestamp": named.get("timestamp")}
+        job_id = self._downloads.add(url, quality=dl.CHAT_ONLY, meta=meta, chat_mode=mode,
+                                     target=os.path.splitext(path)[0])
+        return {"added": 1, "id": job_id}
+
     def recording_chat(self, path):
         """
         Чат своей записи эфира, если при записи его не было: из записи этого
@@ -518,6 +565,8 @@ class Api:
         Спрашивает архив, за какие дни у него есть чат канала, — это сеть.
         """
         from ..archive import chatlogs
+        if self._chat_job_going(path, dl.CHAT_ARCHIVE):
+            return {"ok": False, "reason": tr("чат из архива загружается, ход во вкладке «Чаты»")}
         try:
             login, plan = self._archive_plan(path)
             known = chatlogs.available_days(login)
@@ -592,12 +641,29 @@ class Api:
             raise ValueError(tr("докачка пропусков чата пока только у Twitch"))
         return platform, login, found
 
+    def _chat_job_going(self, path, quality):
+        """
+        Идёт ли (или ждёт) загрузка чата quality у какой-нибудь части эфира path:
+        пока она не кончилась, меню не должно звать её второй раз или говорить,
+        что всё уже есть, — чат в этот момент переписывается.
+        """
+        try:
+            stems = {os.path.normcase(os.path.splitext(part)[0]) for _, part in broadcast_parts(self._media(path))}
+        except ValueError:
+            return False
+        going = (dl.QUEUED, dl.DOWNLOADING, dl.PROCESSING)
+        return any(job.get("quality") == quality and job.get("state") in going
+                   and os.path.normcase(job.get("fixed_target") or "") in stems
+                   for job in self._downloads.snapshot()["jobs"])
+
     def chat_gaps_status(self, path):
         """
         Есть ли в чате записи пропуски и можно ли их докачать: {"ok", "reason",
         "gaps", "seconds"}. Только по самому чату, без сети: откуда докачать,
         выяснит загрузка.
         """
+        if self._chat_job_going(path, dl.CHAT_GAPS):
+            return {"ok": False, "reason": tr("пропуски чата докачиваются, ход во вкладке «Чаты»")}
         try:
             _, _, found = self._chat_gaps(path)
         except ValueError as error:
@@ -607,6 +673,41 @@ class Api:
         exact = any(gap[2] == "recorded" for gap in gaps)
         return {"ok": True, "gaps": len(gaps), "seconds": round(seconds),
                 "reason": tr("разрывы связи при записи") if exact else tr("чат молчал дольше обычного")}
+
+    def fill_recorded_gaps(self, video):
+        """
+        Чат записи готов: точные разрывы связи с чатом (отмеченные при записи)
+        докачиваются сами, без кнопки, — только у Twitch, откуда их есть взять.
+        Догадки (тишина, позднее начало) — только кнопкой: там чат мог и молчать.
+        Начало эфира ещё не склеено — ждём: после склейки чат готовится заново.
+        Возвращает id загрузки или None.
+        """
+        from ..library import parse_recording_name, read_chat_facts
+        try:
+            video = self._media(video)
+        except ValueError:
+            return None
+        stem = os.path.splitext(video)[0]
+        if glob.glob(glob.escape(stem + dl.PART00) + ".*"):
+            return None
+        try:
+            platform, login, timeline = self._part_timeline(video)
+        except ValueError:
+            return None
+        if platform != "twitch":
+            return None
+        start = next((begin for part, begin, _ in timeline if os.path.normcase(part) == os.path.normcase(video)), None)
+        json_path = chat.chat_paths(video)["json"]
+        if start is None or not os.path.isfile(json_path):
+            return None
+        gaps = [gap for gap in read_chat_facts(json_path).get("gaps") or () if gap[2] == "recorded"]
+        if not gaps:
+            return None
+        title = parse_recording_name(os.path.basename(stem)).get("title") or ""
+        mode = self._settings["chat_mode"] if self._settings["chat_mode"] != chat.NONE else chat.TEXT
+        logging.info(tr("разрывы связи с чатом при записи: {count} — докачиваются сами: {name}",
+                        count=len(gaps), name=os.path.basename(video)))
+        return self._downloads.add_gap_chat(video, platform, login, start, gaps, title=title, chat_mode=mode)
 
     def recording_chat_gaps(self, path):
         """Докачать пропуски чата записи: по загрузке на часть. {"added": сколько поставлено}."""
@@ -814,7 +915,34 @@ class Api:
                             "gaps": None if only_chat else self._gaps(part)}
                            for index, (part, duration, json) in enumerate(zip(parts, durations, chats))]
         result["chat_only"] = only_chat is not None
+        # частые смайлы — с картинками: [название, сколько, адрес картинки или ""]
+        images = self._emote_images([json for json in chats if os.path.isfile(json)],
+                                    [name for name, _ in result["top_emotes"]])
+        result["top_emotes"] = [[name, count, images.get(name, "")] for name, count in result["top_emotes"]]
         return result
+
+    def _emote_images(self, json_paths, names):
+        """
+        Картинки смайлов по названию — из чатов частей: {название: адрес}. Адрес —
+        тот же, что у окна чата (встроенные смайлы — через свой сервер картинок).
+        """
+        wanted, found = set(names), {}
+        for json_path in json_paths:
+            if not wanted - set(found):
+                break
+            try:
+                chat_id, replay = self._open_chat(json_path)
+            except (OSError, ValueError):
+                continue
+            for message in replay.messages:
+                for part in message[4]:
+                    if isinstance(part, str) or len(part) < 2 or part[1] not in wanted or part[1] in found:
+                        continue
+                    image = replay.images[part[0]] if 0 <= part[0] < len(replay.images) else ""
+                    found[part[1]] = image if str(image).startswith("https://")                         else self._media_server.image_url(chat_id, part[0])
+                if len(found) == len(wanted):
+                    break
+        return found
 
     # ------------------------------------------------------------ идущая запись
 

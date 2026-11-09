@@ -114,8 +114,9 @@ export function receive(batch) {
     if (["live", "channel", "downloads"].includes(state.route.name)) refreshView();
     ensureProfiles([...state.channels.keys()]);
   }
+  // счётчик и перелив «Загрузок» — после любого события: запись, склейка, загрузка
+  refreshDownloadsCount();
   if (jobsChanged) {
-    refreshDownloadsCount();
     if (state.route.name === "downloads" || state.route.name === "channel"
         || state.route.name === "link") refreshView();
   }

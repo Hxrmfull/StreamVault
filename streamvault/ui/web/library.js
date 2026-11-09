@@ -5,7 +5,7 @@
 
 import { openActionMenu } from "./menu.js";
 import { CONVERT_FORMATS, SPLIT_MODES, showEditsNext, siteInfo, bridge, chatSupported, fillChannelLine, button, channelName, confirmDialog, displayTitle, ensureProfiles, failed, fmt, h, icon, iconButton, openModal, platformName, safeUrl, setSrc, setText, state, syncList, t, toast, tp } from "./common.js";
-import { joiningText } from "./downloads.js";
+import { awaitingJoin, joiningText, recordingGoes } from "./downloads.js";
 import { openWatch } from "./player.js";
 import { openChatSearch, openSummary } from "./summary.js";
 import { messagesText, openChatView } from "./chatview.js";
@@ -307,7 +307,9 @@ export function createLibraryCard() {
   // склейка начала эфира с записью: идёт или не вышла — видно прямо на карточке
   card._join = h("span", { class: "badge dark" });
   // склейка идёт — полосой по низу кадра, с подписью прямо на ней
-  card._joinText = h("span", { class: "card-join-text" });
+  // подпись — своим элементом: длинная обрезается многоточием, точка остаётся на месте
+  card._joinLabel = h("span", { class: "card-join-label" });
+  card._joinText = h("span", { class: "card-join-text" }, card._joinLabel);
   card._joinBar = h("div", { class: "progress join card-join-bar" }, h("div", { class: "bar" }), card._joinText);
   card._joinBar.hidden = true;
   card._title = h("div", { class: "card-title" });
@@ -371,6 +373,9 @@ function cardAbilities(item) {
       ? [...state.jobs.values()].find((job) => job.state === "done" && job.file && paths.has(same(job.file))
                                              && chatSupported(job)) || null
       : null,
+    // скачанное видео без чата, строки которого в «Загрузках» уже нет: ссылка — по id в имени
+    fileChat: item.kind === "download" && !onlyChat && !item.edit && !parts.some((part) => part.chat && part.chat.json)
+      && ![...state.jobs.values()].some((job) => job.file && paths.has(same(job.file))),
     // архив чатов — у своих записей эфиров; можно ли сейчас, скажет сама программа
     archive: item.kind === "record" && !item.edit && !onlyChat,
     // пропуски в чате записи (разрывы связи, подозрительная тишина) — докачать
@@ -425,6 +430,10 @@ async function openCardMenu(card, at) {
      can.downloadChat ? { icon: "download", label: t("Скачать чат"),
                           title: t("Чат этого видео с площадки — рядом с ним; ход в «Загрузках»"),
                           onclick: run(() => bridge.call("download_chat", can.downloadChat.id).then(chatInDownloads)) } : null,
+     can.fileChat ? { icon: "download", label: t("Скачать чат"), checking: t("проверка…"),
+                      check: () => bridge.call("file_chat_status", item.path).then((answer) => ({
+                        disabled: !answer.ok, hint: answer.reason })),
+                      onclick: run(() => bridge.call("file_chat", item.path).then((answer) => chatInDownloads(answer, "chats"))) } : null,
      can.chatFetch ? { icon: "download", label: t("Скачать чат с площадки"),
                        title: t("Чата при записи не было — взять его из записи эфира на площадке"),
                        onclick: () => fetchRecordingChat(item) } : null,
@@ -681,11 +690,23 @@ export function updateLibraryCard(card, item) {
   const lost = gaps.reduce((sum, part) => sum + part.lost, 0);
   card._gaps.hidden = !gapCount;
   const join = parts.map((part) => state.joins.get(part.path)).find((event) => event && event.state !== "done");
-  // не склеилось — меткой сверху; идёт — полосой по низу кадра с подписью на ней
+  // начало эфира скачано и ждёт склейки (запись ещё идёт или обрабатывается) — тоже полосой
+  const paths = new Set(parts.map((part) => part.path.replace(/\//g, "\\").toLowerCase()));
+  const waitingJob = join ? null : [...state.jobs.values()].find((job) => awaitingJoin(job) && job.file
+    && paths.has(job.file.replace(/\//g, "\\").toLowerCase()));
+  // не склеилось — меткой сверху; идёт или готовится — полосой по низу кадра с подписью на ней
   const joining = Boolean(join) && join.state === "joining";
   card._join.hidden = !join || joining;
-  card._joinBar.hidden = !joining;
-  card.classList.toggle("joining", joining);
+  card._joinBar.hidden = !joining && !waitingJob;
+  card.classList.toggle("joining", joining || Boolean(waitingJob));
+  if (waitingJob) {
+    const later = recordingGoes(waitingJob);
+    setText(card._joinLabel, later ? t("склейка после конца записи") : t("подготовка к склейке…"));
+    card._joinBar.title = later ? t("Начало эфира скачано, склейка после конца записи")
+      : t("Начало эфира скачано, запись обрабатывается, склейка скоро начнётся");
+    card._joinBar.firstChild.style.width = "0%";
+    card._joinBar.classList.add("indeterminate");
+  }
   if (join && !joining) {
     card._join.className = "badge warn";
     setText(card._join, t("не склеено"));
@@ -693,7 +714,7 @@ export function updateLibraryCard(card, item) {
   }
   if (joining) {
     const percent = join.waiting ? 100 : join.percent || 0;
-    setText(card._joinText, join.waiting ? t("склеено, ожидание закрытия проигрывателя")
+    setText(card._joinLabel, join.waiting ? t("склеено, ожидание закрытия проигрывателя")
       : join.stage === "repack" ? t("подготовка к склейке…")
       : join.stage === "finish" ? t("завершение склейки…") : t("склеивается {percent}%", { percent: percent }));
     card._joinBar.title = joiningText(join);

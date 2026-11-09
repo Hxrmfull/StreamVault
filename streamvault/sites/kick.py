@@ -43,6 +43,17 @@ CHAT_KINDS = ("vod", "clip")
 # (в списке записей канала она с is_live), — начало берётся из неё сразу.
 BEGINNING = "live"
 VIDEO_PAGE = "https://kick.com/{slug}/videos/{id}"
+CLIP_PAGE = "https://kick.com/{slug}/clips/{id}"
+
+
+def video_url(video_id, channel=""):
+    """По id из имени файла и папке канала: клип Kick — «clip_…», остальное — запись эфира."""
+    slug = channel.strip().lower()
+    if not re.fullmatch(r"[a-z0-9_-]{1,64}", slug) or not re.fullmatch(r"[A-Za-z0-9_-]{3,100}", video_id):
+        return None
+    if video_id.startswith("clip_"):
+        return CLIP_PAGE.format(slug=slug, id=video_id), "clip"
+    return VIDEO_PAGE.format(slug=slug, id=video_id), "vod"
 
 UNSUPPORTED = {}
 

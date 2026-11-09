@@ -689,6 +689,8 @@ class ChatFinisher(threading.Thread):
         self._lock = threading.Lock()
         self._process = None
         self._missing_reported = False
+        # чат части готов (HTML сделан): on_ready(видео) — например, докачать разрывы связи
+        self.on_ready = None
 
     def finish(self, recorded, video):
         """
@@ -886,3 +888,8 @@ class ChatFinisher(threading.Thread):
         finally:
             self._process = None
         logging.info(tr("чат эфира готов: {name}", name=os.path.basename(paths["html"])))
+        if self.on_ready is not None:
+            try:
+                self.on_ready(video)
+            except Exception:
+                logging.exception(tr("чат эфира: сбой"))

@@ -11,9 +11,39 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 - The left channel panel collapses and expands smoothly: the width slides,
   the labels fade, avatars and buttons stay in place.
+- "Popular emotes" in the summary show the emote images, as in the chat
+  window.
+- A channel page has the platform's icon next to the name: a click opens the
+  channel on the platform in the browser (instead of the platform label and
+  the button on the right). The icon is grey in a frame and lights up in the
+  platform's colour on hover.
+- "Downloads" in the top menu shimmers in purple while something runs there:
+  a recording, a join, a download or an edit, like the tab names.
+- A recording's card shows the join strip before the join itself too:
+  "joining after the recording ends" while recording and "preparing to
+  join…" while it is processed.
+- "Download chat" in the menu of a downloaded video without chat works even
+  when its row is gone from Downloads (the list was cleared): the video link
+  is built from the id in the file name. The chat lands next to the video,
+  progress shows in the "Chats" tab.
+- Exact connection drops noted while recording the chat are filled
+  automatically once the recording's chat is ready (for a recording joined
+  with the stream beginning, after the join). Twitch only for now. Guesses
+  (silence, late start) still need the button: the chat may really have
+  been silent there.
 
 ### Fixed
 
+- While chat gaps were being filled, the card menu could offer filling again
+  or say there were no gaps: the chat is already rewritten by then while
+  emotes and HTML are still being made. It now says "chat gaps are being
+  filled, progress in the Chats tab"; the same for an archive chat.
+- The join strip's label ("joined, waiting for the player to close") ran
+  into the card's edge: it is lighter now, fits, and a long one ends with an
+  ellipsis.
+- A Downloads row of an archive chat or chat gaps shows the recording's
+  frame right away rather than at the end, and no longer has a stray
+  "Download chat" button.
 - The desktop icon jumped to a free spot after every update: the installer
   re-created the shortcut. An existing shortcut is now left alone on update.
 - Dragging along the chat window's activity graph lagged behind the mouse,
@@ -22,11 +52,18 @@ versions follow [Semantic Versioning](https://semver.org/).
   mouse, a drag puts only the lines that fit on screen into the feed, and
   the rest loads once the button is released. In a 40,000-message chat
   that is about 8 ms per step instead of 130.
+- During a fast drag along the graph the feed's scrollbar thumb jumped and
+  stretched, since the feed is short meanwhile. It is now hidden while the
+  button is held and comes back once the feed has loaded around the spot.
 - The "Go to" field in the chat window: the caret sat between the zeros of
   an empty cell. It is now one field with a ready "00:00:00" mask: digits
   fill it from the left, typed ones bright and the rest dim, and the caret
   always right after the last digit. A "7" in the tens of minutes or seconds
-  becomes "07", "1:" becomes "01:", Backspace erases the last digit.
+  becomes "07", "1:" becomes "01:", Backspace erases the last digit. A time
+  past the end of the chat cannot be typed: the digit is not taken, the
+  field shakes and shows "The chat lasts …" below; a digit that does not
+  fit as tens but fits as units goes into the units ("1" in a 4:46 chat
+  becomes "01").
 
 ## 0.14.0 — 2026-11-09
 

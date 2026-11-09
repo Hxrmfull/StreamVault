@@ -30,6 +30,18 @@ LISTINGS = {
 
 CHAT_KINDS = ("vod", "clip")
 
+
+def video_url(video_id, channel=""):
+    """
+    По id из имени файла и папке канала. У VK по id не отличить запись эфира
+    от клипа: ссылка — на запись эфира (их скачивают чаще); у клипа загрузка
+    чата скажет, что такой записи нет.
+    """
+    name = _name(channel)
+    if not name or not re.fullmatch(r"[A-Za-z0-9_-]{3,100}", video_id):
+        return None
+    return "https://live.vkvideo.ru/%s/record/%s" % (name, video_id), "vod"
+
 # Запись с начала эфира: VK выкладывает запись эфира в записи канала,
 # когда он кончился, — начало берётся из неё после конца эфира.
 BEGINNING = "ended"

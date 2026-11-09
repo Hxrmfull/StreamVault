@@ -103,9 +103,12 @@ export function openSummary(item, options) {
     const chatItem = item.video_kind === "chat" ? item
       : withChat.length === 1 ? (item.parts || [item]).find((part) => part.path === withChat[0].path) : null;
     const top = (title, rows, user) => h("div", null, h("h3", { class: "subhead", text: title }),
-      h("div", { class: "summary-top" }, rows.map(([name, count]) => {
+      h("div", { class: "summary-top" }, rows.map(([name, count, image]) => {
+        // у смайла — его картинка (окно чата берёт её так же), у ника — нет
+        const src = typeof image === "string" && /^(https:\/\/|http:\/\/127\.0\.0\.1:)/i.test(image) ? image : "";
         const row = h(user ? "button" : "div", { class: "summary-top-row" + (user ? " link" : "") },
-          h("span", { class: "summary-name", text: name }), h("span", { class: "muted", text: fmt.count(count) }));
+          h("span", { class: "summary-name" }, src ? h("img", { class: "summary-emote", src: src, alt: "" }) : null, name),
+          h("span", { class: "muted", text: fmt.count(count) }));
         if (user) {
           row.type = "button";
           row.title = t("Все сообщения {name}", { name: name });

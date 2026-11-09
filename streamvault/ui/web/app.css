@@ -359,6 +359,17 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 }
 .badge.dark { background: rgba(0, 0, 0, .75); color: #fff; }
 .badge.platform { background: transparent; border: 1px solid var(--control-border); color: var(--muted); }
+/* значок площадки у ника канала — ссылка на канал на площадке */
+.platform-logo { display: inline-flex; width: 20px; height: 20px; }
+.platform-logo svg { width: 100%; height: 100%; fill: currentColor; }
+/* серый одноцветный значок; что он нажимается — видно по рамке, подложке и светлеющему значку */
+.platform-link {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; padding: 0;
+  border: 1px solid var(--border); border-radius: 8px; background: none; color: var(--muted); cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.platform-link:hover { background: var(--hover); border-color: var(--control-border); color: var(--platform-color, var(--text)); }
+.platform-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .badge.done { background: rgba(0, 176, 107, .18); color: #4dd6a0; }
 .badge.queued { background: rgba(145, 71, 255, .22); color: var(--accent-text); }
 
@@ -796,9 +807,23 @@ select { padding-right: 6px; }
                                     #fff 55%, var(--accent-text) 70%, var(--accent-text) 100%);
 }
 .tabs button.busy .tab-count { color: var(--accent-text); }
+/* «Загрузки» в верхнем меню — тот же перелив, пока в них что-то идёт */
+.nav a.busy > span:first-child {
+  background: linear-gradient(90deg, var(--text) 0%, var(--text) 30%, var(--accent-text) 42%, var(--accent) 50%,
+                              var(--accent-text) 58%, var(--text) 70%, var(--text) 100%);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: tab-shimmer 2.6s linear infinite;
+}
+.nav a.busy.active > span:first-child {
+  background-image: linear-gradient(90deg, var(--accent-text) 0%, var(--accent-text) 30%, #fff 45%, var(--accent) 50%,
+                                    #fff 55%, var(--accent-text) 70%, var(--accent-text) 100%);
+}
 @keyframes tab-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .tabs button.busy { animation: none; background: none; color: var(--accent-text); }
+  .tabs button.busy, .nav a.busy > span:first-child { animation: none; background: none; color: var(--accent-text); }
 }
 .tabs .tab-count:empty { display: none; }
 .tabs button.active::after {
@@ -957,9 +982,11 @@ select { padding-right: 6px; }
   background: var(--accent); box-shadow: 0 0 8px var(--accent), 0 0 2px #fff;
 }
 .card-join-text {
-  position: absolute; inset: 0 0 3px; display: flex; align-items: center; gap: 7px; padding: 0 9px;
-  color: #fff; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  position: absolute; inset: 0 0 3px; display: flex; align-items: center; gap: 7px; padding: 0 10px;
+  color: #fff; font-size: 12px; font-weight: 600; line-height: 1;
 }
+/* длинная подпись — многоточием, а не обрезанной буквой у края */
+.card-join-label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; letter-spacing: .01em; }
 .card-join-text::before {
   content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-text);
   box-shadow: 0 0 6px var(--accent); animation: join-dot 1.2s ease-in-out infinite;
@@ -1056,13 +1083,25 @@ select { padding-right: 6px; }
    набранное ярко, остальное бледно; каретка — от самого поля */
 .chatview-timebox { display: flex; align-items: center; gap: 6px; }
 .chatview-time {
-  position: relative; display: block; width: 92px; height: 34px; cursor: text;
+  /* над графиком активности: подсказка «Чат длится …» ложится поверх него */
+  position: relative; z-index: 6; display: block; width: 92px; height: 34px; cursor: text;
   border: 2px solid var(--control-border); border-radius: var(--radius); background: var(--bg);
   transition: border-color .15s ease, box-shadow .15s ease;
 }
 .chatview-time:hover { border-color: #7c7c86; }
 .chatview-time:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(145, 71, 255, .22); }
 .chatview-time.invalid { border-color: var(--error); }
+/* время дальше конца чата: поле вздрагивает, под ним — сколько длится чат */
+.chatview-time.refused { animation: chatview-refuse .3s ease; }
+@keyframes chatview-refuse {
+  0%, 100% { transform: translateX(0); border-color: var(--error); }
+  25% { transform: translateX(-4px); } 75% { transform: translateX(4px); }
+}
+.chatview-time-hint {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; padding: 4px 8px; border-radius: 6px;
+  background: var(--raised); color: var(--text); font-size: 12px; white-space: nowrap;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .5); pointer-events: none;
+}
 .chatview-time input, .chatview-time-shown {
   position: absolute; inset: 0; width: 100%; height: 100%; padding: 0 10px; border: 0; margin: 0;
   font: inherit; font-variant-numeric: tabular-nums; letter-spacing: .02em; line-height: 30px; text-align: left;
@@ -1164,6 +1203,8 @@ select { padding-right: 6px; }
 /* время — по своей ширине: пустоты между ним и ником нет */
 .chatview-list .chat-time { margin-right: 8px; }
 .chatview-list:focus { outline: none; }
+/* протяжка по графику: в ленте лишь кусок на экран — бегунок спрятан, чтобы не скакал */
+.chatview-list.scrubbing::-webkit-scrollbar-thumb { background: transparent; }
 .chatview-mark { background: rgba(145, 71, 255, .22); box-shadow: inset 3px 0 0 var(--accent); }
 .chatview-empty { padding: 16px 24px; color: var(--faint); }
 
@@ -1579,6 +1620,8 @@ body.sidebar-animate .selection-bar { transition: left .22s ease; }
 .summary-gap { padding: 2px 8px; color: var(--warn); font-variant-numeric: tabular-nums; }
 .summary-top { display: flex; flex-direction: column; margin-bottom: 18px; }
 .summary-top-row { display: flex; justify-content: space-between; gap: 10px; padding: 4px 10px; border-radius: 6px; }
+/* смайл в «Частых смайлах» — картинкой перед названием */
+.summary-emote { width: 24px; height: 24px; margin: -4px 8px -4px 0; object-fit: contain; vertical-align: middle; }
 .summary-top-row:nth-child(odd) { background: var(--card); }
 /* ник — к его сообщениям в окне чата */
 button.summary-top-row { width: 100%; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }

@@ -551,6 +551,8 @@
     "Добавить ник…": "Add a name…",
     "Зрителей не больше {count}": "No more than {count} viewers",
     "Зрители": "Viewers",
+    "склейка после конца записи": "joining after the recording ends",
+    "Открыть канал на {site} в браузере": "Open the channel on {site} in the browser",
     "Чатов пока нет": "No chats yet",
     "Чаты, скачанные без видео, из стороннего архива и докачанные пропуски чата появятся здесь.":
       "Chats downloaded without video, from the third-party archive and filled chat gaps show up here.",
@@ -572,6 +574,7 @@
     "Файла чата рядом с записью нет: его не записали, перенесли или удалили. Скачать чат можно в меню «⋯» записи в библиотеке.":
       "There is no chat file next to the recording: it was not recorded, or it was moved or deleted. The chat can be downloaded from the recording’s “⋯” menu in the library.",
     "Время": "Time",
+    "Чат длится {length}": "The chat lasts {length}",
     "Когда": "When",
     "Перейти": "Go",
     "Перейти к": "Go to",

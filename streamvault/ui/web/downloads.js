@@ -15,6 +15,8 @@ const DOWNLOAD_TABS = [["records", "Записи"], ["joining", "Склеива�
 // чат без видео: «только чат», из стороннего архива, пропуски чата — своей вкладкой
 // (archive/downloads.py: is_chat_job)
 const CHAT_JOBS = new Set(["chat", "chat-archive", "chat-gaps"]);
+// чат к своей записи: файл загрузки — сама запись
+const TO_RECORDING = new Set(["chat-archive", "chat-gaps"]);
 function isChatJob(job) {
   return CHAT_JOBS.has(job.quality);
 }
@@ -31,7 +33,7 @@ function inJoinTab(job) {
 }
 
 // запись канала этого начала эфира ещё идёт — склейка после её конца
-function recordingGoes(job) {
+export function recordingGoes(job) {
   const channel = state.channels.get(jobChannelId(job));
   return Boolean(channel && channel.recording);
 }
@@ -151,6 +153,13 @@ export function refreshDownloadsCount() {
   const el = document.getElementById("downloads-count");
   el.hidden = active === 0;
   setText(el, active);
+  // что-то идёт в любой вкладке «Загрузок» — запись, склейка, загрузка, правка: «Загрузки»
+  // в верхнем меню переливаются так же, как название вкладки
+  const busy = active > 0 || [...state.channels.values()].some((channel) => channel.recording)
+    || [...state.joins.values()].some((join) => join.state === "joining")
+    || [...state.jobs.values()].some(inJoinTab);          // как у вкладки «Склеивается»
+  const link = el.closest("a");
+  if (link) link.classList.toggle("busy", busy);
 }
 
 export function createJobRow() {
@@ -400,7 +409,8 @@ export function updateJobRow(row, job) {
   // скачанного файла, а пока он качается — из идущего эфира канала. У склеенного
   // начала файл — сама запись: кадр из неё и пока докачивается чат начала
   if (job.thumbnail) setSrc(row._img, job.thumbnail);
-  else if ((job.state === "done" || job.joined) && job.file && row._framed !== job.file) {
+  // чат из архива и пропуски чата — к своей записи: кадр из неё сразу, а не после конца
+  else if ((job.state === "done" || job.joined || TO_RECORDING.has(job.quality)) && job.file && row._framed !== job.file) {
     row._framed = job.file;
     requestPreview(job.file, (preview) => {
       if (row._framed === job.file && preview && preview.thumbnail) setSrc(row._img, preview.thumbnail);
@@ -503,7 +513,9 @@ export function updateJobRow(row, job) {
     if (chatFiles.video) actions.push(iconButton("video", t("Открыть видео чата"), call("open_file", chatFiles.video)));
     // скачать чат — словами: значок чата рядом означает «открыть». У склеенного
     // начала эфира чат записи уже есть (прямой эфир) — докачивается чат самого начала
-    if (job.joined ? !job.beginning_chat && chatSupported(job) : !chatFiles.html && chatSupported(job)) {
+    // у загрузки, которая сама — чат к записи (из архива, пропуски), своей кнопки чата нет
+    if (!TO_RECORDING.has(job.quality)
+        && (job.joined ? !job.beginning_chat && chatSupported(job) : !chatFiles.html && chatSupported(job))) {
       actions.push(button(job.joined ? t("Скачать чат начала") : t("Скачать чат"),
         { kind: "ghost", icon: "download", onclick: call("download_chat", job.id),
           title: job.joined ? t("Чат начала эфира встанет в чат записи до стыка; чат прямого эфира останется") : "" }));

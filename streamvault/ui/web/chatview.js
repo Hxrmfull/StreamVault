@@ -60,7 +60,10 @@ export function openChatView(item, options) {
   const timeInput = h("input", { type: "text", inputmode: "numeric", spellcheck: "false", autocomplete: "off",
                                  "aria-label": t("Время") });
   const timeShown = h("div", { class: "chatview-time-shown", "aria-hidden": "true" });
-  const timeField = h("label", { class: "chatview-time" }, timeShown, timeInput);
+  // время дальше конца чата набрать нельзя: поле вздрагивает, под ним — сколько длится чат
+  const timeHint = h("div", { class: "chatview-time-hint", role: "status" });
+  timeHint.hidden = true;
+  const timeField = h("label", { class: "chatview-time" }, timeShown, timeInput, timeHint);
   const timeGo = iconButton("play", t("Перейти"), () => goToTime());
   const timeBox = h("div", { class: "chatview-timebox", title: t("Перейти к месту чата: время и Enter") },
     h("span", { class: "muted", text: t("Перейти к") }), timeField, timeGo);
@@ -502,15 +505,44 @@ export function openChatView(item, options) {
     if (document.activeElement === timeInput) timeInput.setSelectionRange(at, at);
   }
 
+  const secondsOf = (digits) => [0, 2, 4].reduce((total, at) => total * 60 + Number(digits[at] + digits[at + 1]), 0);
+  // ненабранные цифры — нули: показанное время — самое раннее, каким оно может стать
+  const pastEnd = (digits) => Boolean(chat && chat.length) && secondsOf(digits) > Math.ceil(chat.length);
+
+  let hintTimer = null;
+  function refuseTime() {
+    setText(timeHint, t("Чат длится {length}", { length: fmt.duration(chat.length) }));
+    timeHint.hidden = false;
+    timeField.classList.remove("refused");
+    void timeField.offsetWidth;         // вздрогнуть заново, даже если уже вздрагивало
+    timeField.classList.add("refused");
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => { timeHint.hidden = true; }, 2500);
+  }
+
   function typeDigit(digit) {
     if (timeTyped >= 6) return;
+    let digits = timeDigits.slice();
+    let typed = timeTyped;
     // десятки минут и секунд — не больше 5: «7» там — это «07»
-    if (timeTyped % 2 === 0 && timeTyped > 0 && digit > "5") {
-      timeDigits[timeTyped] = "0";
-      timeTyped++;
+    if (typed % 2 === 0 && typed > 0 && digit > "5") digits[typed++] = "0";
+    digits[typed++] = digit;
+    if (pastEnd(digits) && timeTyped % 2 === 0 && typed === timeTyped + 1 && timeTyped < 6) {
+      // в десятках цифра уводит за конец чата, а в единицах — нет: «1» у чата на 4:46 — это «01»
+      const asUnits = timeDigits.slice();
+      asUnits[timeTyped] = "0";
+      asUnits[timeTyped + 1] = digit;
+      if (!pastEnd(asUnits)) {
+        digits = asUnits;
+        typed = timeTyped + 2;
+      }
     }
-    timeDigits[timeTyped] = digit;
-    timeTyped++;
+    if (pastEnd(digits)) {
+      refuseTime();
+      return;
+    }
+    digits.forEach((value, index) => { timeDigits[index] = value; });
+    timeTyped = typed;
   }
 
   function clearTime() {
@@ -524,6 +556,12 @@ export function openChatView(item, options) {
       return;
     }
     const [hours, minutes, seconds] = [0, 2, 4].map((at) => Number(timeDigits[at] + timeDigits[at + 1]));
+    // другая часть эфира короче — набранное могло оказаться за её концом
+    if (pastEnd(timeDigits)) {
+      refuseTime();
+      timeInput.focus();
+      return;
+    }
     if (minutes > 59 || seconds > 59) {
       timeField.classList.add("invalid");
       timeInput.focus();
@@ -539,6 +577,10 @@ export function openChatView(item, options) {
   function fillTime(text) {
     let total = parseTime(text);
     if (total === null) return false;
+    if (chat && chat.length && total > Math.ceil(chat.length)) {
+      refuseTime();
+      return false;
+    }
     total = Math.min(Math.floor(total), 99 * 3600 + 3599);
     const values = [Math.floor(total / 3600), Math.floor(total / 60) % 60, total % 60];
     values.map((value) => String(value).padStart(2, "0")).join("").split("")
@@ -689,12 +731,13 @@ export function openChatView(item, options) {
     }
     if (!dragging) afterScrub();
   }
-  // отпустили — догрузить ленту вокруг места, черта — к ней
-  function afterScrub() {
+  // отпустили — догрузить ленту вокруг места, черта — к ней; полоса прокрутки — когда догрузилось
+  async function afterScrub() {
     if (closed) return;
-    if (list.scrollTop < EDGE) loadBefore();
-    else if (list.scrollHeight - list.scrollTop - list.clientHeight < EDGE) loadAfter();
+    if (list.scrollTop < EDGE) await loadBefore();
+    else if (list.scrollHeight - list.scrollTop - list.clientHeight < EDGE) await loadAfter();
     showPosition();
+    if (!dragging) list.classList.remove("scrubbing");
   }
   function scrubAt(event) {
     const seconds = timeAt(event);
@@ -710,6 +753,8 @@ export function openChatView(item, options) {
     activity.setPointerCapture(event.pointerId);
     dragging = true;
     activity.classList.add("dragging");
+    // при протяжке в ленте — лишь кусок на экран: полоса прокрутки скакала бы и растягивалась
+    list.classList.add("scrubbing");
     if (mode !== "feed") {
       searchInput.value = "";
       ++searchGeneration;

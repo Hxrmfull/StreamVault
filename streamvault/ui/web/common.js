@@ -135,6 +135,28 @@ export function icon(name) {
   return span;
 }
 
+// значки площадок — упрощённые, своим рисунком, одноцветные (цвет — от кнопки): ссылка на канал
+const PLATFORM_LOGOS = {
+  twitch: "M4.3 2 3 5.4V19h4.6v2.6h2.6l2.6-2.6h3.7L21.5 14V2H4.3Zm15.2 11.1-2.9 2.9h-4.6l-2.6 2.6V16H5.7V3.9h13.8v9.2Z"
+    + "M11.2 6.6h1.9v5.5h-1.9V6.6Zm4.7 0h1.9v5.5h-1.9V6.6Z",
+  kick: "M3 3h6v5h2V6h2V3h6v6h-2v2h-2v2h2v2h2v6h-6v-3h-2v-2H9v5H3V3Z",
+  // прорези (треугольник, буквы) — дырами в фигуре, а не белым поверх
+  youtube: "M21.6 7.2a2.6 2.6 0 0 0-1.8-1.8C18.2 5 12 5 12 5s-6.2 0-7.8.4a2.6 2.6 0 0 0-1.8 1.8C2 8.8 2 12 2 12s0 3.2.4 4.8"
+    + "a2.6 2.6 0 0 0 1.8 1.8c1.6.4 7.8.4 7.8.4s6.2 0 7.8-.4a2.6 2.6 0 0 0 1.8-1.8c.4-1.6.4-4.8.4-4.8s0-3.2-.4-4.8Z"
+    + "M10 15.2V8.8l5.4 3.2Z",
+  vkvideolive: "M8 2h8a6 6 0 0 1 6 6v8a6 6 0 0 1-6 6H8a6 6 0 0 1-6-6V8a6 6 0 0 1 6-6Z"
+    + "M12.8 17C7.4 17 4.3 13.3 4.2 7.1h2.7c.1 4.6 2.1 6.5 3.7 6.9V7.1h2.6v3.9c1.6-.2 3.2-2 3.8-3.9h2.5"
+    + "a7.6 7.6 0 0 1-3.4 4.9 7.9 7.9 0 0 1 4 5h-2.8a4.9 4.9 0 0 0-4.1-3.6V17h-.4Z",
+};
+
+export function platformLogo(platform) {
+  const span = document.createElement("span");
+  span.className = "platform-logo";
+  span.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="'
+    + (PLATFORM_LOGOS[platform] || "") + '"/></svg>';
+  return span;
+}
+
 export function button(label, options) {
   options = options || {};
   const el = h("button", {

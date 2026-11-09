@@ -3,7 +3,7 @@
  * канала, списки записей и клипов, одно видео и запись по ссылке.
  */
 
-import { CHAT_MODES, CHAT_ONLY, CONVERT_FORMATS, SPLIT_MODES, KIND_LABELS, PAGE, PERIOD_LABELS, bridge, button, channelName, channelUrl, chatSupported, confirmDialog, downloadChoice, displayTitle, ensureProfiles, entryChannelName, failed, fillAvatar, fmt, h, icon, iconButton, isLive, isRecording, isUrl, recordStarting, keepDaysSelect, setLiveQuality, knownProfile, liveQualityLabel, liveQualitySelect, liveThumb, openModal, platformName, setSrc, setText, siteInfo, sortedChannels, splitId, state, stateText, stateTone, syncList, t, toast } from "./common.js";
+import { CHAT_MODES, CHAT_ONLY, CONVERT_FORMATS, SPLIT_MODES, KIND_LABELS, PAGE, PERIOD_LABELS, bridge, button, channelName, channelUrl, chatSupported, confirmDialog, downloadChoice, displayTitle, ensureProfiles, entryChannelName, failed, fillAvatar, fmt, h, icon, iconButton, isLive, isRecording, isUrl, recordStarting, keepDaysSelect, setLiveQuality, knownProfile, liveQualityLabel, liveQualitySelect, liveThumb, openModal, platformName, setSrc, setText, siteInfo, sortedChannels, splitId, state, stateText, stateTone, syncList, t, toast, platformLogo, PLATFORM} from "./common.js";
 import { twitchdownloaderBlock } from "./settings.js";
 import { openAddChannel } from "./search.js";
 import { navigate, recBadge, refreshView, render, routeHash, view } from "./app.js";
@@ -359,16 +359,24 @@ export function buildChannelHeader() {
     h("span", { class: "spacer" }),
     favorite);
   if (!channel) probeUntracked(id);
+  // страница канала на площадке — значком площадки рядом с ником (вместо подписи и кнопки справа)
   const site = channelUrl(id);
-  if (site) controls.append(iconButton("external", t("Открыть на сайте"),
-                                       () => bridge.call("open_url", site).catch(failed)));
+  const platformMark = site
+    ? h("button", { type: "button", class: "platform-link",
+                    title: t("Открыть канал на {site} в браузере", { site: platformName(view.platform) }),
+                    "aria-label": t("Открыть канал на {site} в браузере", { site: platformName(view.platform) }) },
+        platformLogo(view.platform))
+    : h("span", { class: "badge platform", text: platformName(view.platform) });
+  if (site) platformMark.addEventListener("click", () => bridge.call("open_url", site).catch(failed));
+  // при наведении значок загорается цветом своей площадки
+  if (site && PLATFORM[view.platform]) platformMark.style.setProperty("--platform-color", PLATFORM[view.platform].color);
 
   // кнопки — всегда строкой под именем и одни и те же у любого канала
   view.header.replaceChildren(h("div", { class: "channel-header" },
     h("div", { class: "channel-top" },
       view.avatar,
       h("div", { class: "who" },
-        h("h1", null, view.title, h("span", { class: "badge platform", text: platformName(view.platform) })),
+        h("h1", null, view.title, platformMark),
         view.stateLine)),
     controls));
   refreshChannelHeader();

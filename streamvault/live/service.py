@@ -204,6 +204,9 @@ class LiveService:
             # чат эфиров: HTML и видео чата — в своём потоке, после конвертации
             self._chat_finisher = ChatFinisher(self._settings, self._ffmpeg, self._twitchdownloader,
                                                threading.Event())
+            # чат части готов — окну и тем, кто докачивает разрывы связи с чатом
+            if self._bus is not None:
+                self._chat_finisher.on_ready = lambda video: self._bus.emit("chat_ready", path=video)
             self._chat_finisher.start()
             self._processing = ProcessingQueue(
                 self._ffmpeg.path,

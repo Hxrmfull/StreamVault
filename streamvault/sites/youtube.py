@@ -32,6 +32,11 @@ CHAT_FROM_URL = True
 BEGINNING = "ended"
 WATCH = "https://www.youtube.com/watch?v={id}"
 
+
+def video_url(video_id, channel=""):
+    """По id из имени файла — страница видео."""
+    return (WATCH.format(id=video_id), "video") if re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id) else None
+
 UNSUPPORTED = {
     "clips": "у YouTube нет списка клипов канала — вместо них вкладка Shorts",
 }
