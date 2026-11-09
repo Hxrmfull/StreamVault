@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -151,21 +152,34 @@ def overlay_command(ffmpeg, source, chat_video, height, side, target):
             "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", "-f", "mp4", target]
 
 
-def split_command(ffmpeg, source, points, pattern, skip_corrupt=False):
+def split_command(ffmpeg, source, points, pattern, skip_corrupt=False, fmt=None):
     """
     Куски записи: сегментный муксер ffmpeg режет по ключевым кадрам после
     точек points (секунды), каждый кусок — со временем от нуля. Видео — без
-    обложки (0:V), главы целой записи кускам не нужны.
+    обложки (0:V), главы целой записи кускам не нужны. fmt — другой формат
+    кусков (mp4, mkv, audio — live/processing.FORMATS), без перекодирования.
     """
-    extension = os.path.splitext(source)[1].lower()
-    segment_format = SEGMENT_FORMATS[extension]
+    from .live.processing import FORMATS
+    segment_format = FORMATS[fmt][1] if fmt else SEGMENT_FORMATS[os.path.splitext(source)[1].lower()]
+    streams = ["-map", "0:a:0", "-vn"] if fmt == "audio" else ["-map", "0:V?", "-map", "0:a?"]
     command = [ffmpeg, "-hide_banner", "-nostdin", "-y", *(util.SKIP_CORRUPT if skip_corrupt else []), "-i", source,
-               "-map", "0:V?", "-map", "0:a?", "-map_chapters", "-1", "-c", "copy",
+               *streams, "-map_chapters", "-1", "-c", "copy",
                "-f", "segment", "-segment_times", ",".join("%.3f" % point for point in points),
                "-segment_start_number", "1", "-reset_timestamps", "1", "-segment_format", segment_format]
     if segment_format in ("mp4", "ipod"):
         command += ["-segment_format_options", "movflags=+faststart"]
     return command + ["-progress", "pipe:1", "-nostats", pattern]
+
+
+def remux_command(ffmpeg, source, target, fmt):
+    """Запись целиком — в другой формат без перекодирования (mp4 ↔ mkv, только звук)."""
+    from .live.processing import FORMATS
+    streams = ["-map", "0:a:0", "-vn"] if fmt == "audio" else ["-map", "0:V?", "-map", "0:a?"]
+    command = [ffmpeg, "-hide_banner", "-nostdin", "-y", "-i", source, *streams, "-c", "copy",
+               "-f", FORMATS[fmt][1]]
+    if FORMATS[fmt][1] in ("mp4", "ipod"):
+        command += ["-movflags", "+faststart"]
+    return command + ["-progress", "pipe:1", "-nostats", target]
 
 
 class Editor(threading.Thread):
@@ -205,22 +219,34 @@ class Editor(threading.Thread):
             raise ValueError(tr("у записи нет видео чата — сделай его кнопкой «чат + видео чата»"))
         return self._add(OVERLAY, source, side=side)
 
-    def split(self, source, mode, size_gb=0, minutes=0, count=0, keep_whole=True):
+    def split(self, source, mode, size_gb=0, minutes=0, count=0, keep_whole=True, fmt=None):
         """
-        Запись source — на куски того же формата. keep_whole — целую оставить
-        (в подпапке whole), иначе — в корзину. Возвращает id правки.
+        Запись source — на куски того же формата или, с fmt, другого (mp4, mkv,
+        audio; mode "off" — не делить, только переписать в другой формат).
+        keep_whole — целую оставить (в подпапке whole), иначе — в корзину.
+        Возвращает id правки.
         """
         from .library import piece_mark
-        if mode not in SPLIT_MODES:
+        from .live.processing import FORMATS
+        if mode not in SPLIT_MODES + ("off",) or (mode == "off" and not fmt):
             raise ValueError(tr("как делить: size, duration или count"))
-        if os.path.splitext(source)[1].lower() not in SEGMENT_FORMATS:
+        extension = os.path.splitext(source)[1].lower()
+        if extension not in SEGMENT_FORMATS:
             raise ValueError(tr("такой формат не делится: {name}", name=os.path.basename(source)))
+        if fmt is not None and fmt not in FORMATS:
+            raise ValueError(tr("формат после записи: {formats}", formats=", ".join(FORMATS)))
+        if fmt is not None and FORMATS[fmt][0] == extension:
+            fmt = None                      # тот же формат — просто деление
+        if mode == "off" and not fmt:
+            raise ValueError(tr("запись уже в этом формате"))
+        if fmt is not None and fmt != "audio" and extension in (".m4a", ".mp3"):
+            raise ValueError(tr("в записи только звук: видео из неё не сделать"))
         stem = os.path.splitext(os.path.basename(source))[0]
         from .library import EDIT_MARK
-        if EDIT_MARK.search(stem):
-            # имя куска клипа библиотека приняла бы за часть эфира
+        if EDIT_MARK.search(stem) and mode != "off":
+            # имя куска клипа библиотека приняла бы за часть эфира (сменить формат — можно)
             raise ValueError(tr("клип и видео с чатом поверх не делятся"))
-        if piece_mark(stem):
+        if piece_mark(stem) and mode != "off":
             raise ValueError(tr("это уже часть поделённой записи: {name}", name=os.path.basename(source)))
         # целую из whole делить можно ещё раз — на другие части (части лягут в папку канала)
         with self._lock:
@@ -228,7 +254,7 @@ class Editor(threading.Thread):
                    for job in self._jobs):
                 raise ValueError(tr("эта запись уже делится: {name}", name=os.path.basename(source)))
         return self._add(SPLIT, source, mode=mode, size_gb=float(size_gb or 0), minutes=int(minutes or 0),
-                         count=int(count or 0), pieces=[], keep_whole=bool(keep_whole), whole="")
+                         count=int(count or 0), pieces=[], keep_whole=bool(keep_whole), whole="", fmt=fmt)
 
     def cancel(self, job_id):
         with self._lock:
@@ -342,12 +368,18 @@ class Editor(threading.Thread):
         duration = probe_duration(ffmpeg, source)
         if not duration:
             raise EditError(tr("не понял, какой длины запись: {name}", name=job["name"]))
+        fmt = job.get("fmt")
+        if job["mode"] == "off":
+            return self._remux(job, ffmpeg, duration)
         points = split_points(job["mode"], duration, os.path.getsize(source), job["size_gb"],
                               job["minutes"], job["count"])
         if not points:
             raise EditError(tr("делить нечего: запись не больше одной части (или короче {minutes} мин)",
                                minutes=2 * MIN_PIECE // 60))
+        from .live.processing import FORMATS
         stem, extension = os.path.splitext(source)
+        # куски — в выбранном формате (без перекодирования), иначе — в том же
+        extension = FORMATS[fmt][0] if fmt else extension
         # в шаблоне ffmpeg «%» — служебный: в имени файла он удваивается
         pattern = stem.replace("%", "%%") + " - piece %d" + extension + util.PARTIAL_SUFFIX
         job["partials"] = [stem + " - piece %d" % number + extension + util.PARTIAL_SUFFIX
@@ -355,7 +387,7 @@ class Editor(threading.Thread):
         job["partial"] = job["partials"][0]
         logging.info(tr("деление на части ({count}): {name}", count=len(points) + 1, name=job["name"]))
         # куски mp4 внутри .ts (запись Twitch): битый последний кадр не роняет деление
-        self._run(job, split_command(ffmpeg, source, points, pattern, util.mp4_inside_ts(ffmpeg, source)), duration)
+        self._run(job, split_command(ffmpeg, source, points, pattern, util.mp4_inside_ts(ffmpeg, source), fmt), duration)
         if job["state"] == CANCELLED:
             return
         produced = [path for path in job["partials"] if os.path.isfile(path) and os.path.getsize(path) > 0]
@@ -368,6 +400,7 @@ class Editor(threading.Thread):
         # раз; прежние части с теми же именами не затираются — у новых имя с номером
         again = is_whole(source)
         named = os.path.join(os.path.dirname(os.path.dirname(source)), os.path.basename(source)) if again else source
+        named = os.path.splitext(named)[0] + extension
         pieces = [util.unique_path(piece_name(named, number, len(produced)))
                   for number in range(1, len(produced) + 1)]
         chats = self._split_chat(source, pieces, lengths)
@@ -422,6 +455,80 @@ class Editor(threading.Thread):
         if self._after_split is not None:
             try:
                 self._after_split(pieces)
+            except Exception:
+                logging.exception(tr("после деления {name}: сбой", name=job["name"]))
+
+    def _remux(self, job, ffmpeg, duration):
+        """
+        Без деления — запись целиком в другой формат: новый файл рядом под тем же
+        именем, чат остаётся при нём; прежний — в подпапку whole или в корзину.
+        """
+        from .library import is_whole
+        from .live.processing import FORMATS
+        source, fmt = job["source"], job["fmt"]
+        again = is_whole(source)
+        folder = os.path.dirname(os.path.dirname(source)) if again else os.path.dirname(source)
+        target = util.unique_path(os.path.join(folder, os.path.splitext(os.path.basename(source))[0] + FORMATS[fmt][0]))
+        partial = target + util.PARTIAL_SUFFIX
+        job["partials"] = [partial]
+        job["partial"] = partial
+        logging.info(tr("конвертация в {format}: {name}", format=fmt, name=job["name"]))
+        self._run(job, remux_command(ffmpeg, source, partial, fmt), duration)
+        if job["state"] == CANCELLED:
+            return
+        if not os.path.isfile(partial) or not os.path.getsize(partial):
+            self._drop([partial])
+            raise EditError(tr("не сконвертировалось: {name}", name=job["name"]))
+        source_chat = chat.existing(source)
+        try:
+            self._refuse_if_open(source)
+        except EditError:
+            self._drop([partial])
+            raise
+        # чат — к новому файлу (своё имя), прежний чат — при прежнем файле, если он остаётся
+        new_chat = chat.chat_paths(target)
+        try:
+            if job["keep_whole"] and again:
+                whole = source
+            elif job["keep_whole"]:
+                whole_dir = os.path.join(os.path.dirname(source), util.WHOLE_DIR)
+                os.makedirs(whole_dir, exist_ok=True)
+                whole = util.unique_path(os.path.join(whole_dir, os.path.basename(source)))
+                os.replace(source, whole)
+            else:
+                whole = ""
+                util.send_to_recycle_bin(source)
+        except OSError as error:
+            self._drop([partial])
+            logging.warning("%s", error)
+            raise EditError(tr("запись открыта в другой программе (или в проигрывателе окна) — "
+                               "закрой её и попробуй снова"))
+        for key, path in source_chat.items():
+            try:
+                if whole and path == new_chat[key]:
+                    # новый файл — под тем же именем: чат остаётся на месте, прежнему — копия
+                    shutil.copy2(path, chat.chat_paths(whole)[key])
+                elif whole:
+                    shutil.copy2(path, new_chat[key])
+                    if path != chat.chat_paths(whole)[key]:
+                        os.replace(path, chat.chat_paths(whole)[key])
+                elif path != new_chat[key]:
+                    os.replace(path, new_chat[key])
+            except OSError as error:
+                logging.warning("%s", error)
+        os.replace(partial, target)
+        self._split_gaps(source, job.get("checked"), [target], [duration])
+        if whole:
+            job["whole"] = whole
+            if self._integrity is not None and job.get("checked") is not None:
+                self._integrity.put(whole, job["checked"]["gaps"], job["checked"].get("duration"))
+        job["pieces"] = [target]
+        job["target"] = target
+        logging.info(tr("готово: {name}", name=os.path.basename(target)))
+        self._finish(job, DONE)
+        if self._after_split is not None:
+            try:
+                self._after_split([target])
             except Exception:
                 logging.exception(tr("после деления {name}: сбой", name=job["name"]))
 

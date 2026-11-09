@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Наблюдение за одним каналом и запись его эфиров."""
 
+import collections
 import copy
 import datetime
 import logging
@@ -22,6 +23,55 @@ from .probes import API_RETRY_CAP, NETWORK_RETRY_CAP, Status, describe_stream
 from .storage import CRITICAL, DISK_CHECK_INTERVAL, human_size
 
 # Аргументы streamlink, помогающие пережить короткий обрыв.
+# лимит записей: эфир, которому не хватило места, проверяет снова не реже этого, секунды
+SLOT_RETRY = 30
+# как часто читать вывод streamlink идущей записи, секунды
+TROUBLE_CHECK = 5
+
+
+class Trouble:
+    """
+    Неполадки идущей записи по выводу streamlink за последние минуты: площадка
+    отвечает «слишком много запросов» (429) или отказом (403) — похоже, она
+    ограничивает скачивание; streamlink пропускает куски или не успевает их
+    скачать — запись не успевает (сеть, диск — или площадка: это видно окну,
+    когда отстают записи только с одной площадки). state(): None или
+    {"kind": "platform" | "behind", "detail": что именно}.
+    """
+
+    WINDOW = 300
+    LIMIT = re.compile(r"\b429\b|too many requests|rate.?limit", re.I)
+    FORBIDDEN = re.compile(r"\b403\b|forbidden", re.I)
+    BEHIND = re.compile(r"skipping segments|failed to fetch segment|failed to reload playlist|"
+                        r"segment .*(timed out|timeout)", re.I)
+    BEHIND_EVENTS = 2
+
+    def __init__(self, clock=time.monotonic):
+        self._clock = clock
+        self._events = collections.deque()
+
+    def feed(self, lines):
+        now = self._clock()
+        for line in lines:
+            kind = ("limit" if self.LIMIT.search(line) else "forbidden" if self.FORBIDDEN.search(line)
+                    else "behind" if self.BEHIND.search(line) else None)
+            if kind:
+                self._events.append((now, kind))
+
+    def state(self):
+        now = self._clock()
+        while self._events and now - self._events[0][0] > self.WINDOW:
+            self._events.popleft()
+        kinds = [kind for _, kind in self._events]
+        if "limit" in kinds:
+            return {"kind": "platform", "detail": "429"}
+        if "forbidden" in kinds:
+            return {"kind": "platform", "detail": "403"}
+        if kinds.count("behind") >= self.BEHIND_EVENTS:
+            return {"kind": "behind", "detail": ""}
+        return None
+
+
 STREAMLINK_RESILIENCE_ARGS = [
     "--retry-streams", "5",
     "--retry-max", "3",
@@ -120,7 +170,7 @@ class ChannelRecorder(threading.Thread):
     def __init__(self, platform, channel, probe, quality, refresh, root_path,
                  processing, fallback_probe=None, bus=None, live_chat=None, chat_factory=None,
                  autorecord=True, once=False, on_exit=None, live_restart=None, disk=None,
-                 beginning=None):
+                 beginning=None, slots=None):
         """
         live_chat() — писать ли чат эфира (режим chat.MODES).
         live_restart() — записывать ли эфир с начала, если запись началась позже;
@@ -130,7 +180,8 @@ class ChannelRecorder(threading.Thread):
         тесты подставляют свой); None — у площадки чат не читается.
         autorecord — писать каждый эфир сам. once — канал не отслеживается,
         его записали кнопкой: поток завершается вместе с этой записью.
-        on_exit(рекордер) — когда поток завершился.
+        on_exit(рекордер) — когда поток завершился. slots — (занять(id, площадка),
+        освободить(id)): лимит одновременных записей; занять отвечает None или почему нельзя.
         """
         self._platform = platform
         self._channel = channel
@@ -155,6 +206,7 @@ class ChannelRecorder(threading.Thread):
         self._autorecord = bool(autorecord)
         self._once = bool(once)
         self._on_exit = on_exit
+        self._slots = slots
         self._live_restart = live_restart
         self._beginning = beginning
         self._session_meta = {}
@@ -177,6 +229,7 @@ class ChannelRecorder(threading.Thread):
         self._unauthorized = 0
         self._fruitless = 0
         self._announced = None   # состояние, о котором уже сказано в логе
+        self._trouble_state = None   # неполадки идущей записи (Trouble.state), уже показанные
 
         self._state_lock = threading.Lock()
         self._state = {
@@ -411,7 +464,7 @@ class ChannelRecorder(threading.Thread):
                 self._set(state="live", message="", stream=stream, recording=None)
                 self._sleep(self._refresh)
                 return
-            self._announced = None
+            waited, self._announced = self._announced, None
             if self._no_room():
                 # места нет — запись не начинается, пока его не освободят
                 self._set(state="unavailable", recording=None,
@@ -419,8 +472,24 @@ class ChannelRecorder(threading.Thread):
                           message=self._no_room_message())
                 self._sleep(self._refresh)
                 return
+            # лимит одновременных записей: места нет — эфир ждёт, пока освободится
+            refusal = self._slots[0](self.id, self._platform) if self._slots is not None else None
+            if refusal:
+                # в журнал — один раз, пока эфир ждёт места
+                if waited != "limit":
+                    logging.info(tr("{tag} в эфире, запись ждёт: {reason}", tag=self.tag, reason=refusal))
+                    self._announced = "limit"
+                self._set(state="unavailable", recording=None, message=refusal,
+                          stream=describe_stream(meta, self._platform, self._channel))
+                self._sleep(min(self._refresh, SLOT_RETRY))
+                return
             failure = []
-            if self._record_session(meta, failure):
+            try:
+                recorded = self._record_session(meta, failure)
+            finally:
+                if self._slots is not None:
+                    self._slots[1](self.id)
+            if recorded:
                 self._fruitless = 0
                 if self._disk_full:
                     # остановлено из-за места: продолжится, когда его освободят
@@ -523,7 +592,7 @@ class ChannelRecorder(threading.Thread):
 
     # ------------------------------------------------------------ запись
 
-    def _wait_for_streamlink(self, process):
+    def _wait_for_streamlink(self, process, watch=None):
         """
         Ждёт конца записи. Ctrl+C из консоли streamlink получает сам и закрывает
         файл. Но при остановке иначе — канал выключили в окне, программа без
@@ -533,13 +602,20 @@ class ChannelRecorder(threading.Thread):
         запись идёт в дочернем python.exe.
         """
         stop_seen_at = None
-        disk_checked = time.monotonic()
+        disk_checked = watched = time.monotonic()
         while True:
             try:
                 process.wait(timeout=1)
                 return
             except subprocess.TimeoutExpired:
                 pass
+            # вывод streamlink — раз в несколько секунд: не отстаёт ли запись, не режет ли площадка
+            if watch is not None and time.monotonic() - watched >= TROUBLE_CHECK:
+                watched = time.monotonic()
+                try:
+                    watch()
+                except OSError:
+                    pass
             if time.monotonic() - disk_checked >= DISK_CHECK_INTERVAL:
                 disk_checked = time.monotonic()
                 if self._no_room():
@@ -569,19 +645,51 @@ class ChannelRecorder(threading.Thread):
         неудачи доходит до лога и окна программы, а прогресс streamlink
         не перемешивается со строками других каналов.
         """
-        with tempfile.TemporaryFile() as output:
-            try:
-                process = subprocess.Popen(
-                    [*util.STREAMLINK, *STREAMLINK_RESILIENCE_ARGS,
-                     url, quality_with_fallback(self._quality),
-                     "-o", streamlink_output_arg(recorded)],
-                    stdout=output, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                    env=util.child_environment(), creationflags=util.subprocess_flags())
-            except FileNotFoundError:
-                raise StreamlinkMissing()
-            self._wait_for_streamlink(process)
-            output.seek(0)
-            return output.read().decode("utf-8", "replace")
+        # вывод — во временный файл с именем: его читает и наблюдение за записью
+        # (своим дескриптором, чтобы не сбить позицию записи streamlink)
+        output = tempfile.NamedTemporaryFile(prefix="streamvault-streamlink-", suffix=".log", delete=False)
+        try:
+            with output, open(output.name, "rb") as reader:
+                try:
+                    process = subprocess.Popen(
+                        [*util.STREAMLINK, *STREAMLINK_RESILIENCE_ARGS,
+                         url, quality_with_fallback(self._quality),
+                         "-o", streamlink_output_arg(recorded)],
+                        stdout=output, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                        env=util.child_environment(), creationflags=util.subprocess_flags())
+                except FileNotFoundError:
+                    raise StreamlinkMissing()
+                trouble, seen = Trouble(), [b""]
+                self._trouble_state = None
+
+                def watch():
+                    chunk = seen[0] + reader.read()
+                    *lines, seen[0] = chunk.split(b"\n")
+                    trouble.feed(line.decode("utf-8", "replace") for line in lines)
+                    self._note_trouble(trouble.state())
+
+                self._wait_for_streamlink(process, watch)
+                with open(output.name, "rb") as everything:
+                    return everything.read().decode("utf-8", "replace")
+        finally:
+            remove_quietly(output.name)
+
+    def _note_trouble(self, trouble):
+        """Неполадки идущей записи — в её состояние (окно покажет), в журнал — при смене."""
+        if trouble == self._trouble_state:
+            return
+        self._trouble_state = trouble
+        if trouble and trouble["kind"] == "platform":
+            logging.warning(tr("{tag}: площадка, похоже, ограничивает скачивание (ответ {code})",
+                               tag=self.tag, code=trouble["detail"]))
+        elif trouble:
+            logging.warning(tr("{tag}: запись не успевает: streamlink пропускает куски эфира", tag=self.tag))
+        else:
+            logging.info(tr("{tag}: запись снова успевает", tag=self.tag))
+        with self._state_lock:
+            recording = self._state.get("recording")
+        if recording:
+            self._set(recording=dict(recording, trouble=trouble))
 
     def _explain_failure(self, output):
         """

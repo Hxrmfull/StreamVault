@@ -2,7 +2,7 @@
  * StreamVault, окно программы: «Загрузки» — очередь, прогресс, пауза и отмена.
  */
 
-import { CHAT_ONLY, CHAT_STAGES, DOWNLOAD_QUALITIES, bridge, fillChannelLine, jobChannelId, button, channelName, chatSupported, failed, fmt, h, icon, iconButton, liveThumb, platformName, setSrc, setText, state, syncList, t } from "./common.js";
+import { CHAT_ONLY, CHAT_STAGES, DOWNLOAD_QUALITIES, bridge, fillChannelLine, jobChannelId, button, channelName, chatSupported, failed, fmt, h, icon, iconButton, liveThumb, platformName, setSrc, setText, state, syncList, t, recordingTroubleText} from "./common.js";
 import { view } from "./app.js";
 import { requestPreview } from "./library.js";
 import { openLive } from "./player.js";
@@ -223,6 +223,14 @@ export function updateRecordRow(row, channel) {
   }
   row._beginning.hidden = !beginning;
   if (beginning) setText(row._beginning, t("Начало эфира: {status}", { status: beginningStatus(beginning) }));
+  // запись не успевает или площадка, похоже, режет скачивание — строкой предупреждения
+  if (!row._trouble) {
+    row._trouble = h("div", { class: "job-status warn-text rec-trouble" });
+    row.querySelector(".job-main").append(row._trouble);
+  }
+  const trouble = recordingTroubleText(channel);
+  row._trouble.hidden = !trouble;
+  setText(row._trouble, trouble);
   if (row._actions.dataset.key === channel.id) return;
   row._actions.dataset.key = channel.id;
   row._actions.classList.add("rec-actions");

@@ -570,6 +570,15 @@ export function openSettings() {
     return h("div", { class: "field" }, h("label", null, platformName(platform)), input);
   });
 
+  // сколько эфиров писать одновременно: всего и с каждой площадки; 0 — без ограничения
+  const limits = {};
+  const limitFields = Object.keys(settings.record_limits || {}).map((name) => {
+    const input = h("input", { type: "number", min: "0", max: "100", class: "narrow" });
+    input.value = settings.record_limits[name];
+    limits[name] = input;
+    return h("div", { class: "field" }, h("label", null, name === "all" ? t("Со всех площадок") : platformName(name)), input);
+  });
+
   const language = h("select", null, Object.entries(state.info.languages || {})
     .map(([code, name]) => h("option", { value: code, text: name })));
   language.value = state.info.language;
@@ -660,6 +669,10 @@ export function openSettings() {
     const defaults = state.info.recording_defaults || {};
     for (const [key, value] of Object.entries(defaults)) {
       const input = fields[key];
+      if (key === "record_limits") {
+        for (const [name, limit] of Object.entries(value)) if (limits[name]) limits[name].value = limit;
+        continue;
+      }
       if (key === "refresh") {
         for (const [platform, seconds] of Object.entries(value)) if (refresh[platform]) refresh[platform].value = seconds;
       } else if (!input) {
@@ -710,6 +723,13 @@ export function openSettings() {
         text("keep_days", t("Хранить записи, дней"),
              t("Старше — в корзину вместе с чатом, раз в час; вырезанные клипы остаются. 0 — хранить всегда. У канала может быть свой срок."),
              { number: true })),
+      subhead(t("Записывать одновременно не больше")),
+      h("div", { class: "hint field-gap", text: t("«Со всех площадок» — сколько записей вместе, остальные поля — сколько из них с каждой площадки: " +
+        "например, 5 и Twitch 3 — не больше пяти записей сразу, из них с Twitch не больше трёх. 0 — без ограничения. " +
+        "Эфир сверх лимита ждёт, пока освободится место. Чем больше записей сразу, тем больше нужно скорости " +
+        "интернета и диска (запись в 1080p60 — около 6–8 Мбит/с), а площадка может начать ограничивать соединения: " +
+        "окно предупредит, если запись не успевает.") }),
+      h("div", { class: "five" }, limitFields),
       subhead(t("Как часто проверять каналы, секунды")),
       h("div", { class: "four" }, refreshFields),
       text("probe_timeout", t("Сколько ждать ответа streamlink, секунды"), null, { number: true }),
@@ -835,6 +855,13 @@ export function openSettings() {
       if (intervals[platform] !== settings.refresh[platform]) intervalsChanged = true;
     }
     if (intervalsChanged) changes.refresh = intervals;
+    const chosenLimits = {};
+    let limitsChanged = false;
+    for (const [name, input] of Object.entries(limits)) {
+      chosenLimits[name] = Math.max(0, Number(input.value) || 0);
+      if (chosenLimits[name] !== settings.record_limits[name]) limitsChanged = true;
+    }
+    if (limitsChanged) changes.record_limits = chosenLimits;
     const ffmpegValue = manualFfmpeg.checked ? ffmpegPath.value.trim() : "";
     if (ffmpegValue !== configured) changes.ffmpeg_path = ffmpegValue;
     if (!Object.keys(changes).length) { modal.close(); return; }

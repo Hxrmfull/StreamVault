@@ -9,6 +9,34 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- "Convert" works for any video, not only a recording left in .ts: mp4 ↔ mkv
+  or sound only (m4a), without re-encoding, and split into parts at the same
+  time if needed. The chat moves to the new file; the previous file goes to
+  the whole folder (as its own card) or to the Windows Recycle Bin. Pieces
+  and clips can be rewritten to another format too, though they still are
+  not split.
+- A limit on simultaneous recordings in Settings → Stream recording: in total
+  and per platform, 0 for no limit (the default). A stream over the limit
+  waits until a slot frees up, and its channel page says why.
+- Warnings on a running recording, in Downloads → Recordings and on the
+  channel page: "the recording falls behind: the network or disk is too
+  slow" (streamlink skips pieces of the stream) and "the platform seems to
+  limit downloading" — when it answers "too many requests" (429) or denies
+  access (403), or when only its recordings fall behind while those from
+  other platforms keep up.
+- "Convert…" and "Split into parts…" in a recording's menu are one item,
+  "Edit…": a window with "Convert" and "Split into parts" tabs, what will
+  happen to the recording below them and the settings in two columns.
+- "Fetch the stream beginning" in a recording's menu: if the beginning was
+  not downloaded while recording (the stream recording was hidden or not
+  published yet), it can be fetched later. A click checks whether the
+  stream recording is there now: if so, the beginning downloads and joins
+  the recording by itself; if not, it says so.
+- In the summary, "Most active in chat" and "Popular emotes" get "Show all":
+  the whole ranked list opens in its own scrolling box with a search by
+  name or emote, and the summary window does not stretch. It opens and
+  closes smoothly.
+
 - The left channel panel collapses and expands smoothly: the width slides,
   the labels fade, avatars and buttons stay in place.
 - "Popular emotes" in the summary show the emote images, as in the chat
@@ -34,6 +62,14 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- An archive chat and filled chat gaps of a recording joined with the stream
+  beginning were shifted by the beginning's length if its Downloads row had
+  been removed: the seam came only from there. The join seam is now
+  remembered separately.
+- The result of filling chat gaps reads plainly: "messages added: N", and
+  when there was nothing to add, "no missed messages found: the chat was
+  silent then", instead of "messages added: 0; stretches where the chat
+  really was silent: 1".
 - While chat gaps were being filled, the card menu could offer filling again
   or say there were no gaps: the chat is already rewritten by then while
   emotes and HTML are still being made. It now says "chat gaps are being

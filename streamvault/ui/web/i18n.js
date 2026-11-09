@@ -551,6 +551,39 @@
     "Добавить ник…": "Add a name…",
     "Зрителей не больше {count}": "No more than {count} viewers",
     "Зрители": "Viewers",
+    "Прежний файл с чатом переедет в папку whole и будет в библиотеке отдельной карточкой.":
+      "The previous file with its chat moves to the whole folder and shows in the library as its own card.",
+    "Прежний файл уйдёт в корзину Windows. Файл больше корзины Windows удаляет насовсем.":
+      "The previous file goes to the Windows Recycle Bin. Windows deletes a file larger than the Recycle Bin for good.",
+    "Частей: {count}. Каждая перепишется в выбранный формат.": "Parts: {count}. Each is rewritten to the chosen format.",
+    "Без перекодирования, за минуты: видео и звук переходят в новый файл как есть, чат — вместе с ним.":
+      "No re-encoding, in minutes: video and sound move to the new file as they are, and so does the chat.",
+    "Можно сразу и поделить на части.": "It can be split into parts at the same time.",
+    "Оставить прежний файл": "Keep the previous file",
+    "Конвертация, ход виден в «Загрузках»": "Converting, progress in “Downloads”",
+    "Со всех площадок": "All platforms together",
+    "Всего": "Total",
+    "«Со всех площадок» — сколько записей вместе, остальные поля — сколько из них с каждой площадки: например, 5 и Twitch 3 — не больше пяти записей сразу, из них с Twitch не больше трёх. 0 — без ограничения. Эфир сверх лимита ждёт, пока освободится место. Чем больше записей сразу, тем больше нужно скорости интернета и диска (запись в 1080p60 — около 6–8 Мбит/с), а площадка может начать ограничивать соединения: окно предупредит, если запись не успевает.":
+      "“All platforms together” is how many recordings in total, the other fields how many of them from each platform: for example, 5 and Twitch 3 means at most five recordings at once, at most three of them from Twitch. 0 means no limit. A stream over the limit waits until a slot frees up. The more recordings at once, the more internet and disk speed they need (a 1080p60 recording is about 6–8 Mbit/s), and a platform may start limiting connections: the window warns if a recording falls behind.",
+    "{site}, похоже, ограничивает скачивание: отвечает «слишком много запросов»": "{site} seems to limit downloading: it answers “too many requests”",
+    "{site}, похоже, ограничивает скачивание: отказывает в доступе": "{site} seems to limit downloading: it denies access",
+    "{site}, похоже, ограничивает скачивание: отстают только записи с неё": "{site} seems to limit downloading: only its recordings fall behind",
+    "Запись не успевает: не хватает скорости сети или диска": "The recording falls behind: the network or disk is too slow",
+    "Записывать одновременно не больше": "Record at most at once",
+    "Редактирование…": "Edit…",
+    "конвертируется…": "converting…",
+    "делится на части…": "splitting into parts…",
+    "Целая запись перепишется в выбранный формат без перекодирования, чат — вместе с ней. Файл .ts после этого удалится.":
+      "The whole recording is rewritten to the chosen format without re-encoding, with its chat. The .ts file is deleted afterwards.",
+    "Докачать начало эфира": "Fetch the stream beginning",
+    "Начало эфира скачивается заново, ход во вкладке «Склеивается»": "The stream beginning is downloading again, progress in the “Joining” tab",
+    "Начало эфира скачивается, после этого склеится с записью; ход во вкладке «Склеивается»":
+      "The stream beginning is downloading and will then be joined with the recording; progress in the “Joining” tab",
+    "Найти смайл": "Find an emote",
+    "Найти ник": "Find a name",
+    "Показать всех: {count}": "Show all: {count}",
+    "Показать все: {count}": "Show all: {count}",
+    "Свернуть": "Collapse",
     "склейка после конца записи": "joining after the recording ends",
     "Открыть канал на {site} в браузере": "Open the channel on {site} in the browser",
     "Чатов пока нет": "No chats yet",
@@ -608,10 +641,6 @@
     "Правый щелчок — все действия": "Right-click for all actions",
     "Открыть в проигрывателе Windows": "Open in the Windows player",
     "Сделать видео с чатом поверх": "Make a video with chat on top",
-    "Конвертировать…": "Convert…",
-    "Конвертируется…": "Converting…",
-    "Разделить на части…": "Split into parts…",
-    "Делится на части…": "Splitting into parts…",
     "чат": "chat",
     "Сводка чата": "Chat summary",
     "Поиск записи этого эфира на площадке…": "Looking for this stream's recording on the platform…",
@@ -732,7 +761,6 @@
     "В загрузки встанет всё, чего ещё нет: уже скачанное и стоящее в очереди пропускается. Качество и чат — как в настройках.":
       "Everything not downloaded yet is queued: what is already downloaded or queued is skipped. Quality and chat are as in the settings.",
     "Все площадки": "All platforms",
-    "Всего": "Total",
     "Добавлено в загрузки: {count}, уже было: {known}":
       "Added to downloads: {count}, already there: {known}",
     "Любой тип": "Any type",
@@ -781,8 +809,6 @@
       "The whole recording with its chat moves to the whole folder next to the pieces and stays a separate card in the library.",
     "Целая запись с чатом останется в папке whole; новые части лягут рядом с прежними.":
       "The whole recording with its chat stays in the whole folder; the new pieces go next to the earlier ones.",
-    "Целая запись перепишется в выбранный формат без перекодирования, чат — вместе с ней. Файл .ts после этого удалится. Разделить её — ножницами на карточке.":
-      "The whole recording is rewritten into the chosen format without re-encoding, its chat goes with it. The .ts file is deleted afterwards. To split it, use the scissors on the card.",
     "Целая запись с чатом уйдёт в корзину Windows. Файл больше корзины Windows удаляет насовсем.":
       "The whole recording with its chat goes to the Windows Recycle Bin. Windows deletes a file larger than the bin for good.",
     "целая": "whole",

@@ -102,24 +102,74 @@ export function openSummary(item, options) {
     const withChat = parts.filter((part) => part.chat);
     const chatItem = item.video_kind === "chat" ? item
       : withChat.length === 1 ? (item.parts || [item]).find((part) => part.path === withChat[0].path) : null;
-    const top = (title, rows, user) => h("div", null, h("h3", { class: "subhead", text: title }),
-      h("div", { class: "summary-top" }, rows.map(([name, count, image]) => {
-        // у смайла — его картинка (окно чата берёт её так же), у ника — нет
-        const src = typeof image === "string" && /^(https:\/\/|http:\/\/127\.0\.0\.1:)/i.test(image) ? image : "";
-        const row = h(user ? "button" : "div", { class: "summary-top-row" + (user ? " link" : "") },
-          h("span", { class: "summary-name" }, src ? h("img", { class: "summary-emote", src: src, alt: "" }) : null, name),
-          h("span", { class: "muted", text: fmt.count(count) }));
-        if (user) {
-          row.type = "button";
-          row.title = t("Все сообщения {name}", { name: name });
-          row.addEventListener("click", () => { modal.close(); openChatView(chatItem, { user: name }); });
+    // строка списка: место (в раскрытом), картинка смайла, имя, сколько; ник — к его сообщениям
+    const topRow = ([name, count, image], user, place) => {
+      // у смайла — его картинка (окно чата берёт её так же), у ника — нет
+      const src = typeof image === "string" && /^(https:\/\/|http:\/\/127\.0\.0\.1:)/i.test(image) ? image : "";
+      const row = h(user ? "button" : "div", { class: "summary-top-row" + (user ? " link" : "") },
+        h("span", { class: "summary-name" }, place ? h("span", { class: "summary-place", text: place }) : null,
+          src ? h("img", { class: "summary-emote", src: src, alt: "", loading: "lazy" }) : null, name),
+        h("span", { class: "muted", text: fmt.count(count) }));
+      if (user) {
+        row.type = "button";
+        row.title = t("Все сообщения {name}", { name: name });
+        row.addEventListener("click", () => { modal.close(); openChatView(chatItem, { user: name }); });
+      }
+      return row;
+    };
+    // первые десять — сразу; «Показать всех» раскрывает весь список в своём окошке с прокруткой
+    // и поиском, а окно сводки не растягивается
+    const top = (title, rows, user, kind, total, moreLabel) => {
+      const list = h("div", { class: "summary-top" }, rows.map((row) => topRow(row, user)));
+      const box = h("div", null, h("h3", { class: "subhead", text: title }), list);
+      if (total <= rows.length) return box;
+      let full = null, open = false;
+      const filter = h("input", { type: "search", class: "summary-filter", spellcheck: "false",
+                                  placeholder: kind === "emotes" ? t("Найти смайл") : t("Найти ник") });
+      const scroller = h("div", { class: "summary-top summary-scroll" });
+      const panel = h("div", { class: "summary-more" }, filter, scroller);
+      const toggle = button(moreLabel, { kind: "ghost", onclick: () => show(!open) });
+      toggle.classList.add("summary-toggle");
+      box.append(toggle);
+      function drawFull() {
+        const needle = filter.value.trim().toLowerCase();
+        const shown = full.map((row, index) => [row, index]).filter(([row]) => !needle || row[0].toLowerCase().includes(needle));
+        scroller.replaceChildren(...shown.map(([row, index]) => topRow(row, user, String(index + 1))));
+        if (!shown.length) scroller.append(h("div", { class: "muted summary-empty", text: t("Ничего не нашлось.") }));
+      }
+      async function show(wanted) {
+        open = wanted;
+        if (open && !full) {
+          toggle.disabled = true;
+          try {
+            full = await bridge.call("broadcast_ranking", (item.parts || [item])[0].path, kind);
+          } catch (error) {
+            failed(error);
+            open = false;
+          } finally {
+            toggle.disabled = false;
+          }
+          if (full) drawFull();
         }
-        return row;
-      })));
+        list.replaceWith(open ? panel : list);
+        if (!open && panel.isConnected) {
+          panel.replaceWith(list);
+          list.classList.remove("collapsed-in");
+          void list.offsetWidth;          // анимация заново при каждом сворачивании
+          list.classList.add("collapsed-in");
+        }
+        setText(toggle, open ? t("Свернуть") : moreLabel);
+        if (open) filter.focus();
+      }
+      filter.addEventListener("input", drawFull);
+      return box;
+    };
     if (summary.top_chatters.length || summary.top_emotes.length) {
       sections.push(h("div", { class: "two" },
-        summary.top_chatters.length ? top(t("Самые активные в чате"), summary.top_chatters, Boolean(chatItem)) : h("div"),
-        summary.top_emotes.length ? top(t("Частые смайлы"), summary.top_emotes) : h("div")));
+        summary.top_chatters.length ? top(t("Самые активные в чате"), summary.top_chatters, Boolean(chatItem), "chatters",
+          summary.chatters, t("Показать всех: {count}", { count: fmt.count(summary.chatters) })) : h("div"),
+        summary.top_emotes.length ? top(t("Частые смайлы"), summary.top_emotes, false, "emotes", summary.emote_kinds || 0,
+          t("Показать все: {count}", { count: fmt.count(summary.emote_kinds || 0) })) : h("div")));
     }
     // читать чат в окне программы — у любой записи с чатом
     if (summary.messages && chatItem) {

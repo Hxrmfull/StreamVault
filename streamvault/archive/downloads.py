@@ -243,6 +243,10 @@ class DownloadManager:
         self._lock = threading.RLock()
         self._wakeup = threading.Condition(self._lock)
         self._jobs = []
+        # склеенные с началом эфира записи и их стык — отдельно от списка загрузок: строку
+        # загрузки могут убрать, а чат к записи всё равно должен знать, где у неё начало эфира
+        self._joins_path = os.path.join(os.path.dirname(os.path.abspath(self._state_path)), "joins.json")
+        self._joins = self._load_joins()
         self._running = {}       # id -> {"process": Popen, "stop": None|pause|cancel|shutdown}
         self._last_event = {}    # id -> когда слали прогресс
         self._stopping = False
@@ -777,6 +781,37 @@ class DownloadManager:
                 return
         self._bus.emit("download", job=snapshot)
 
+    def _load_joins(self):
+        try:
+            with open(self._joins_path, encoding="utf-8") as source:
+                data = json.load(source)
+        except (OSError, ValueError):
+            return {}
+        return {str(path): float(seam) for path, seam in (data.items() if isinstance(data, dict) else [])
+                if isinstance(seam, (int, float))}
+
+    def _save_joins(self):
+        """Под self._lock."""
+        try:
+            temporary = self._joins_path + ".tmp"
+            with open(temporary, "w", encoding="utf-8") as target:
+                json.dump(self._joins, target, ensure_ascii=False)
+            os.replace(temporary, self._joins_path)
+        except OSError as error:
+            logging.warning(tr("не сохранить, какие записи склеены с началом эфира: {error}", error=error))
+
+    def joined_seam(self, path):
+        """
+        Запись path склеена с началом эфира — стык (секунды от начала файла до
+        начала самой записи); не склеена или не известно — None.
+        """
+        key = os.path.normcase(os.path.abspath(path))
+        with self._lock:
+            for job in self._jobs:
+                if job.get("joined") and job.get("file") and os.path.normcase(os.path.abspath(job["file"])) == key:
+                    return job.get("joined_seam") or max(0.0, (job.get("section") or [0, 0])[1] - BEGINNING_OVERLAP)
+            return self._joins.get(key)
+
     def mark_joined(self, head, main, seam=None, had_chat=None):
         """
         Начало эфира (head) склеено с записью (main) и удалено: загрузка
@@ -796,6 +831,9 @@ class DownloadManager:
                     job["joined_seam"] = float(seam)
             if found:
                 self._save()
+            if seam is not None:
+                self._joins[os.path.normcase(os.path.abspath(main))] = float(seam)
+                self._save_joins()
         for job_id in found:
             self._emit(job_id)
 
@@ -1333,11 +1371,17 @@ class DownloadManager:
             gaps[index][0] < float(comment.get("content_offset_seconds") or 0) < gaps[index][1]
             for comment in found.get(index) or ()))
         missing = len(gaps) - len(covered)
-        summary = [tr("докачано сообщений: {count}", count=added)]
-        if silent:
-            summary.append(tr("участков, где чат и правда молчал: {count}", count=silent))
+        # итог словами: сколько докачано, а нечего — так и сказано, что чат молчал
+        if added:
+            summary = [tr("докачано сообщений: {count}", count=added)]
+            if silent:
+                summary.append(tr("на остальных участках чат молчал"))
+        elif covered:
+            summary = [tr("пропущенных сообщений не найдено: чат в это время молчал")]
+        else:
+            summary = []
         if missing:
-            summary.append(tr("участков, которых нет ни на Twitch, ни в архиве: {count}", count=missing))
+            summary.append(tr("не докачать участков: {count} (их нет ни на Twitch, ни в архиве)", count=missing))
         logging.info(tr("пропуски чата: {name}, {summary}", name=os.path.basename(video), summary="; ".join(summary)))
         if not covered:
             return self._finish(job_id, runtime, FAILED, chat_progress=None,

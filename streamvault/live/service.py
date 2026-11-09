@@ -16,7 +16,7 @@ import shutil
 import threading
 import time
 
-from .. import util
+from .. import sites, util
 from ..ffmpeg import FFmpegLocator, own_dir_for
 from ..twitchdownloader import TwitchDownloaderLocator
 from ..twitchdownloader import own_dir_for as twitchdownloader_dir
@@ -157,6 +157,9 @@ class LiveService:
         """
         self._settings = settings
         self._bus = bus
+        # лимит одновременных записей: какие каналы сейчас пишут (id -> площадка)
+        self._slots_lock = threading.Lock()
+        self._slots = {}
         self._ffmpeg = ffmpeg or FFmpegLocator(settings, own_dir_for(settings))
         self._twitchdownloader = twitchdownloader or TwitchDownloaderLocator(
             twitchdownloader_dir(settings))
@@ -900,6 +903,28 @@ class LiveService:
             probe = self._streamlink_probe
         return probe
 
+    def _take_slot(self, cid, platform):
+        """
+        Место на запись: лимит одновременных записей (record_limits) — всего и
+        с площадки. Есть — None (место занято за каналом), нет — почему.
+        """
+        limits = self._settings["record_limits"]
+        with self._slots_lock:
+            others = {key: name for key, name in self._slots.items() if key != cid}
+            total, here = len(others), sum(1 for name in others.values() if name == platform)
+            if limits.get("all") and total >= limits["all"]:
+                return tr("лимит одновременных записей: идёт {count} из {limit} (настройки)",
+                          count=total, limit=limits["all"])
+            if limits.get(platform) and here >= limits[platform]:
+                return tr("лимит записей с {site}: идёт {count} из {limit} (настройки)",
+                          site=sites.site(platform).NAME, count=here, limit=limits[platform])
+            self._slots[cid] = platform
+        return None
+
+    def _free_slot(self, cid):
+        with self._slots_lock:
+            self._slots.pop(cid, None)
+
     def _launch(self, entry, record_now=False):
         """Запускает наблюдение за каналом. Вызывается под self._lock."""
         platform, channel = entry["platform"], entry["channel"]
@@ -930,7 +955,8 @@ class LiveService:
                                    chat_factory=self._chat_factory,
                                    autorecord=entry["enabled"],
                                    once=bool(entry.get("temporary")),
-                                   on_exit=self._recorder_exited)
+                                   on_exit=self._recorder_exited,
+                                   slots=(self._take_slot, self._free_slot))
         if record_now:
             recorder.record_now()
         self._recorders[cid] = recorder

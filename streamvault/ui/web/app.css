@@ -924,6 +924,7 @@ select { padding-right: 6px; }
 .rec-corner { position: absolute; left: 6px; bottom: 6px; }
 .rec-stats { display: flex; gap: 24px; margin-top: 4px; }
 .rec-beginning { margin-top: 4px; }
+.job-status.rec-trouble { margin-top: 4px; color: var(--warn); }
 /* кнопки идущей записи: с подписями, «Остановить» — красная, чтобы не нажать вместо «Смотреть» */
 .rec-actions { gap: 8px; align-items: center; }
 .btn.stop { background: transparent; border: 1px solid var(--live); color: #ff6b6b; }
@@ -1270,6 +1271,8 @@ select { padding-right: 6px; }
 }
 .modal .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
 .modal .four { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 10px; }
+.modal .five { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0 10px; }
+.modal .five .field input.narrow { width: 100%; min-width: 0; }
 .modal .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 10px; }
 
 /* ---------------------------------------------------------------- уведомления */
@@ -1619,6 +1622,22 @@ body.sidebar-animate .selection-bar { transition: left .22s ease; }
 .summary-gaps { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 6px 10px; }
 .summary-gap { padding: 2px 8px; color: var(--warn); font-variant-numeric: tabular-nums; }
 .summary-top { display: flex; flex-direction: column; margin-bottom: 18px; }
+/* весь список — в своём окошке с прокруткой: окно сводки не растягивается */
+.summary-more { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.summary-filter { width: 100%; height: 32px; font-size: 13px; }
+.summary-scroll {
+  max-height: 340px; overflow-y: auto; margin-bottom: 0; padding-right: 4px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 4px;
+}
+.summary-place { display: inline-block; min-width: 34px; margin-right: 6px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.summary-empty { padding: 8px 10px; }
+.summary-toggle { align-self: flex-start; margin: -10px 0 14px; }
+/* раскрытие и сворачивание — плавно: окошко выезжает вниз, короткий список проявляется */
+.summary-more { overflow: hidden; animation: summary-open .26s ease; }
+.summary-top.collapsed-in { animation: summary-fade .2s ease; }
+@keyframes summary-open { from { max-height: 0; opacity: 0; } to { max-height: 420px; opacity: 1; } }
+@keyframes summary-fade { from { opacity: 0; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .summary-more, .summary-top.collapsed-in { animation: none; } }
 .summary-top-row { display: flex; justify-content: space-between; gap: 10px; padding: 4px 10px; border-radius: 6px; }
 /* смайл в «Частых смайлах» — картинкой перед названием */
 .summary-emote { width: 24px; height: 24px; margin: -4px 8px -4px 0; object-fit: contain; vertical-align: middle; }
@@ -1640,3 +1659,27 @@ button.summary-top-row:hover .summary-name { text-decoration: underline; }
 }
 .chat-search-group .chat-time { margin-right: 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .chat-search-group .chat-name { font-weight: 600; }
+
+/* ---------------------------------------------------------------- редактирование записи */
+
+/* «Редактирование»: вкладки «Конвертировать» / «Разделить на части», под ними —
+   что будет, поля сеткой в две колонки и кнопка действия */
+.modal.edit-window { width: 580px; }
+.edit-subject { margin-top: -2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edit-tabs { margin: 16px 0 12px; }
+.edit-tabs button { display: inline-flex; align-items: center; gap: 7px; }
+.edit-tabs .icon { width: 16px; height: 16px; }
+.edit-about {
+  display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 8px;
+  background: var(--card); color: var(--muted); font-size: 13px; line-height: 1.45;
+}
+.edit-about .icon { flex: none; width: 18px; height: 18px; margin-top: 1px; color: var(--accent-text); }
+.edit-content { margin-top: 16px; }
+.edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+.edit-grid .field { margin: 0; }
+.edit-grid .field.wide { grid-column: 1 / -1; }
+.edit-grid .field[hidden] { display: none; }
+.edit-grid select, .edit-grid input { width: 100%; }
+.edit-keep { margin-top: 16px; }
+.modal.edit-window .actions { margin-top: 20px; }
+

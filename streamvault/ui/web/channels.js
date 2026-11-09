@@ -3,7 +3,7 @@
  * канала, списки записей и клипов, одно видео и запись по ссылке.
  */
 
-import { CHAT_MODES, CHAT_ONLY, CONVERT_FORMATS, SPLIT_MODES, KIND_LABELS, PAGE, PERIOD_LABELS, bridge, button, channelName, channelUrl, chatSupported, confirmDialog, downloadChoice, displayTitle, ensureProfiles, entryChannelName, failed, fillAvatar, fmt, h, icon, iconButton, isLive, isRecording, isUrl, recordStarting, keepDaysSelect, setLiveQuality, knownProfile, liveQualityLabel, liveQualitySelect, liveThumb, openModal, platformName, setSrc, setText, siteInfo, sortedChannels, splitId, state, stateText, stateTone, syncList, t, toast, platformLogo, PLATFORM} from "./common.js";
+import { CHAT_MODES, CHAT_ONLY, CONVERT_FORMATS, SPLIT_MODES, KIND_LABELS, PAGE, PERIOD_LABELS, bridge, button, channelName, channelUrl, chatSupported, confirmDialog, downloadChoice, displayTitle, ensureProfiles, entryChannelName, failed, fillAvatar, fmt, h, icon, iconButton, isLive, isRecording, isUrl, recordStarting, keepDaysSelect, setLiveQuality, knownProfile, liveQualityLabel, liveQualitySelect, liveThumb, openModal, platformName, setSrc, setText, siteInfo, sortedChannels, splitId, state, stateText, stateTone, syncList, t, toast, platformLogo, PLATFORM, recordingTroubleText} from "./common.js";
 import { twitchdownloaderBlock } from "./settings.js";
 import { openAddChannel } from "./search.js";
 import { navigate, recBadge, refreshView, render, routeHash, view } from "./app.js";
@@ -528,9 +528,10 @@ export function refreshChannelHeader() {
   const listed = state.channels.get(id);
   view.enabled.checked = Boolean(listed && listed.enabled);
   refreshRecordButton();
+  const trouble = recordingTroubleText(channel);
   const key = channel ? [channel.state, channel.message, channel.last_check,
                          (channel.stream || {}).viewers, channel.probe,
-                         recordStarting(channel.id, channel)].join("|") : "untracked";
+                         recordStarting(channel.id, channel), trouble].join("|") : "untracked";
   if (view.stateLine.dataset.key !== key) {
     view.stateLine.dataset.key = key;
     view.stateLine.replaceChildren();
@@ -547,6 +548,7 @@ export function refreshChannelHeader() {
       if (live && channel.stream && channel.stream.viewers !== null && channel.stream.viewers !== undefined) {
         view.stateLine.append(h("span", { class: "faint", text: "· " + fmt.viewers(channel.stream.viewers) }));
       }
+      if (trouble) view.stateLine.append(h("span", { class: "warn-text", text: "· " + trouble }));
       if (channel.state === "offline" && channel.last_check) {
         const ago = h("span", { class: "faint" });
         ago.dataset.ago = channel.last_check;

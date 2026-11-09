@@ -31,6 +31,8 @@ RESULT_MESSAGES = 20
 # Дольше этого один поиск не переписывает чаты в базу: остальное — в следующий раз.
 SYNC_BUDGET = 4.0
 TOP = 10
+# весь список зрителей или смайлов эфира (сводка, «Показать всех») — не длиннее этого
+RANKING_LIMIT = 5000
 VIDEO_EXTENSIONS = (".mp4", ".ts", ".mkv", ".webm", ".m4a", ".mp3")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, path TEXT UNIQUE, key TEXT, video TEXT);
@@ -228,9 +230,33 @@ class ChatIndex:
             "parts": per_part,
             "top_chatters": [list(pair) for pair in names.most_common(TOP)],
             "top_emotes": [list(pair) for pair in emotes.most_common(TOP)],
+            # сколько разных смайлов — окно предложит раскрыть весь список
+            "emote_kinds": len(emotes),
             # самые сильные всплески чата — в порядке эфира
             "moments": sorted(moments[:TOP], key=lambda moment: (moment["part"], moment["at"])),
         }
+
+    def ranking(self, json_paths, kind):
+        """
+        Весь список эфира по убыванию: kind="chatters" — зрители и сколько они
+        написали, kind="emotes" — смайлы и сколько раз они были. [[имя, сколько]].
+        """
+        paths = [path for path in json_paths if os.path.isfile(path)]
+        self.sync(budget=None, only=paths)
+        counter = collections.Counter()
+        with self._lock:
+            db = self._connect()
+            for path in paths:
+                row = db.execute("SELECT id FROM files WHERE path = ?", (path,)).fetchone()
+                if row is None:
+                    continue
+                if kind == "emotes":
+                    for (line,) in db.execute("SELECT emotes FROM messages WHERE file = ? AND emotes != ''", (row[0],)):
+                        counter.update(line.split("\n"))
+                else:
+                    counter.update(dict(db.execute(
+                        "SELECT name, count(*) FROM messages WHERE file = ? GROUP BY name", (row[0],)).fetchall()))
+        return [list(pair) for pair in counter.most_common(RANKING_LIMIT)]
 
     def close(self):
         with self._lock:

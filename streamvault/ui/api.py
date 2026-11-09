@@ -11,6 +11,7 @@
 import collections
 import copy
 import glob
+import json
 import logging
 import os
 import re
@@ -54,7 +55,7 @@ EDITABLE = ("language", "root_path", "quality", "twitch_client_id", "twitch_clie
             "chat_mode", "chat_width", "chat_height", "chat_font_size", "check_updates", "update_prereleases",
             "live_chat", "convert_recordings", "convert_format", "mp4_faststart",
             "record_from_start", "join_beginning", "min_free_gb", "keep_days",
-            "split_mode", "split_size_gb", "split_minutes", "split_count")
+            "split_mode", "split_size_gb", "split_minutes", "split_count", "record_limits")
 
 # Да/нет из окна приходят как true/false.
 FLAGS = ("close_to_tray", "tray_notifications", "check_updates", "update_prereleases", "convert_recordings",
@@ -79,7 +80,7 @@ LIMITS = {"max_downloads": (1, 10), "download_fragments": (1, 16),
 RECORDING_DEFAULT_KEYS = ("quality", "convert_recordings", "convert_format", "mp4_faststart",
                           "split_mode", "split_size_gb", "split_minutes", "split_count",
                           "record_from_start", "join_beginning", "min_free_gb", "keep_days",
-                          "refresh", "probe_timeout")
+                          "refresh", "probe_timeout", "record_limits")
 
 LOG_LEVELS = ("debug", "info", "warning", "error")
 # Как делить запись на куски при конвертации (live/processing.py: split_points).
@@ -116,7 +117,7 @@ class Api:
         "watch_live", "live_status", "chat_activity", "storyboard", "check_recording",
         "search_chats", "broadcast_summary",
         "library", "library_preview", "library_chat", "delete_file", "chat_gaps_status", "recording_chat_gaps",
-        "file_chat_status", "file_chat",
+        "file_chat_status", "file_chat", "broadcast_ranking", "beginning_status", "recording_beginning",
         "ffmpeg_status", "install_ffmpeg", "cancel_ffmpeg_install", "choose_ffmpeg",
         "check_ffmpeg", "ytdlp_status", "update_ytdlp", "cancel_ytdlp_update",
         "twitchdownloader_status", "install_twitchdownloader", "cancel_twitchdownloader_install",
@@ -498,9 +499,7 @@ class Api:
         ffmpeg = self._ffmpeg.path() if self._ffmpeg else None
         lengths = [(part, probe_duration(ffmpeg, part)) for part in parts]
         # склеенная с началом эфира запись начинается с начала эфира, а не с времени в имени
-        joined = {os.path.normcase(job["file"]) for job in self._downloads.snapshot()["jobs"]
-                  if job.get("joined") and job.get("file")}
-        from_start = os.path.normcase(parts[0]) in joined
+        from_start = self._downloads.joined_seam(parts[0]) is not None
         added, _ = self._downloads.chat_for_recording(platform, label, lengths, moment, from_start,
                                                       self._settings["chat_mode"] if self._settings["chat_mode"]
                                                       != chat.NONE else chat.TEXT)
@@ -534,11 +533,9 @@ class Api:
         if not moment:
             raise ValueError(tr("не понять, когда шла запись: время — из имени файла"))
         # склеенная с началом эфира запись начинается с начала эфира — раньше времени в имени
+        seam = self._downloads.joined_seam(parts[0])
         joined = next((job for job in self._downloads.snapshot()["jobs"] if job.get("joined") and job.get("file")
                        and os.path.normcase(job["file"]) == os.path.normcase(parts[0])), None)
-        seam = None
-        if joined:
-            seam = joined.get("joined_seam") or max(0.0, (joined.get("section") or [0, 0])[1] - dl.BEGINNING_OVERLAP)
         begin = moment - (seam or 0)
         plan = []
         for index, part in enumerate(parts):
@@ -603,11 +600,7 @@ class Api:
         moment = parse_recording_name(os.path.splitext(os.path.basename(parts[0]))[0]).get("timestamp")
         if not moment:
             raise ValueError(tr("не понять, когда шла запись: время — из имени файла"))
-        joined = next((job for job in self._downloads.snapshot()["jobs"] if job.get("joined") and job.get("file")
-                       and os.path.normcase(job["file"]) == os.path.normcase(parts[0])), None)
-        seam = None
-        if joined:
-            seam = joined.get("joined_seam") or max(0.0, (joined.get("section") or [0, 0])[1] - dl.BEGINNING_OVERLAP)
+        seam = self._downloads.joined_seam(parts[0])
         begin, timeline = moment - (seam or 0), []
         for part in parts:
             length = self._part_length(part)
@@ -718,6 +711,130 @@ class Api:
         for part, start, gaps in found:
             self._downloads.add_gap_chat(part, platform, login, start, gaps, title=title, chat_mode=mode)
         return {"added": len(found)}
+
+    # ------------------------------------------------------------ начало эфира позже
+
+    def _beginning_plan(self, path, look=True):
+        """
+        Начало эфира, которое не скачалось при записи (запись эфира была скрыта,
+        её ещё не выложили): что сделать сейчас. ("retry", загрузка) — повторить
+        прежнюю загрузку начала; ("new", сведения) — поставить новую. look=False —
+        без сети (запись эфира не ищется). Нельзя — ValueError с причиной.
+        """
+        from ..library import parse_recording_name
+        from ..live.beginning import MIN_GAP, OVERLAP
+        path = self._media(path)
+        platform, label = util.recording_channel(self._settings["root_path"], path)
+        if not platform:
+            raise ValueError(tr("начало эфира докачивается только у своих записей эфиров"))
+        if sites.beginning_when(platform) is None:
+            raise ValueError(tr("у этой площадки начала эфира не взять"))
+        parts = [part for _, part in broadcast_parts(path)]
+        if any(os.path.splitext(part)[0].endswith(dl.PART00) for part in parts):
+            raise ValueError(tr("начало эфира уже скачано, склейка после конца записи"))
+        first = parts[0]
+        head = os.path.normcase(os.path.splitext(first)[0] + dl.PART00)
+        jobs = self._downloads.snapshot()["jobs"]
+        if self._downloads.joined_seam(first) is not None or self._starts_before_recording(first):
+            raise ValueError(tr("начало эфира уже склеено с записью"))
+        own = [job for job in jobs if os.path.normcase(job.get("fixed_target") or "") == head]
+        if any(job["state"] in (dl.QUEUED, dl.DOWNLOADING, dl.PROCESSING) for job in own):
+            raise ValueError(tr("начало эфира уже скачивается, ход во вкладке «Загрузки»"))
+        failed = next((job for job in own if job["state"] in (dl.FAILED, dl.PAUSED, dl.CANCELLED)), None)
+        named = parse_recording_name(os.path.splitext(os.path.basename(first))[0])
+        moment = named.get("timestamp")
+        if not moment:
+            raise ValueError(tr("не понять, когда шла запись: время — из имени файла"))
+        if not look:
+            return ("retry", failed) if failed else ("new", None)
+        vod = self._downloads.find_vod(platform, label, moment, named.get("title") or "")
+        if vod is None or not vod.get("timestamp"):
+            raise ValueError(tr("записи эфира на площадке пока нет или она скрыта"))
+        gap = moment - vod["timestamp"]
+        if gap < MIN_GAP:
+            raise ValueError(tr("запись началась с начала эфира, докачивать нечего"))
+        if failed:
+            return "retry", failed
+        return "new", {"vod": vod, "gap": gap, "length": gap + OVERLAP, "first": first, "platform": platform,
+                       "channel": label, "title": named.get("title") or ""}
+
+    @staticmethod
+    def _starts_before_recording(video):
+        """
+        Склеена ли запись с началом эфира, даже если строки загрузки уже нет:
+        по чату — время сообщений в нём идёт от начала эфира, раньше времени в имени.
+        """
+        import datetime
+        from ..library import parse_recording_name
+        moment = parse_recording_name(os.path.splitext(os.path.basename(video))[0]).get("timestamp")
+        json_path = chat.chat_paths(video)["json"]
+        if not moment or not os.path.isfile(json_path):
+            return False
+        # чат бывает в сотню мегабайт: хватит первых сообщений — начало файла
+        try:
+            with open(json_path, encoding="utf-8", errors="replace") as source:
+                head = source.read(1 << 20)
+        except OSError:
+            return False
+        pairs = re.findall(r'"created_at":\s*"([^"]+)"[^{}]*?"content_offset_seconds":\s*([\d.]+)', head)
+        for created, offset in pairs[:200]:
+            try:
+                sent = datetime.datetime.fromisoformat(created.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                continue
+            # в записи сообщение стоит позже, чем прошло от её начала, — перед записью
+            # склеено начало эфира (сдвиг — его длина), даже если чата у начала не было
+            if float(offset) - (sent - moment) > 60:
+                return True
+        return False
+
+    def beginning_status(self, path, look=False):
+        """
+        Можно ли сейчас докачать начало эфира записи: {"ok", "reason"}. look —
+        искать и запись эфира на площадке (сеть, секунды); без него — только то,
+        что видно на месте: меню открывается сразу, площадку спрашивает щелчок.
+        """
+        from ..live.beginning import clock
+        try:
+            action, found = self._beginning_plan(path, look=bool(look))
+        except ValueError as error:
+            return {"ok": False, "reason": str(error)}
+        except Exception as error:          # сеть, yt-dlp
+            return {"ok": False, "reason": tr("запись эфира не проверить: {error}", error=str(error)[:200])}
+        if action == "retry":
+            return {"ok": True, "reason": tr("прежняя загрузка начала скачается заново")}
+        if found is None:
+            return {"ok": True, "reason": tr("проверка, есть ли запись эфира на площадке, — по щелчку")}
+        return {"ok": True, "reason": tr("запись эфира на площадке есть: начало {length}",
+                                         length=clock(found["gap"]))}
+
+    def recording_beginning(self, path):
+        """
+        Докачать начало эфира записи (запись эфира стала видна позже): кусок до
+        начала записи — первой частью «… - part00», склеится с записью сам.
+        """
+        from ..live.beginning import clock, download_quality
+        action, found = self._beginning_plan(path)
+        if action == "retry":
+            self._downloads.resume(found["id"])
+            return {"id": found["id"], "retry": True}
+        vod = found["vod"]
+        # те же кодеки и высота, что у записи, — иначе не склеить
+        height = None
+        if self._ffmpeg is not None and self._ffmpeg.path():
+            from ..editing import probe
+            size = probe(self._ffmpeg.path(), found["first"])[1]
+            height = size[1] if size else None
+        meta = {"title": found["title"], "channel": found["channel"], "platform": found["platform"],
+                "kind": "video" if found["platform"] == "youtube" else "vod", "timestamp": vod["timestamp"],
+                "live_status": "was_live"}
+        mode = self._settings["chat_mode"] if self._settings["chat_mode"] != chat.NONE else chat.TEXT
+        job_id = self._downloads.add(vod["url"], quality=download_quality("%dp" % height if height else "best"),
+                                     section=(0, found["length"]), meta=meta, chat_mode=mode,
+                                     target=os.path.splitext(found["first"])[0] + dl.PART00)
+        logging.info(tr("начало эфира докачивается: {name} ({length})", name=os.path.basename(found["first"]),
+                        length=clock(found["gap"])))
+        return {"id": job_id, "retry": False}
 
     def recording_chat_archive(self, path):
         """Чат записи из архива чатов: по загрузке на часть. {"added": сколько поставлено}."""
@@ -884,23 +1001,40 @@ class Api:
             raise ValueError(tr("искать можно в тексте или по нику"))
         return self._need_chat_index().search(str(text)[:100], by)
 
-    def broadcast_summary(self, path):
-        """
-        Сводка эфира по всем его частям: чат (сообщений, зрителей, самые
-        активные, смайлы, всплески — с частью и временем) и пропуски каждой части.
-        """
+    def _summary_chats(self, path):
+        """(путь, чат без видео или None, части, их длины, .chat.json частей) — для сводки эфира."""
         from ..library import chat_only_json, read_chat_facts
         path = self._media(path)
         only_chat = chat_only_json(path)
         if only_chat is not None:
             # чат, скачанный без видео: одна «часть» — сам чат, длина — из него
             facts = self._library.chat_facts(only_chat) if self._library is not None else read_chat_facts(only_chat)
-            parts, durations, chats = [path], [facts.get("length") or None], [only_chat]
-        else:
-            parts = [part["path"] for part in self._parts(path)]
-            durations = [self._library.preview(part).get("duration") if self._library is not None else None
-                         for part in parts]
-            chats = [chat.chat_paths(part)["json"] for part in parts]
+            return path, only_chat, [path], [facts.get("length") or None], [only_chat]
+        parts = [part["path"] for part in self._parts(path)]
+        durations = [self._library.preview(part).get("duration") if self._library is not None else None
+                     for part in parts]
+        return path, None, parts, durations, [chat.chat_paths(part)["json"] for part in parts]
+
+    def broadcast_ranking(self, path, kind):
+        """
+        Весь список сводки эфира: kind="chatters" — [[ник, сообщений]],
+        kind="emotes" — [[смайл, сколько, картинка]] (у смайлов — как в окне чата).
+        """
+        if kind not in ("chatters", "emotes"):
+            raise ValueError(tr("неизвестный список: {kind}", kind=str(kind)[:20]))
+        chats = [json for json in self._summary_chats(path)[4] if os.path.isfile(json)]
+        ranking = self._need_chat_index().ranking(chats, kind)
+        if kind == "emotes":
+            images = self._emote_images(chats, [name for name, _ in ranking])
+            ranking = [[name, count, images.get(name, "")] for name, count in ranking]
+        return ranking
+
+    def broadcast_summary(self, path):
+        """
+        Сводка эфира по всем его частям: чат (сообщений, зрителей, самые
+        активные, смайлы, всплески — с частью и временем) и пропуски каждой части.
+        """
+        path, only_chat, parts, durations, chats = self._summary_chats(path)
         result = self._need_chat_index().summary([json for json in chats if os.path.isfile(json)],
                                                  [duration for json, duration in zip(chats, durations)
                                                   if os.path.isfile(json)])
@@ -1062,7 +1196,12 @@ class Api:
         Возвращает id правки.
         """
         path = self._media(path)
-        if not isinstance(split, dict) or split.get("mode") not in ("size", "duration", "count"):
+        if not isinstance(split, dict) or split.get("mode") not in ("off", "size", "duration", "count"):
+            raise ValueError(tr("как делить: size, duration или count"))
+        fmt = split.get("format")
+        if fmt is not None and fmt not in CONVERT_FORMATS:
+            raise ValueError(tr("формат после записи: {formats}", formats=", ".join(CONVERT_FORMATS)))
+        if split["mode"] == "off" and fmt is None:
             raise ValueError(tr("как делить: size, duration или count"))
         waits = getattr(self._live, "beginning_waits", None)
         if waits is not None and waits(path):
@@ -1085,7 +1224,7 @@ class Api:
             channel_option_value("split_size_gb", split.get("size_gb", self._settings["split_size_gb"])),
             channel_option_value("split_minutes", split.get("minutes", self._settings["split_minutes"])),
             channel_option_value("split_count", split.get("count", self._settings["split_count"])),
-            keep_whole=keep)
+            keep_whole=keep, fmt=fmt)
 
     def cancel_edit(self, job_id):
         self._need_editor().cancel(str(job_id))
@@ -1491,6 +1630,21 @@ class Api:
                 except (TypeError, ValueError):
                     raise ValueError(tr("интервал опроса — целое число секунд"))
             return result
+        if key == "record_limits":
+            if not isinstance(value, dict):
+                raise ValueError(tr("лимит записей — числа: всего и по площадкам"))
+            result = {}
+            for name, limit in value.items():
+                if name != "all" and name not in PLATFORMS:
+                    raise ValueError(tr("неизвестная платформа: {name}", name=name))
+                try:
+                    number = int(limit)
+                except (TypeError, ValueError):
+                    raise ValueError(tr("лимит записей — целое число, 0 — без ограничения"))
+                if not 0 <= number <= 100:
+                    raise ValueError(tr("{key} — от {low} до {high}", key=key, low=0, high=100))
+                result[name] = number
+            return dict(self._settings["record_limits"], **result)
         if key == "convert_format":
             if value not in CONVERT_FORMATS:
                 raise ValueError(tr("формат после записи: {formats}", formats=", ".join(CONVERT_FORMATS)))

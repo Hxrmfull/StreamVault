@@ -642,6 +642,26 @@ export function channelUrl(id) {
   return templates[platform] ? templates[platform] + channel.replace(/^@/, "") : "";
 }
 
+// неполадки идущей записи (live/recorder.py: Trouble) — словами. Площадка прямо отвечает
+// «слишком много запросов» или отказом — похоже, режет она; запись отстаёт, а с других
+// площадок записи при этом успевают — тоже похоже на неё; отстают все — сеть или диск
+export function recordingTroubleText(channel) {
+  const trouble = channel && channel.recording && channel.recording.trouble;
+  if (!trouble) return "";
+  const site = platformName(channel.platform);
+  if (trouble.kind === "platform") {
+    return trouble.detail === "429"
+      ? t("{site}, похоже, ограничивает скачивание: отвечает «слишком много запросов»", { site: site })
+      : t("{site}, похоже, ограничивает скачивание: отказывает в доступе", { site: site });
+  }
+  const others = [...state.channels.values()].filter((other) => other.recording && other.platform !== channel.platform);
+  const behind = (other) => (other.recording.trouble || {}).kind === "behind";
+  if (others.length && !others.some(behind)) {
+    return t("{site}, похоже, ограничивает скачивание: отстают только записи с неё", { site: site });
+  }
+  return t("Запись не успевает: не хватает скорости сети или диска");
+}
+
 export function stateText(channel) {
   // «Записать» нажали, streamlink ещё подключается — в тон кнопке
   if (recordStarting(channel.id, channel)) return t("запись начинается…");

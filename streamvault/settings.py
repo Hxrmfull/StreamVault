@@ -114,6 +114,9 @@ DEFAULTS = {
     "download_quality": "best",
     # Сколько загрузок идёт одновременно.
     "max_downloads": 2,
+    # Сколько эфиров записывать одновременно: всего и с каждой площадки; 0 — без
+    # ограничения (по умолчанию). Эфир сверх лимита ждёт, пока освободится место.
+    "record_limits": {"all": 0, "twitch": 0, "kick": 0, "youtube": 0, "vkvideolive": 0},
     # Сколько кусков записи эфира качать параллельно: так в разы быстрее.
     # Замер на записи Twitch (2026-11-07): 4 — 17 МБ/с, 8 — 19, 12 и 16 — столько
     # же (упёрлось в интернет); больше 8 YouTube бывает отвечает отказом.
@@ -239,6 +242,14 @@ def _validated(data, base=None):
             if isinstance(value, dict):
                 merged = copy.deepcopy(default)
                 merged.update(value)
+                result[key] = merged
+                continue
+        elif key == "record_limits":
+            if isinstance(value, dict):
+                merged = copy.deepcopy(default)
+                for name, limit in value.items():
+                    if name in merged and isinstance(limit, (int, float)) and not isinstance(limit, bool):
+                        merged[name] = max(0, int(limit))
                 result[key] = merged
                 continue
         elif key == "channels":

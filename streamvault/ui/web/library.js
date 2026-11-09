@@ -376,6 +376,8 @@ function cardAbilities(item) {
     // скачанное видео без чата, строки которого в «Загрузках» уже нет: ссылка — по id в имени
     fileChat: item.kind === "download" && !onlyChat && !item.edit && !parts.some((part) => part.chat && part.chat.json)
       && ![...state.jobs.values()].some((job) => job.file && paths.has(same(job.file))),
+    // начало эфира не скачалось при записи (запись эфира была скрыта) — проверить, не появилась ли
+    beginningLater: item.kind === "record" && !item.edit && !onlyChat,
     // архив чатов — у своих записей эфиров; можно ли сейчас, скажет сама программа
     archive: item.kind === "record" && !item.edit && !onlyChat,
     // пропуски в чате записи (разрывы связи, подозрительная тишина) — докачать
@@ -383,8 +385,9 @@ function cardAbilities(item) {
     // начало эфира склеено с записью без своего чата — докачать его (как в «Загрузках»)
     beginningChat: [...state.jobs.values()].find((job) => job.joined && !job.beginning_chat && job.state === "done"
                                                   && paths.has(same(job.file)) && chatSupported(job)),
-    // запись, оставленная в .ts (автоконвертация выключена), — сконвертировать
-    convert: item.kind === "record" && ts.length > 0,
+    // в другой формат: запись в .ts (автоконвертация выключена) — в mp4, mkv или звук;
+    // любое видео (mp4, mkv, webm) — тоже, без перекодирования, можно сразу с делением
+    convert: !onlyChat && (ts.length > 0 || parts.some((part) => VIDEO_FILE.test(part.path))),
     converting: ts.length > 0 && ts.every((part) => state.converting.has(part.path)),
     split: whole.length > 0,
     // целую часть можно поделить, пока она не делится прямо сейчас
@@ -453,14 +456,19 @@ async function openCardMenu(card, at) {
                       count: fmt.counted(answer.gaps, t("участок|участка|участков")),
                       length: fmt.duration(answer.seconds), reason: answer.reason }) : answer.reason })),
                   onclick: () => fetchChatGaps(item) } : null,
+     can.beginningLater ? { icon: "download", label: t("Докачать начало эфира"), checking: t("проверка…"),
+                            check: () => bridge.call("beginning_status", item.path).then((answer) => ({
+                              disabled: !answer.ok, hint: answer.reason })),
+                            onclick: () => fetchBeginning(item) } : null,
      can.beginningChat ? { icon: "download", label: t("Скачать чат начала"),
                            title: t("Чат начала эфира встанет в чат записи до стыка; чат прямого эфира останется"),
                            onclick: run(() => bridge.call("download_chat", can.beginningChat.id).then(chatInDownloads)) } : null,
      can.overlay ? { icon: "overlay", label: t("Сделать видео с чатом поверх"), onclick: () => openOverlay(item) } : null],
-    [can.convert ? { icon: "convert", label: can.converting ? t("Конвертируется…") : t("Конвертировать…"),
-                     disabled: can.converting, onclick: () => openConvert(card) } : null,
-     can.split ? { icon: "scissors", label: can.splitting ? t("Делится на части…") : t("Разделить на части…"),
-                   disabled: can.splitting, onclick: () => openSplit(item) } : null,
+    // конвертация и деление на части — одним пунктом, окно с вкладками; идёт — так и сказано
+    [can.convert || can.split ? { icon: "scissors", label: t("Редактирование…"),
+       disabled: (!can.convert || can.converting) && (!can.split || can.splitting),
+       hint: can.converting ? t("конвертируется…") : can.splitting ? t("делится на части…") : "",
+       onclick: () => openEdit(card, can) } : null,
      { icon: "folder", label: t("Показать в папке"), onclick: run(() => bridge.call("show_in_folder", item.path)) }],
     [{ icon: "trash", label: t("В корзину"), danger: true, onclick: () => confirmDelete(item) }],
   ], () => card.classList.remove("menu-open"));
@@ -480,6 +488,20 @@ async function fetchArchiveChat(item) {
     await bridge.call("recording_chat_archive", item.path);
     try { sessionStorage.setItem("downloads-tab", "chats"); } catch (error) { /* не помним — не беда */ }
     toast(t("История чата загружается из стороннего архива logs.zonian.dev, ход в «Загрузках»"), "ok", "#downloads");
+  } catch (error) {
+    failed(error);
+  }
+}
+
+// начало эфира, которого не было при записи: площадка спрашивается сейчас — нет записи, так и сказано
+async function fetchBeginning(item) {
+  toast(t("Поиск записи этого эфира на площадке…"));
+  try {
+    const answer = await bridge.call("recording_beginning", item.path);
+    try { sessionStorage.setItem("downloads-tab", "joining"); } catch (error) { /* не помним — не беда */ }
+    toast(answer.retry ? t("Начало эфира скачивается заново, ход во вкладке «Склеивается»")
+                       : t("Начало эфира скачивается, после этого склеится с записью; ход во вкладке «Склеивается»"),
+          "ok", "#downloads");
   } catch (error) {
     failed(error);
   }
@@ -556,9 +578,8 @@ function splittable(item) {
 
 // «Разделить»: каждая целая часть — на куски того же формата; целая остаётся
 // в подпапке whole (галочка, по умолчанию включена) или уходит в корзину
-function openSplit(item) {
+function splitPanel(item) {
   const parts = splittable(item);
-  if (!parts.length) return;
   const controls = splitControls(item, false);
   const keep = h("input", { type: "checkbox" });
   keep.checked = true;
@@ -570,82 +591,181 @@ function openSplit(item) {
     : t("Целая запись с чатом уйдёт в корзину Windows. Файл больше корзины Windows удаляет насовсем."));
   keep.addEventListener("change", showKeep);
   showKeep();
-  const modal = openModal();
-  const start = button(t("Разделить"), { kind: "primary", onclick: async () => {
-    start.disabled = true;
-    let started = 0;
-    for (const part of parts) {
-      try {
-        await bridge.call("split_recording", part.path, Object.assign(controls.value(), { keep_whole: keep.checked }));
-        started++;
-      } catch (error) {
-        failed(error);
-      }
-    }
-    modal.close();
-    if (started) {
-      showEditsNext();
-      toast(t("Деление на части, ход виден в «Загрузках»"), "ok", "#downloads");
-    }
-  } });
   const skipped = partsOf(item).length - parts.length;
-  modal.body.append(
-    h("h2", { text: t("Разделить на части") }),
-    h("div", { class: "muted field-gap", text: (parts.length > 1
+  return {
+    label: t("Разделить"),
+    about: (parts.length > 1
       ? t("Частей эфира: {count}. Каждая поделится так, как выбрано.", { count: parts.length }) + " " : "")
       + t("Без перекодирования, по ключевым кадрам: части выходят примерно такими. Формат тот же, у каждой части свой чат.")
-      + (skipped ? " " + t("Уже поделённые части ({count}) не трогаются.", { count: skipped }) : "") }),
-    ...controls.fields,
-    h("div", { class: "field" }, h("label", { class: "switch" }, keep, h("span", { class: "track" }),
-      t("Оставить целую запись")), keepHint),
-    h("div", { class: "actions" }, button(t("Отмена"), { onclick: () => modal.close() }), start));
+      + (skipped ? " " + t("Уже поделённые части ({count}) не трогаются.", { count: skipped }) : ""),
+    fields: [h("div", { class: "edit-grid" }, ...controls.fields),
+      h("div", { class: "field edit-keep" }, h("label", { class: "switch" }, keep, h("span", { class: "track" }),
+        t("Оставить целую запись")), keepHint)],
+    async run() {
+      let started = 0;
+      for (const part of parts) {
+        try {
+          await bridge.call("split_recording", part.path, Object.assign(controls.value(), { keep_whole: keep.checked }));
+          started++;
+        } catch (error) {
+          failed(error);
+        }
+      }
+      if (started) {
+        showEditsNext();
+        toast(t("Деление на части, ход виден в «Загрузках»"), "ok", "#downloads");
+      }
+      return started > 0;
+    },
+  };
 }
 
-// «Конвертировать запись»: сначала окно — во что, делить ли и как; сразу стоит то, что у канала
-function openConvert(card) {
-  const parts = partsOf(card._item).filter((part) => /\.ts$/i.test(part.path));
-  if (!parts.length) return;
-  const item = card._item;
+// видео, которое переписывается в другой формат правкой (не очередью записей, как .ts)
+const VIDEO_FILE = /\.(mp4|mkv|webm)$/i;
+const FORMAT_OF = { ".mp4": "mp4", ".mkv": "mkv", ".m4a": "audio" };
+
+// «Конвертировать»: во что, делить ли и как; сразу стоит то, что у канала. Запись в .ts —
+// очередью записей (как после эфира); mp4, mkv, webm — правкой, без перекодирования
+function convertPanel(item) {
+  const all = partsOf(item);
+  const parts = all.filter((part) => /\.ts$/i.test(part.path));
+  if (!parts.length) return remuxPanel(item, all.filter((part) => VIDEO_FILE.test(part.path)));
   const controls = splitControls(item, true);
   const format = h("select", null, CONVERT_FORMATS.map(([value, label]) => h("option", { value: value, text: t(label) })));
   format.value = channelSetting(item, "convert_format") || "mp4";
   // кусок поделённой записи ещё раз не делится — только конвертируется; целая из whole
-  // при конвертации тоже не делится (части легли бы в whole) — её делят ножницами
+  // при конвертации тоже не делится (части легли бы в whole) — её делят на вкладке «Разделить»
   const pieces = parts.every((part) => part.piece || part.whole);
-  const modal = openModal();
-  const start = button(t("Конвертировать"), { kind: "primary", onclick: () => {
-    const split = controls.value();
-    start.disabled = true;
-    Promise.all(parts.map((part) => {
-      state.converting.add(part.path);
-      return bridge.call("convert_recording", part.path, split, format.value)
-        .then(() => {
-          showEditsNext();
-          toast(t("Конвертация: {name}, ход виден в «Загрузках»", { name: part.name }), "ok", "#downloads");
-        })
-        .catch((error) => {
-          state.converting.delete(part.path);
-          throw error;
-        });
-    }))
-      .then(() => modal.close())
-      .catch((error) => {
-        start.disabled = false;
-        failed(error);
-      });
-  } });
-  modal.body.append(
-    h("h2", { text: t("Конвертировать запись") }),
-    h("div", { class: "muted field-gap", text: pieces && parts.every((part) => part.whole)
-      ? t("Целая запись перепишется в выбранный формат без перекодирования, чат — вместе с ней. Файл .ts после этого удалится. Разделить её — ножницами на карточке.")
+  return {
+    label: t("Конвертировать"),
+    about: pieces && parts.every((part) => part.whole)
+      ? t("Целая запись перепишется в выбранный формат без перекодирования, чат — вместе с ней. Файл .ts после этого удалится.")
       : pieces
       ? t("Части перепишутся в выбранный формат без перекодирования, каждая со своим чатом. Файлы .ts после этого удалятся.")
       : parts.length > 1
       ? t("Частей эфира в .ts: {count}. Каждая перепишется в выбранный формат и поделится так, как выбрано; чат — вместе с ней.", { count: parts.length })
-      : t("Запись перепишется в выбранный формат без перекодирования и поделится так, как выбрано; у каждой части свой чат. Файл .ts после этого удалится.") }),
-    field(t("Во что"), format),
-    ...(pieces ? [] : controls.fields),
+      : t("Запись перепишется в выбранный формат без перекодирования и поделится так, как выбрано; у каждой части свой чат. Файл .ts после этого удалится."),
+    // «Во что» — во всю ширину: названия форматов длинные; как делить — ниже, в две колонки
+    fields: [h("div", { class: "edit-grid" }, wide(field(t("Во что"), format)), ...(pieces ? [] : controls.fields))],
+    async run() {
+      const split = controls.value();
+      try {
+        await Promise.all(parts.map((part) => {
+          state.converting.add(part.path);
+          return bridge.call("convert_recording", part.path, split, format.value)
+            .then(() => {
+              showEditsNext();
+              toast(t("Конвертация: {name}, ход виден в «Загрузках»", { name: part.name }), "ok", "#downloads");
+            })
+            .catch((error) => {
+              state.converting.delete(part.path);
+              throw error;
+            });
+        }));
+        return true;
+      } catch (error) {
+        failed(error);
+        return false;
+      }
+    },
+  };
+}
+
+function wide(element) {
+  element.classList.add("wide");
+  return element;
+}
+
+// mp4, mkv, webm — в другой формат без перекодирования, сразу с делением или без;
+// прежний файл — в подпапку whole (как при делении) или в корзину; чат — при новом
+function remuxPanel(item, parts) {
+  const current = new Set(parts.map((part) => FORMAT_OF[(part.path.match(/\.[^.]+$/) || [""])[0].toLowerCase()]));
+  // тот же формат, что у записи, предлагать незачем
+  const choices = CONVERT_FORMATS.filter(([value]) => !(current.size === 1 && current.has(value)));
+  const format = h("select", null, choices.map(([value, label]) => h("option", { value: value, text: t(label) })));
+  const pieces = parts.every((part) => part.piece);
+  const controls = splitControls(item, true);
+  controls.fields[0].querySelector("select").value = "off";
+  controls.fields[0].querySelector("select").dispatchEvent(new Event("change"));
+  const keep = h("input", { type: "checkbox" });
+  keep.checked = true;
+  const keepHint = h("div", { class: "hint" });
+  const showKeep = () => setText(keepHint, keep.checked
+    ? t("Прежний файл с чатом переедет в папку whole и будет в библиотеке отдельной карточкой.")
+    : t("Прежний файл уйдёт в корзину Windows. Файл больше корзины Windows удаляет насовсем."));
+  keep.addEventListener("change", showKeep);
+  showKeep();
+  return {
+    label: t("Конвертировать"),
+    about: (parts.length > 1 ? t("Частей: {count}. Каждая перепишется в выбранный формат.", { count: parts.length }) + " " : "")
+      + t("Без перекодирования, за минуты: видео и звук переходят в новый файл как есть, чат — вместе с ним.")
+      + (pieces ? "" : " " + t("Можно сразу и поделить на части.")),
+    fields: [h("div", { class: "edit-grid" }, wide(field(t("Во что"), format)), ...(pieces ? [] : controls.fields)),
+      h("div", { class: "field edit-keep" }, h("label", { class: "switch" }, keep, h("span", { class: "track" }),
+        t("Оставить прежний файл")), keepHint)],
+    async run() {
+      let started = 0;
+      for (const part of parts) {
+        try {
+          await bridge.call("split_recording", part.path, Object.assign(pieces ? { mode: "off" } : controls.value(),
+            { keep_whole: keep.checked, format: format.value }));
+          started++;
+        } catch (error) {
+          failed(error);
+        }
+      }
+      if (started) {
+        showEditsNext();
+        toast(t("Конвертация, ход виден в «Загрузках»"), "ok", "#downloads");
+      }
+      return started > 0;
+    },
+  };
+}
+
+// «Редактирование»: конвертация и деление на части — одним окном, вкладками сверху;
+// чего с записью сейчас сделать нельзя (уже идёт, нечего), того и нет
+function openEdit(card, can) {
+  const item = card._item;
+  const tabs = [
+    can.convert && !can.converting ? ["convert", t("Конвертировать"), "convert", () => convertPanel(item)] : null,
+    can.split && !can.splitting ? ["split", t("Разделить на части"), "scissors", () => splitPanel(item)] : null,
+  ].filter(Boolean);
+  if (!tabs.length) return;
+  const modal = openModal({ kind: "edit-window" });
+  const switcher = h("div", { class: "segmented edit-tabs", role: "tablist" });
+  const about = h("div", { class: "edit-about" });
+  const content = h("div", { class: "edit-content" });
+  const start = button("", { kind: "primary", onclick: async () => {
+    start.disabled = true;
+    if (await current.run()) modal.close();
+    else start.disabled = false;
+  } });
+  let current = null;
+  const built = {};
+  function show(name) {
+    const [, , iconName, make] = tabs.find((tab) => tab[0] === name);
+    current = built[name] || (built[name] = make());
+    for (const button of switcher.children) button.classList.toggle("active", button.dataset.name === name);
+    about.replaceChildren(icon(iconName), h("span", { text: current.about }));
+    content.replaceChildren(...current.fields);
+    setText(start, current.label);
+  }
+  for (const [name, label, iconName] of tabs) {
+    const tab = h("button", { type: "button", role: "tab" }, icon(iconName), h("span", { text: label }));
+    tab.dataset.name = name;
+    tab.addEventListener("click", () => show(name));
+    switcher.append(tab);
+  }
+  switcher.hidden = tabs.length < 2;
+  const names = partsOf(item);
+  modal.body.append(
+    h("h2", { text: t("Редактирование") }),
+    h("div", { class: "muted edit-subject", text: [displayTitle(item.title) || item.title,
+      names.length > 1 ? names.length + " " + tp(names.length, t("часть|части|частей")) : ""].filter(Boolean).join(" · ") }),
+    switcher, about, content,
     h("div", { class: "actions" }, button(t("Отмена"), { onclick: () => modal.close() }), start));
+  show(tabs[0][0]);
 }
 
 // кадр карточки чата: значок и график, где чат писал больше всего
