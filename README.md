@@ -58,7 +58,9 @@ themselves from the app.
   (off by default) — for any channel, in favorites or not. Each channel has
   its own recording settings: quality, chat, recording from the start,
   conversion (MP4, MKV or sound only), splitting and how long to keep
-  recordings.
+  recordings. An optional limit on simultaneous recordings (in total and per
+  platform) queues extra streams by channel priority, and a recording warns
+  when it falls behind or the platform seems to limit downloading.
 - **From the very start:** if recording begins mid-stream, the part before it
   is downloaded from the platform's own archive and joined with the recording
   into one file together with the chat, frame-exact and without re-encoding
@@ -72,18 +74,19 @@ themselves from the app.
   public chat archive (logs.zonian.dev) — Twitch only: Kick, YouTube and
   VK Video Live have no such archives. Gaps in a recorded chat (dropped
   connection, suspicious silence) are found and filled from the Twitch VOD
-  or the archive, dropped connections by themselves right after recording; Kick and YouTube are not supported yet, VK Video Live has
-  no source for them.
+  or the archive, dropped connections by themselves right after recording;
+  Kick and YouTube are not supported yet, VK Video Live has no source for
+  them.
 - **Downloads:** VODs, highlights and clips from a link or a channel tab,
   quality choice, only a section of a video, "Download all" for a whole tab.
   Paused and interrupted downloads resume, even after a restart.
 - **Library and player:** everything recorded and downloaded, with
   thumbnails, filters and disk usage. Watch in the window with synced chat,
   keyboard shortcuts and speed control, even while it is still recording;
-  cut a clip or burn the chat video into the picture. A recording left as
-  `.ts` converts with a button — whole, or split by size, duration or
-  into equal parts. Any finished recording or download can be split into
-  pieces of the same format at any time.
+  cut a clip or burn the chat video into the picture. "Edit…" converts any
+  recording or download (`.ts`, MP4, MKV, WebM → MP4, MKV or sound only)
+  without re-encoding and splits it by size, duration or into equal parts,
+  or both at once.
 - **Safety:** stops recording before the disk fills up, can move old
   recordings to the Recycle Bin, and checks recordings for gaps. However the
   program is closed — from Task Manager or by shutting Windows down — what

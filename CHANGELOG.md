@@ -5,7 +5,7 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.15.0 — 2026-11-09
 
 ### Added
 
@@ -44,7 +44,6 @@ versions follow [Semantic Versioning](https://semver.org/).
   the whole ranked list opens in its own scrolling box with a search by
   name or emote, and the summary window does not stretch. It opens and
   closes smoothly.
-
 - The left channel panel collapses and expands smoothly: the width slides,
   the labels fade, avatars and buttons stay in place.
 - "Popular emotes" in the summary show the emote images, as in the chat
