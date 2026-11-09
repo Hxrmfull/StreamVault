@@ -17,7 +17,15 @@ versions follow [Semantic Versioning](https://semver.org/).
   not split.
 - A limit on simultaneous recordings in Settings → Stream recording: in total
   and per platform, 0 for no limit (the default). A stream over the limit
-  waits until a slot frees up, and its channel page says why.
+  waits until a slot frees up, and its channel page says why. A freed slot
+  goes to the queue, not to whoever asks first: a channel's own priority
+  (high, normal, low in its recording settings) first, then channels with
+  autorecord or from favorites before one-off recordings, then whoever has
+  waited longest. Running recordings are never stopped for the queue.
+- A channel's recording settings open as one wide window that fits on the
+  screen: three sections (Recording, Stream beginning and keeping, After the
+  stream), yes/no options as switches, dependent ones dimmed (joining without
+  recording from the start, faststart for anything but mp4).
 - Warnings on a running recording, in Downloads → Recordings and on the
   channel page: "the recording falls behind: the network or disk is too
   slow" (streamlink skips pieces of the stream) and "the platform seems to

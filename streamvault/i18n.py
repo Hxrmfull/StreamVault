@@ -835,6 +835,8 @@ STRINGS = {
     'лимит записей — целое число, 0 — без ограничения': 'a recording limit is a whole number, 0 for no limit',
     'лимит одновременных записей: идёт {count} из {limit} (настройки)': 'limit of simultaneous recordings: {count} of {limit} running (settings)',
     'лимит записей с {site}: идёт {count} из {limit} (настройки)': 'limit of recordings from {site}: {count} of {limit} running (settings)',
+    'лимит одновременных записей: освободившееся место ждёт {channel} (очередь по приоритету)':
+        'limit of simultaneous recordings: the freed slot goes to {channel} (queue by priority)',
     '{tag} в эфире, запись ждёт: {reason}': '{tag} is live, the recording waits: {reason}',
     '{tag}: площадка, похоже, ограничивает скачивание (ответ {code})': '{tag}: the platform seems to limit downloading (response {code})',
     '{tag}: запись не успевает: streamlink пропускает куски эфира': '{tag}: the recording falls behind: streamlink skips pieces of the stream',

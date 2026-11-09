@@ -391,7 +391,7 @@ export function openChannelOptions(id) {
   const channel = state.channels.get(id) || { options: {}, quality: null, keep_days: null };
   const options = channel.options || {};
   const general = state.settings;
-  const yesNo = [[true, t("да")], [false, t("нет")]];
+  const current = (key) => (key in options ? options[key] : general[key]);
   const labelOf = (choices, value) => {
     const found = choices.find(([choice]) => choice === value);
     return found ? found[1] : String(value);
@@ -399,36 +399,50 @@ export function openChannelOptions(id) {
   const choice = (key, choices) => {
     const select = h("select", null,
       choices.map(([value, label]) => h("option", { value: JSON.stringify(value), text: label })));
-    const current = key in options ? options[key] : general[key];
-    // значение, вписанное в settings.json руками, тоже должно показываться
-    if (!choices.some(([value]) => value === current)) {
-      select.append(h("option", { value: JSON.stringify(current), text: labelOf(choices, current) }));
-    }
-    select.value = JSON.stringify(current);
-    return select;
+    const put = (value) => {
+      // значение, вписанное в settings.json руками, тоже должно показываться
+      if (![...select.options].some((option) => option.value === JSON.stringify(value))) {
+        select.append(h("option", { value: JSON.stringify(value), text: labelOf(choices, value) }));
+      }
+      select.value = JSON.stringify(value);
+    };
+    put(current(key));
+    return { control: select, get: () => JSON.parse(select.value), set: put };
+  };
+  // да/нет — переключателем: подпись рядом, а не над списком из двух слов
+  const flag = (key, label) => {
+    const input = h("input", { type: "checkbox" });
+    input.checked = Boolean(current(key));
+    const row = h("label", { class: "switch" }, input, h("span", { class: "track" }), h("span", { text: label }));
+    return { control: row, input: input, get: () => input.checked, set: (value) => { input.checked = Boolean(value); } };
   };
   const own = (key, value) => (value === general[key] ? null : value);
   const field = (label, control, hint) => h("div", { class: "field" }, h("label", { text: label }), control,
     hint ? h("div", { class: "hint", text: hint }) : null);
-  const chatChoices = CHAT_MODES.map(([mode, label]) => [mode, t(label)]);
-  const splitChoices = SPLIT_MODES.map(([mode, label]) => [mode, t(label)]);
   const fields = {
-    record_from_start: choice("record_from_start", yesNo),
-    join_beginning: choice("join_beginning", yesNo),
-    live_chat: choice("live_chat", chatChoices),
-    convert_recordings: choice("convert_recordings", yesNo),
+    live_chat: choice("live_chat", CHAT_MODES.map(([mode, label]) => [mode, t(label)])),
+    record_from_start: flag("record_from_start", t("Записывать с начала эфира, если запись началась позже")),
+    join_beginning: flag("join_beginning", t("Склеивать начало эфира с записью")),
+    convert_recordings: flag("convert_recordings", t("Конвертировать записи после эфира")),
     convert_format: choice("convert_format", CONVERT_FORMATS.map(([value, label]) => [value, t(label)])),
-    mp4_faststart: choice("mp4_faststart", yesNo),
-    split_mode: choice("split_mode", splitChoices),
+    mp4_faststart: flag("mp4_faststart", t("Готовить mp4 к просмотру по сети")),
+    split_mode: choice("split_mode", SPLIT_MODES.map(([mode, label]) => [mode, t(label)])),
   };
   // у каждого способа деления своё число; стоит общее, пока у канала нет своего
   const number = (key, step) => {
     const input = h("input", { type: "number", step: step || "1", placeholder: String(general[key]) });
-    input.value = String(key in options ? options[key] : general[key]);
+    input.value = String(current(key));
     return input;
   };
   const numbers = { split_size_gb: number("split_size_gb", "0.1"), split_minutes: number("split_minutes"),
                     split_count: number("split_count") };
+  // очередь на место при лимите одновременных записей; в общих настройках его нет — обычный
+  const priority = h("select", { title: t("Когда записей больше лимита, освободившееся место первым получает канал с более высоким приоритетом. " +
+      "При равном — канал с автозаписью или из избранного раньше записанного кнопкой разово, а среди них — " +
+      "кто дольше ждёт. Идущие записи ради очереди не прерываются.") },
+    [["high", t("высокий")], ["normal", t("обычный")], ["low", t("низкий")]]
+      .map(([value, label]) => h("option", { value: value, text: label })));
+  priority.value = options.record_priority || "normal";
   const quality = liveQualitySelect(channel.quality || general.quality);
   const keep = keepDaysSelect(channel.keep_days === undefined || channel.keep_days === null
                               ? general.keep_days || 0 : channel.keep_days);
@@ -437,21 +451,31 @@ export function openChannelOptions(id) {
     duration: field(t("Часть длиной, минут"), numbers.split_minutes),
     count: field(t("На сколько частей"), numbers.split_count),
   };
-  const showNumbers = () => {
-    const mode = JSON.parse(fields.split_mode.value);
+  // зависимое приглушено: склейка — только у начала эфира, faststart — только у mp4
+  const refresh = () => {
+    const mode = fields.split_mode.get();
     for (const [name, element] of Object.entries(numberFields)) element.hidden = name !== mode;
+    const joinOff = !fields.record_from_start.get();
+    fields.join_beginning.control.classList.toggle("off", joinOff);
+    fields.join_beginning.input.disabled = joinOff;
+    const faststartOff = fields.convert_format.get() !== "mp4";
+    fields.mp4_faststart.control.classList.toggle("off", faststartOff);
+    fields.mp4_faststart.input.disabled = faststartOff;
   };
-  fields.split_mode.addEventListener("change", showNumbers);
-  showNumbers();
-  const modal = openModal();
+  for (const key of ["split_mode", "record_from_start", "convert_format"]) {
+    (fields[key].input || fields[key].control).addEventListener("change", refresh);
+  }
+  refresh();
+  const modal = openModal({ kind: "channel-options" });
   const save = button(t("Сохранить"), { kind: "primary", onclick: () => {
     const changes = {};
-    for (const [key, select] of Object.entries(fields)) changes[key] = own(key, JSON.parse(select.value));
+    for (const [key, item] of Object.entries(fields)) changes[key] = own(key, item.get());
     for (const [key, input] of Object.entries(numbers)) {
       const value = input.value.trim().replace(",", ".");
       // непонятное число не превращается молча в общее — его проверит программа
       changes[key] = value === "" ? null : Number.isNaN(Number(value)) ? value : own(key, Number(value));
     }
+    changes.record_priority = priority.value === "normal" ? null : priority.value;
     save.disabled = true;
     const days = Number(keep.value) === (general.keep_days || 0) ? null : Number(keep.value);
     const qualityOwn = quality.value === general.quality ? null : quality.value;
@@ -473,32 +497,36 @@ export function openChannelOptions(id) {
   const asGeneral = button(t("Как в общих настройках"), { icon: "refresh",
     title: t("Поставить везде то, что в общих настройках: своих у канала не останется"),
     onclick: () => {
-      for (const [key, select] of Object.entries(fields)) {
-        const value = JSON.stringify(general[key]);
-        if (![...select.options].some((option) => option.value === value)) {
-          select.append(h("option", { value: value, text: String(general[key]) }));
-        }
-        select.value = value;
-      }
+      for (const [key, item] of Object.entries(fields)) item.set(general[key]);
       for (const [key, input] of Object.entries(numbers)) input.value = String(general[key]);
       setLiveQuality(quality, general.quality);
       keep.value = String(general.keep_days || 0);
-      showNumbers();
+      priority.value = "normal";
+      refresh();
       toast(t("Поставлено как в общих настройках — нажми «Сохранить», чтобы так и осталось"), "ok");
     } });
+  const section = (title, ...children) => h("section", { class: "options-section" },
+    h("div", { class: "options-section-title", text: title }), ...children);
   modal.body.append(
-    h("h2", { text: t("Настройки записи канала") }),
-    h("div", { class: "muted field-gap", text: t("Сразу выбрано то, что стоит в общих настройках; изменённое здесь действует только для этого канала. Идущая запись подхватит изменения со следующей части, конвертация — со следующей записи.") }),
-    field(t("Качество записи"), quality),
-    field(t("Чат прямых эфиров при записи"), fields.live_chat),
-    field(t("Записывать с начала эфира, если запись началась позже"), fields.record_from_start),
-    field(t("Склеивать начало эфира с записью"), fields.join_beginning),
-    field(t("Конвертировать записи после эфира"), fields.convert_recordings),
-    field(t("Формат после конвертации"), fields.convert_format),
-    field(t("Готовить mp4 к просмотру по сети"), fields.mp4_faststart),
-    field(t("Делить запись на части"), fields.split_mode),
-    numberFields.size, numberFields.duration, numberFields.count,
-    field(t("Хранить записи"), keep),
+    h("div", { class: "options-head" },
+      h("h2", null, platformLogo(splitId(id).platform), h("span", { text: channelName(id) })),
+      h("div", { class: "muted", text: t("Настройки записи канала") })),
+    h("div", { class: "hint options-about", text: t("Сразу выбрано то, что стоит в общих настройках; изменённое здесь действует только для этого канала. Идущая запись подхватит изменения со следующей части, конвертация — со следующей записи.") }),
+    h("div", { class: "options-grid" },
+      section(t("Запись"),
+        field(t("Качество записи"), quality),
+        field(t("Чат прямых эфиров при записи"), fields.live_chat.control),
+        field(t("Приоритет при лимите записей"), priority, t("Кому первым достаётся освободившееся место"))),
+      section(t("Начало эфира и хранение"),
+        fields.record_from_start.control,
+        fields.join_beginning.control,
+        field(t("Хранить записи"), keep)),
+      section(t("После эфира"),
+        fields.convert_recordings.control,
+        field(t("Формат после конвертации"), fields.convert_format.control),
+        fields.mp4_faststart.control,
+        field(t("Делить запись на части"), fields.split_mode.control),
+        numberFields.size, numberFields.duration, numberFields.count)),
     h("div", { class: "actions" }, asGeneral, h("span", { class: "spacer" }),
       button(t("Отмена"), { onclick: () => modal.close() }), save));
 }

@@ -30,7 +30,7 @@ from .chatreaders import make_chat
 from .joining import Joiner
 from .livechat import ChatFinisher
 from .processing import ProcessingQueue
-from .recorder import ChannelRecorder
+from .recorder import SLOT_RETRY, ChannelRecorder
 from .storage import GB, DiskGuard, Retention
 
 # Сколько ждать, пока выключенный канал погасит свой streamlink,
@@ -38,6 +38,11 @@ from .storage import GB, DiskGuard, Retention
 RELAUNCH_WAIT = 15
 # свои настройки записи канала: с ними канал хранится, даже если он не в избранном
 OWN_SETTINGS = ("quality", "keep_days", "options")
+# приоритет канала при лимите записей (options.record_priority): меньше — раньше
+PRIORITY_RANK = {"high": 0, "normal": 1, "low": 2}
+# эфир, ждущий места, переспрашивает не реже раза в SLOT_RETRY; не спросил
+# дольше — больше не ждёт (эфир кончился, канал убрали), очередь его забывает
+WAIT_FRESH = 2 * SLOT_RETRY + 15
 
 
 def preflight(root_path):
@@ -160,6 +165,8 @@ class LiveService:
         # лимит одновременных записей: какие каналы сейчас пишут (id -> площадка)
         self._slots_lock = threading.Lock()
         self._slots = {}
+        # очередь на место: id -> [приоритет, площадка, ждёт с, спрашивал в]
+        self._waiting = {}
         self._ffmpeg = ffmpeg or FFmpegLocator(settings, own_dir_for(settings))
         self._twitchdownloader = twitchdownloader or TwitchDownloaderLocator(
             twitchdownloader_dir(settings))
@@ -903,27 +910,75 @@ class LiveService:
             probe = self._streamlink_probe
         return probe
 
+    def _slot_rank(self, cid):
+        """
+        Очерёдность на место при лимите: сначала свой приоритет канала (высокий,
+        обычный, низкий), затем каналы с автозаписью или из избранного — раньше
+        записанных кнопкой разово.
+        """
+        with self._lock:
+            entry = next((entry for entry in self._entries if self._key(entry) == cid), None)
+            if entry is None:
+                return (PRIORITY_RANK["normal"], 1)
+            chosen = (entry.get("options") or {}).get("record_priority", "normal")
+            return (PRIORITY_RANK.get(chosen, PRIORITY_RANK["normal"]),
+                    0 if entry["enabled"] or self._favorite(entry) else 1)
+
+    @staticmethod
+    def _over_limit(slots, platform, limits):
+        """Почему ещё одна запись с площадки platform не помещается в лимиты, или None."""
+        total, here = len(slots), sum(1 for name in slots.values() if name == platform)
+        if limits.get("all") and total >= limits["all"]:
+            return tr("лимит одновременных записей: идёт {count} из {limit} (настройки)",
+                      count=total, limit=limits["all"])
+        if limits.get(platform) and here >= limits[platform]:
+            return tr("лимит записей с {site}: идёт {count} из {limit} (настройки)",
+                      site=sites.site(platform).NAME, count=here, limit=limits[platform])
+        return None
+
     def _take_slot(self, cid, platform):
         """
         Место на запись: лимит одновременных записей (record_limits) — всего и
         с площадки. Есть — None (место занято за каналом), нет — почему.
+        Освободившееся место достаётся не тому, кто первым спросил, а первому
+        в очереди: приоритет выше, а при равном — кто дольше ждёт. Идущие
+        записи ради очереди не останавливаются.
         """
         limits = self._settings["record_limits"]
+        rank = self._slot_rank(cid)
+        now = time.monotonic()
         with self._slots_lock:
+            for key in [key for key, wait in self._waiting.items() if now - wait[3] > WAIT_FRESH]:
+                del self._waiting[key]
             others = {key: name for key, name in self._slots.items() if key != cid}
-            total, here = len(others), sum(1 for name in others.values() if name == platform)
-            if limits.get("all") and total >= limits["all"]:
-                return tr("лимит одновременных записей: идёт {count} из {limit} (настройки)",
-                          count=total, limit=limits["all"])
-            if limits.get(platform) and here >= limits[platform]:
-                return tr("лимит записей с {site}: идёт {count} из {limit} (настройки)",
-                          site=sites.site(platform).NAME, count=here, limit=limits[platform])
+            refusal = self._over_limit(others, platform, limits)
+            since = self._waiting[cid][2] if cid in self._waiting else now
+            if refusal is None and cid not in self._slots:
+                # место есть, но его ждёт канал впереди, которому оно тоже подходит
+                ahead = sorted((wait[0], wait[2], key) for key, wait in self._waiting.items()
+                               if key != cid and (wait[0], wait[2]) < (rank, since)
+                               and self._over_limit(others, wait[1], limits) is None)
+                if ahead:
+                    refusal = tr("лимит одновременных записей: освободившееся место ждёт {channel} "
+                                 "(очередь по приоритету)", channel=channel_label(ahead[0][2].split(":", 1)[-1]))
+            if refusal:
+                self._waiting[cid] = [rank, platform, since, now]
+                return refusal
+            self._waiting.pop(cid, None)
             self._slots[cid] = platform
         return None
 
     def _free_slot(self, cid):
         with self._slots_lock:
             self._slots.pop(cid, None)
+            waiting = list(self._waiting)
+        # ждущие места переспрашивают сразу, а не через полминуты: место займёт первый в очереди
+        if waiting:
+            with self._lock:
+                recorders = [self._recorders.get(key) for key in waiting]
+            for recorder in recorders:
+                if recorder is not None:
+                    recorder.check_now()
 
     def _launch(self, entry, record_now=False):
         """Запускает наблюдение за каналом. Вызывается под self._lock."""

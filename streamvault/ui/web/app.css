@@ -1683,3 +1683,25 @@ button.summary-top-row:hover .summary-name { text-decoration: underline; }
 .edit-keep { margin-top: 16px; }
 .modal.edit-window .actions { margin-top: 20px; }
 
+
+/* свои настройки записи канала: широкое окно в три раздела, без прокрутки */
+.modal.channel-options { width: 980px; padding: 22px 24px 20px; }
+.options-head h2 { display: flex; align-items: center; gap: 10px; margin: 0 32px 2px 0; min-width: 0; }
+.options-head h2 > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.options-head h2 .platform-logo { width: 20px; height: 20px; flex: none; color: var(--muted); }
+.options-about { margin: 10px 0 16px; }
+.options-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: stretch; }
+.options-section { display: flex; flex-direction: column; gap: 14px; padding: 14px 16px 16px;
+  background: var(--card); border-radius: var(--radius); min-width: 0; }
+.options-section-title { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--muted); }
+.modal .options-section .field { margin: 0; }
+.modal .options-section .field[hidden] { display: none; }
+.options-section .field input[type=number] { width: 100%; }
+.options-section .switch { align-items: flex-start; line-height: 1.4; font-weight: 600; }
+.options-section .switch .track { flex: none; margin-top: 1px; }
+.options-section .switch.off { opacity: .45; cursor: default; }
+.modal.channel-options .actions { margin-top: 18px; }
+@media (max-width: 900px) {
+  .options-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
