@@ -676,9 +676,16 @@ export function createVideoBrowser(key, load) {
     qualityLabel.hidden = choice.qualities.hidden = choice.what !== "video";
     chatLabel.hidden = choice.chatMode.hidden = !choice.withChat;
   };
-  const bar = h("div", { class: "selection-bar" }, count, h("span", { class: "spacer" }),
-    choice.group, qualityLabel, choice.qualities, chatLabel, choice.chatMode,
-    button(t("Снять выбор"), { kind: "ghost", onclick: () => { selected.clear(); refresh(); } }),
+  // слева — сколько выбрано и «Снять выбор», за чертой — что и как скачать, справа — «Скачать»:
+  // без пустоты между счётчиком и настройками
+  const bar = h("div", { class: "selection-bar" },
+    h("div", { class: "selection-count" }, count,
+      button(t("Снять выбор"), { kind: "ghost", onclick: () => { selected.clear(); refresh(); } })),
+    h("div", { class: "selection-options" },
+      // подпись и её список переносятся вместе
+      choice.group, h("span", { class: "selection-pair" }, qualityLabel, choice.qualities),
+      h("span", { class: "selection-pair" }, chatLabel, choice.chatMode)),
+    h("span", { class: "spacer" }),
     button(t("Скачать"), { kind: "primary", icon: "download", onclick: () => downloadSelected() }));
   const el = h("div", { class: "video-browser" }, grid, status, moreBox, bar);
   let loading = false;

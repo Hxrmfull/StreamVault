@@ -209,6 +209,7 @@ class KickChat(ChatReader):
                     raise OSError("idle")
                 continue
             last_data = time.monotonic()
+            self._mark_alive()
             for line in str(raw).splitlines():
                 if line.strip():
                     self._on_frame(ws, json.loads(line))
@@ -323,6 +324,7 @@ class VkVideoChat(ChatReader):
     def _session(self):
         while not self._stopping.is_set():
             messages = self._fetch(self.LIMIT)
+            self._mark_alive()
             if (self._last_id is not None and len(messages) >= self.LIMIT
                     and min(message["id"] for message in messages) > self._last_id):
                 messages = self._fetch(self.LIMIT_CATCH_UP)
@@ -516,6 +518,8 @@ class YouTubeChat(ChatReader):
                         self._on_line(json.loads(line.decode("utf-8", "replace")))
             if finished:
                 raise OSError(self._last_error(log_path) or "yt-dlp: %s" % process.returncode)
+            if source is not None:
+                self._mark_alive()          # yt-dlp жив и пишет чат — связь есть, даже если чат молчит
             self._stopping.wait(self.POLL)
 
     @staticmethod

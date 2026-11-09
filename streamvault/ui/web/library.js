@@ -373,6 +373,8 @@ function cardAbilities(item) {
       : null,
     // архив чатов — у своих записей эфиров; можно ли сейчас, скажет сама программа
     archive: item.kind === "record" && !item.edit && !onlyChat,
+    // пропуски в чате записи (разрывы связи, подозрительная тишина) — докачать
+    gaps: item.kind === "record" && !item.edit && !onlyChat && parts.some((part) => part.chat && part.chat.json),
     // начало эфира склеено с записью без своего чата — докачать его (как в «Загрузках»)
     beginningChat: [...state.jobs.values()].find((job) => job.joined && !job.beginning_chat && job.state === "done"
                                                   && paths.has(same(job.file)) && chatSupported(job)),
@@ -386,9 +388,28 @@ function cardAbilities(item) {
   };
 }
 
-// меню карточки: смотреть · чат · файл · удалить — словами и по группам
-function openCardMenu(card, at) {
+// меню карточки: смотреть · чат · файл · удалить — словами и по группам.
+// Сначала — свежие файлы чата с диска: удалённый или подложенный чат виден
+// в меню сразу, без перехода по вкладкам; изменилось — карточки перечитываются
+async function openCardMenu(card, at) {
   const item = card._item;
+  if (item.video_kind !== "chat") {
+    const parts = partsOf(item);
+    const key = (files) => ["html", "json", "video"].map((name) => (files || {})[name] || "").join("|");
+    try {
+      const fresh = await bridge.call("library_chat", parts.map((part) => part.path));
+      let changed = false;
+      for (const part of parts) {
+        const files = fresh[part.path] || {};
+        if (key(files) !== key(part.chat)) changed = true;
+        part.chat = files;
+      }
+      if (item.parts) item.chat = (parts.find((part) => part.chat && part.chat.json) || parts[0]).chat;
+      if (changed) scheduleLibraryReload();
+    } catch (error) {
+      /* не прочиталось — меню по тому, что уже известно */
+    }
+  }
   const can = cardAbilities(item);
   const run = (action) => () => Promise.resolve().then(action).catch(failed);
   card.classList.add("menu-open");
@@ -416,6 +437,13 @@ function openCardMenu(card, at) {
                        hint: answer.ok ? [t("logs.zonian.dev, сторонний сервис, не Twitch"), answer.reason].filter(Boolean).join(". ")
                                        : answer.reason })),
                      onclick: () => fetchArchiveChat(item) } : null,
+     can.gaps ? { icon: "download", label: t("Докачать пропуски чата"), checking: t("поиск пропусков в чате…"),
+                  check: () => bridge.call("chat_gaps_status", item.path).then((answer) => ({
+                    disabled: !answer.ok,
+                    hint: answer.ok ? t("{count}, всего {length}: {reason}", {
+                      count: fmt.counted(answer.gaps, t("участок|участка|участков")),
+                      length: fmt.duration(answer.seconds), reason: answer.reason }) : answer.reason })),
+                  onclick: () => fetchChatGaps(item) } : null,
      can.beginningChat ? { icon: "download", label: t("Скачать чат начала"),
                            title: t("Чат начала эфира встанет в чат записи до стыка; чат прямого эфира останется"),
                            onclick: run(() => bridge.call("download_chat", can.beginningChat.id).then(chatInDownloads)) } : null,
@@ -430,8 +458,8 @@ function openCardMenu(card, at) {
 }
 
 // чат качается в «Загрузках» — туда и откроется, и там виден его ход
-function chatInDownloads(answer) {
-  try { sessionStorage.setItem("downloads-tab", "downloads"); } catch (error) { /* не помним — не беда */ }
+function chatInDownloads(answer, tab) {
+  try { sessionStorage.setItem("downloads-tab", tab || "downloads"); } catch (error) { /* не помним — не беда */ }
   toast(answer && answer.added > 1
     ? t("Чат скачивается: частей {count} — ход в «Загрузках»", { count: answer.added })
     : t("Чат скачивается — ход в «Загрузках»"), "ok", "#downloads");
@@ -441,8 +469,19 @@ function chatInDownloads(answer) {
 async function fetchArchiveChat(item) {
   try {
     await bridge.call("recording_chat_archive", item.path);
-    try { sessionStorage.setItem("downloads-tab", "downloads"); } catch (error) { /* не помним — не беда */ }
+    try { sessionStorage.setItem("downloads-tab", "chats"); } catch (error) { /* не помним — не беда */ }
     toast(t("История чата загружается из стороннего архива logs.zonian.dev, ход в «Загрузках»"), "ok", "#downloads");
+  } catch (error) {
+    failed(error);
+  }
+}
+
+// пропуски в чате записи: участки — с Twitch, чего там нет — из архива чатов; ход в «Загрузках»
+async function fetchChatGaps(item) {
+  try {
+    await bridge.call("recording_chat_gaps", item.path);
+    try { sessionStorage.setItem("downloads-tab", "chats"); } catch (error) { /* не помним — не беда */ }
+    toast(t("Пропуски чата докачиваются: с Twitch, потом из архива чатов, ход в «Загрузках»"), "ok", "#downloads");
   } catch (error) {
     failed(error);
   }
@@ -452,7 +491,7 @@ async function fetchArchiveChat(item) {
 async function fetchRecordingChat(item) {
   toast(t("Поиск записи этого эфира на площадке…"));
   try {
-    chatInDownloads(await bridge.call("recording_chat", item.path));
+    chatInDownloads(await bridge.call("recording_chat", item.path), "chats");
   } catch (error) {
     failed(error);
   }

@@ -45,6 +45,10 @@ UNFINISHED = (QUEUED, DOWNLOADING, PROCESSING, PAUSED, FAILED)
 CHAT_ONLY = "chat"
 # Чат своей записи из архива чатов (archive/chatlogs.py) — когда записи эфира на Twitch нет.
 CHAT_ARCHIVE = "chat-archive"
+# докачка пропусков в чате своей записи (chatgaps): с площадки, потом из архива чатов
+CHAT_GAPS = "chat-gaps"
+# участок пропуска с площадки — с запасом по краям: на стыках сообщения сверяются по id
+GAP_PADDING = 3
 
 # Поиск записи эфира к своей записи (чат к ней): столько записей с вкладки
 # канала, у стольких из них спросить время и длину, если в списке их нет, и
@@ -52,6 +56,11 @@ CHAT_ARCHIVE = "chat-archive"
 VOD_SEARCH_PAGE = 24
 VOD_SEARCH_INSPECT = 6
 VOD_SLACK = 300
+
+
+def is_chat_job(job):
+    """Загрузка чата без видео: «только чат», чат из архива чатов, пропуски чата — вкладка «Чаты»."""
+    return job.get("quality") in (CHAT_ONLY, CHAT_ARCHIVE, CHAT_GAPS)
 
 
 def _shift_chat(path, begin, length):
@@ -436,6 +445,40 @@ class DownloadManager:
             self._bus.emit("download", job=snapshot)
         return snapshot["id"]
 
+    def add_gap_chat(self, part, platform, channel, start, gaps, title="", chat_mode=None):
+        """
+        Докачать пропуски чата части своей записи: gaps — [[с, по, вид]] от
+        начала части, start — когда часть началась (секунды эпохи). Та же часть
+        второй раз не ставится, пока её загрузка не закончена. Возвращает id.
+        """
+        stem = os.path.splitext(part)[0]
+        with self._lock:
+            for job in self._jobs:
+                if job["quality"] == CHAT_GAPS and job.get("fixed_target") == stem and job["state"] in UNFINISHED:
+                    if job["state"] in (PAUSED, FAILED):
+                        self._requeue(job)
+                    existing = job["id"]
+                    break
+            else:
+                existing = None
+                snapshot = self._new_job("https://www.twitch.tv/" + channel, CHAT_GAPS, None,
+                                         {"title": title, "channel": channel, "platform": platform, "kind": "vod",
+                                          "timestamp": start},
+                                         chat_mode if chat_mode in (chat.TEXT, chat.RENDER) else chat.TEXT, stem)
+                job = self._job(snapshot["id"])
+                job["gaps"] = {"channel": channel, "start": float(start), "video": part,
+                               "gaps": [[float(gap[0]), float(gap[1])] for gap in gaps]}
+                job["video_id"] = "gaps"         # сведения у yt-dlp не спрашиваются: это не видео
+                self._save()
+                snapshot = copy.deepcopy(job)
+        if existing is not None:
+            self._emit(existing)
+            return existing
+        logging.info(tr("загрузка добавлена: {name}", name=tr("пропуски чата: {name}", name=os.path.basename(part))))
+        if self._bus is not None:
+            self._bus.emit("download", job=snapshot)
+        return snapshot["id"]
+
     def known_videos(self):
         """
         Что с площадок уже есть: id видео и ссылки из очереди (кроме отменённых)
@@ -662,10 +705,16 @@ class DownloadManager:
         if self._bus is not None:
             self._bus.emit("download_removed", id=job_id)
 
-    def clear_finished(self):
-        """Убирает из списка скачанное и отменённое."""
+    def clear_finished(self, kind=None):
+        """
+        Убирает из списка скачанное и отменённое. kind — только с одной вкладки
+        окна: "chats" — чаты без видео, "downloads" — остальное; None — всё.
+        """
+        def wanted(job):
+            return kind is None or is_chat_job(job) == (kind == "chats")
+
         with self._lock:
-            gone = [job["id"] for job in self._jobs if job["state"] in (DONE, CANCELLED)]
+            gone = [job["id"] for job in self._jobs if job["state"] in (DONE, CANCELLED) and wanted(job)]
             self._jobs = [job for job in self._jobs if job["id"] not in gone]
             self._save()
         if self._bus is not None:
@@ -889,6 +938,8 @@ class DownloadManager:
 
         if job["quality"] == CHAT_ARCHIVE:
             return self._chat_from_archive(job_id, runtime, job)
+        if job["quality"] == CHAT_GAPS:
+            return self._fill_chat_gaps(job_id, runtime, job)
 
         if job.get("chat_only"):
             if job["file"] and os.path.exists(job["file"]):
@@ -1190,7 +1241,11 @@ class DownloadManager:
                 # метка: из стороннего архива здесь только начало, до стыка
                 with open(joined, encoding="utf-8") as source:
                     data = json.load(source)
-                data.setdefault("video", {})["description"] = chatlogs.BEGINNING_MARK
+                # метка пропусков чата (chatgaps) остаётся
+                from .. import chatgaps
+                video_info = data.setdefault("video", {})
+                video_info["description"] = chatgaps.with_marks(chatlogs.BEGINNING_MARK,
+                                                                chatgaps.read_marks(video_info.get("description")))
                 with open(joined, "w", encoding="utf-8") as output:
                     json.dump(data, output, ensure_ascii=False)
                 os.replace(joined, main_chat["json"])
@@ -1218,6 +1273,174 @@ class DownloadManager:
                         name=os.path.basename(video), count=count))
         return self._finish(job_id, runtime, DONE, file=video, chat_files=chat.existing(video), chat_progress=None,
                             chat_error="; ".join(filter(None, notes)))
+
+    def _fill_chat_gaps(self, job_id, runtime, job):
+        """
+        Пропуски чата части своей записи (add_gap_chat): каждый участок — сначала
+        из записи эфира на Twitch, чего там нет — из архива чатов. Найденное
+        вклеивается в чат части только внутрь своих участков; остальной чат не
+        трогается. Участок, который источник покрыл, запоминается проверенным,
+        даже если сообщений там нет и у источника: чат тогда просто молчал.
+        """
+        from .. import chatgaps
+        info = job.get("gaps") or {}
+        video = info.get("video") or ""
+        gaps = [[float(gap[0]), float(gap[1])] for gap in info.get("gaps") or ()]
+        if not video or not os.path.exists(video):
+            return self._finish(job_id, runtime, FAILED, error=tr("записи, к которой чат, больше нет"))
+        main_json = chat.chat_paths(video)["json"]
+        if not os.path.isfile(main_json):
+            return self._finish(job_id, runtime, FAILED, error=tr("у записи больше нет чата"))
+        self._update(job_id, state=PROCESSING, file=video, chat_error="",
+                     chat_progress={"stage": "gaps", "percent": 0})
+        progress, started, stopped = self._chat_watchers(job_id, runtime)
+        logging.info(tr("пропуски чата: {name}, участков: {count}", name=os.path.basename(video), count=len(gaps)))
+        found, covered, notes = {}, set(), []
+        steps = max(1, len(gaps)) * 2
+        counter = [0]
+        stem = os.path.splitext(video)[0]
+
+        def step_progress(percent):
+            progress("gaps", min(99, round((counter[0] - 1 + (percent or 0) / 100) / steps * 100)))
+
+        try:
+            self._gaps_from_vod(runtime, info, gaps, stem, found, covered, notes, counter, step_progress,
+                                started, stopped)
+            if runtime["stop"]:
+                return self._finish(job_id, runtime, None, chat_progress=None)
+            self._gaps_from_archive(runtime, info, gaps, stem, found, covered, notes, counter, step_progress,
+                                    stopped)
+            if runtime["stop"]:
+                return self._finish(job_id, runtime, None, chat_progress=None)
+            # найденное — в чат части; проверенные участки запоминаются
+            with open(main_json, encoding="utf-8") as source:
+                data = json.load(source)
+            added = chatgaps.fill(data, gaps, found, sorted(covered))
+            if covered:
+                temporary = main_json + ".gaps"
+                with open(temporary, "w", encoding="utf-8") as output:
+                    json.dump(data, output, ensure_ascii=False)
+                os.replace(temporary, main_json)
+        except (OSError, ValueError) as error:
+            return self._finish(job_id, runtime, FAILED, chat_progress=None,
+                                error=tr("пропуски чата не докачаны: {error}", error=error))
+        notes = [note for note in notes if note]
+        if added:
+            # смайлы новых сообщений — внутрь; HTML (и видео чата) — заново
+            notes += [note for note in (self._embed_chat(job_id, runtime, main_json),
+                                        self._remake_chat_html(job_id, runtime, job, video)) if note]
+        silent = sum(1 for index in covered if not any(
+            gaps[index][0] < float(comment.get("content_offset_seconds") or 0) < gaps[index][1]
+            for comment in found.get(index) or ()))
+        missing = len(gaps) - len(covered)
+        summary = [tr("докачано сообщений: {count}", count=added)]
+        if silent:
+            summary.append(tr("участков, где чат и правда молчал: {count}", count=silent))
+        if missing:
+            summary.append(tr("участков, которых нет ни на Twitch, ни в архиве: {count}", count=missing))
+        logging.info(tr("пропуски чата: {name}, {summary}", name=os.path.basename(video), summary="; ".join(summary)))
+        if not covered:
+            return self._finish(job_id, runtime, FAILED, chat_progress=None,
+                                error="; ".join([tr("пропуски чата докачать неоткуда")] + notes))
+        return self._finish(job_id, runtime, DONE, file=video, chat_files=chat.existing(video), chat_progress=None,
+                            chat_error="; ".join(summary + notes))
+
+    def _gaps_from_vod(self, runtime, info, gaps, stem, found, covered, notes, counter, step_progress,
+                       started, stopped):
+        """Участки пропусков — из записи эфира на Twitch (TwitchDownloader, отрезок на участок)."""
+        cli = self._twitchdownloader.command()
+        if not cli:
+            notes.append(tr("с площадки не докачать: нужен TwitchDownloader"))
+            return
+        try:
+            vod = self.find_vod("twitch", info["channel"], info["start"] + (gaps[0][0] if gaps else 0))
+        except Exception as error:          # сеть, yt-dlp: дальше — архив
+            logging.info(tr("пропуски чата: запись эфира не нашлась ({error})", error=error))
+            vod = None
+        if vod is None:
+            notes.append(tr("записи эфира на Twitch нет"))
+            return
+        shift = info["start"] - (vod.get("timestamp") or info["start"])
+        duration = vod.get("duration") or 0
+        temp_dir = os.path.join(os.path.dirname(os.path.abspath(self._settings.path)), "cache", "twitchdownloader")
+        for index, (begin, end) in enumerate(gaps):
+            if runtime["stop"]:
+                return
+            counter[0] += 1
+            on_vod = (begin + shift - GAP_PADDING, end + shift + GAP_PADDING)
+            if on_vod[1] <= 0 or (duration and on_vod[0] >= duration):
+                continue                    # участка в записи эфира нет
+            target = stem + ".gap%d.chat.json" % index
+            command = [*cli, "chatdownload", "--id", vod["url"], "-o", target,
+                       "-b", "%ds" % max(0, int(on_vod[0])), "-e", "%ds" % (int(on_vod[1]) + 1),
+                       *chat._common(temp_dir)]
+            try:
+                chat.run([("download", command)], lambda _stage, percent: step_progress(percent), started, stopped)
+                with open(target, encoding="utf-8") as source:
+                    data = json.load(source)
+            except chat.ChatStopped:
+                return
+            except (chat.ChatError, OSError, ValueError) as error:
+                # запись скрыта, только для подписчиков, удалена — дальше архив
+                notes.append(tr("с Twitch не докачать: {error}", error=error))
+                return
+            finally:
+                util.remove_quietly(target)
+            comments = data.get("comments") or []
+            # TwitchDownloader считает время от начала записи эфира (отрезок — в video.start);
+            # вдруг от начала отрезка — к нему прибавляется начало отрезка (как в _shift_chat)
+            asked = max(0, int(on_vod[0]))
+            offsets = [float(comment.get("content_offset_seconds") or 0) for comment in comments]
+            absolute = float((data.get("video") or {}).get("start") or 0) >= asked - 1 or (
+                offsets and min(offsets) >= asked - 5)
+            base = 0 if absolute else asked
+            found[index] = [dict(comment, content_offset_seconds=offset + base - shift)
+                            for comment, offset in zip(comments, offsets)]
+            # проверен, только если запись эфира охватывает весь участок
+            if on_vod[0] >= 0 and (not duration or on_vod[1] <= duration):
+                covered.add(index)
+
+    def _gaps_from_archive(self, runtime, info, gaps, stem, found, covered, notes, counter, step_progress, stopped):
+        """Участки, которых нет в записи эфира, — из архива чатов (только сутки, что он ведёт)."""
+        from . import chatlogs
+        from ..live.livechat import convert
+        rest = [index for index in range(len(gaps)) if index not in covered]
+        if not rest:
+            return
+        try:
+            known = chatlogs.available_days(info["channel"])
+        except chatlogs.ArchiveError as error:
+            notes.append(str(error))
+            return
+        cache_dir = os.path.join(os.path.dirname(os.path.abspath(self._settings.path)), "cache", "chatlogs")
+        for index in rest:
+            if runtime["stop"]:
+                return
+            counter[0] += 1
+            begin, end = gaps[index]
+            moments = (info["start"] + begin, info["start"] + end)
+            if not set(chatlogs.days_between(*moments)) <= known:
+                continue                    # этих суток в архиве нет
+            jsonl, target = stem + ".gap.chat.jsonl", stem + ".gap.chat.json"
+            try:
+                chatlogs.fetch(info["channel"], moments[0], moments[1], jsonl, cache_dir=cache_dir,
+                               progress=step_progress, stopped=stopped)
+                comments = []
+                if convert(jsonl, target, channel=info["channel"], length=end - begin):
+                    with open(target, encoding="utf-8") as source:
+                        comments = json.load(source).get("comments") or []
+                found[index] = (found.get(index) or []) + [
+                    dict(comment, content_offset_seconds=float(comment.get("content_offset_seconds") or 0) + begin)
+                    for comment in comments]
+                covered.add(index)
+            except chatlogs.ArchiveStopped:
+                return
+            except (chatlogs.ArchiveError, OSError, ValueError) as error:
+                notes.append(tr("из архива чатов не докачать: {error}", error=error))
+                return
+            finally:
+                util.remove_quietly(jsonl)
+                util.remove_quietly(target)
 
     def _embed_chat(self, job_id, runtime, json_path):
         """Смайлы и значки внутрь .chat.json (TwitchDownloader). Возвращает примечание или ""."""
@@ -1439,7 +1662,7 @@ class DownloadManager:
                     state = PAUSED
             retry = None
             # чат из архива — не начало эфира: его отказ по делу, повтор ничего не даст
-            if state == FAILED and job.get("fixed_target") and job["quality"] != CHAT_ARCHIVE \
+            if state == FAILED and job.get("fixed_target") and job["quality"] not in (CHAT_ARCHIVE, CHAT_GAPS) \
                     and not runtime.get("remove"):
                 # начало эфира — само ещё раз, а не ждать, пока нажмут «Повторить»;
                 # в строке — короткая причина, текст ошибки — в журнале

@@ -19,7 +19,7 @@ import re
 import subprocess
 import threading
 
-from . import util
+from . import chatgaps, util
 from .archive import chat
 from .i18n import tr
 
@@ -44,7 +44,7 @@ THUMB_WIDTH = 320
 PROBE_VERSION = 2
 # Сводка чата без видео для карточки: столбиков графика; версия — чтобы пересчитать кэш.
 CHAT_FACTS_BARS = 48
-CHAT_FACTS_VERSION = 1
+CHAT_FACTS_VERSION = 3
 # Сколько ffmpeg может работать над превью одновременно.
 PREVIEW_WORKERS = 2
 
@@ -315,18 +315,18 @@ def read_chat_facts(json_path):
             continue
         commenter = comment.get("commenter") or {}
         names.add(str(commenter.get("name") or commenter.get("display_name") or "").casefold())
-    try:
-        length = float(video.get("length") or 0) or float(video.get("end") or 0) - start
-    except (TypeError, ValueError):
-        length = 0.0
-    length = max(length, max(times) if times else 0.0)
+    # по end, а не по length: там у встроенного TwitchDownloader чата — длина всей записи эфира
+    length = max(chatgaps.video_span(video)[1], max(times) if times else 0.0)
     bars = [0] * CHAT_FACTS_BARS
     if times and length > 0:
         for moment in times:
             bars[min(CHAT_FACTS_BARS - 1, max(0, int(moment / length * CHAT_FACTS_BARS)))] += 1
         top = max(bars)
         bars = [round(count / top * 100) for count in bars]
-    return {"length": round(length, 3), "messages": len(times), "chatters": len(names - {""}), "bars": bars}
+    # пропуски чата (chatgaps) — для меню карточки: докачать их
+    gaps = chatgaps.find(times, length, chatgaps.read_marks(video.get("description")))
+    return {"length": round(length, 3), "messages": len(times), "chatters": len(names - {""}), "bars": bars,
+            "gaps": [[round(gap["start"], 3), round(gap["end"], 3), gap["kind"]] for gap in gaps]}
 
 
 def delete_with_chat(path):

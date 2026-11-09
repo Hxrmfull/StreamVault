@@ -15,11 +15,14 @@
 
 import base64
 import bisect
+import collections
 import json
 import math
 import re
 import threading
 import zlib
+
+from . import chatgaps
 
 TWITCH_EMOTE = "https://static-cdn.jtvnw.net/emoticons/v2/{id}/default/dark/2.0"
 # Цвета ников Twitch для тех, кто свой не выбрал: выбираются по имени.
@@ -32,6 +35,8 @@ _COLOR = re.compile(r"^#([0-9a-fA-F]{6})$")
 _SPACES = re.compile(r"(\s+)")
 # Сколько найденных сообщений отдавать окну за раз.
 SEARCH_LIMIT = 200
+# Сколько ников подсказывать в окне чата.
+NAMES_LIMIT = 10
 # График чата под шкалой: примерно столько столбиков; всплесков — не больше PEAKS.
 ACTIVITY_BARS = 240
 PEAKS = 8
@@ -127,19 +132,20 @@ class ChatReplay:
         messages.sort(key=lambda message: message[0])
         self.messages = messages
         self._times = [message[0] for message in messages]
+        self._name_counts = None            # ник -> сообщений: для подсказок, считается по первому запросу
         # длина записи, к которой чат: для шкалы, когда видео нет (чат без видео)
         video = data.get("video") or {}
-        try:
-            length = float(video.get("length") or 0) or float(video.get("end") or 0) - start
-        except (TypeError, ValueError):
-            length = 0.0
+        # по end, а не по length: там у встроенного TwitchDownloader чата — длина всей записи эфира
+        length = chatgaps.video_span(video)[1]
         self.length = max(length, self._times[-1] if self._times else 0.0)
         # чат из стороннего архива (archive/chatlogs.py) — окно так и скажет
         # source — сайт архива; source_part — оттуда только начало эфира (до стыка)
         description = str(video.get("description") or "")
-        marked = re.match(r"^StreamVault: (beginning )?chat from the public chat archive (\S+)$", description)
+        marked = re.search(r"^StreamVault: (beginning )?chat from the public chat archive (\S+)$", description, re.MULTILINE)
         self.source = marked.group(2) if marked else ""
         self.source_part = bool(marked and marked.group(1))
+        # пропуски чата: разрывы связи при записи и места, где чат подозрительно молчит
+        self.gaps = chatgaps.find(self._times, self.length, chatgaps.read_marks(description))
 
     def _add(self, data):
         self.images.append(data)
@@ -190,6 +196,19 @@ class ChatReplay:
                 if len(found) >= limit:
                     break
         return found
+
+    def names(self, text="", limit=NAMES_LIMIT):
+        """
+        Ники для подсказки: [[ник, сколько сообщений]]. С text — те, где он есть
+        (сначала начинающиеся с него), без — самые активные. Точный ник можно
+        не знать: хватит части.
+        """
+        if self._name_counts is None:
+            self._name_counts = collections.Counter(message[1] for message in self.messages if message[1])
+        needle = str(text).strip().lstrip("@").casefold()
+        found = [(name, count) for name, count in self._name_counts.items() if needle in name.casefold()]
+        found.sort(key=lambda pair: (not pair[0].casefold().startswith(needle), -pair[1], pair[0].casefold()))
+        return [list(pair) for pair in found[:limit]]
 
     def activity(self, duration):
         """График чата: {"bucket": секунд в столбике, "counts": [...], "peaks": [номера столбиков]}."""

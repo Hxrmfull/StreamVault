@@ -45,6 +45,8 @@ from .installer import HttpError, InstallError, Installer, Source
 
 REPO = "Hxrmfull/StreamVault"
 LATEST_URL = "https://api.github.com/repos/%s/releases/latest" % REPO
+# все выпуски, и тестовые: для тех, кто включил «Получать тестовые версии»
+RELEASES_URL = "https://api.github.com/repos/%s/releases?per_page=20" % REPO
 RELEASES_PAGE = "https://github.com/%s/releases" % REPO
 ASSET = "StreamVault-{version}-windows.zip"
 SETUP_ASSET = "StreamVault-{version}-setup.exe"
@@ -70,8 +72,29 @@ def parse_version(text):
     return tuple(int(part or 0) for part in match.groups()) if match else None
 
 
+def version_key(text):
+    """
+    Для сравнения версий с тестовыми: 0.14.0-beta.1 < 0.14.0-beta.2 < 0.14.0.
+    Тестовая — пометка после «-» (beta.N, rc.N); без неё версия стабильная и
+    старше любой своей тестовой. Не версия — None.
+    """
+    numbers = parse_version(text)
+    if numbers is None:
+        return None
+    rest = str(text).strip().lstrip("vV").partition("-")[2]
+    if not rest:
+        return numbers + (1, 0)
+    number = re.search(r"(\d+)\s*$", rest)
+    return numbers + (0, int(number.group(1)) if number else 0)
+
+
+def is_prerelease(text):
+    """Тестовая версия: с пометкой после «-» (0.14.0-beta.1)."""
+    return "-" in str(text or "").strip().lstrip("vV")
+
+
 def is_newer(remote, local=__version__):
-    remote, local = parse_version(remote), parse_version(local)
+    remote, local = version_key(remote), version_key(local)
     return remote is not None and local is not None and remote > local
 
 
@@ -172,25 +195,33 @@ class AppUpdater(Installer):
     MAX_SIZE = 600 * 1024 * 1024
 
     def __init__(self, folder, on_change=None, latest_url=LATEST_URL, allowed_hosts=None,
-                 require_https=True, current=__version__):
-        """folder — папка программы (None — запуск из исходников, ставить некуда)."""
-        super().__init__(on_change, {"latest": latest_url}, allowed_hosts, require_https)
+                 require_https=True, current=__version__, releases_url=RELEASES_URL, prereleases=None):
+        """
+        folder — папка программы (None — запуск из исходников, ставить некуда).
+        prereleases() — брать ли и тестовые выпуски (настройка update_prereleases):
+        тогда смотрится список всех выпусков, иначе — только последний стабильный.
+        """
+        super().__init__(on_change, {"latest": latest_url, "releases": releases_url}, allowed_hosts, require_https)
         self._folder = folder
         self._current = current
+        self._prereleases = prereleases or (lambda: False)
+        # «Вернуться на стабильную»: следующая установка — последний стабильный, даже если он старее
+        self._rollback = False
         self._check_lock = threading.Lock()
+        # стоит тестовая — окно предложит вернуться на стабильную (stable — её номер, когда узнан)
         self._state.update(current=current, notes="", page=RELEASES_PAGE,
-                           can_install=self.can_install())
+                           can_install=self.can_install(), prerelease=is_prerelease(current), stable="")
 
     @classmethod
-    def for_this_program(cls, on_change=None):
+    def for_this_program(cls, on_change=None, prereleases=None):
         """Обычный: GitHub. С STREAMVAULT_UPDATE_URL — свой сервер (для проверки руками)."""
         url = os.environ.get(URL_ENV)
         if not url:
-            return cls(program_dir(), on_change)
+            return cls(program_dir(), on_change, prereleases=prereleases)
         host = urlsplit(url).hostname
-        return cls(program_dir(), on_change, latest_url=url,
+        return cls(program_dir(), on_change, latest_url=url, releases_url=url,
                    allowed_hosts=cls.ALLOWED_HOSTS + (host,),
-                   require_https=host not in ("127.0.0.1", "localhost"))
+                   require_https=host not in ("127.0.0.1", "localhost"), prereleases=prereleases)
 
     def can_install(self):
         """
@@ -229,6 +260,7 @@ class AppUpdater(Installer):
                 return self.snapshot()
             except InstallError as error:
                 return self._check_failed(error)
+            self._note_stable(release)
             if not is_newer(release["version"], self._current):
                 self._set(state="current", version=release["version"])
             else:
@@ -239,6 +271,25 @@ class AppUpdater(Installer):
             return self.snapshot()
         finally:
             self._check_lock.release()
+
+    def _note_stable(self, release):
+        """Стоит тестовая — какой последний стабильный: к нему окно предложит вернуться."""
+        if not is_prerelease(self._current):
+            return
+        stable = release if not is_prerelease(release["version"]) else None
+        if stable is None:
+            try:
+                stable = self._stable()
+            except InstallError:
+                return
+        self._set(stable=stable["version"])
+
+    def start_rollback(self):
+        """С тестовой — на последнюю стабильную, даже если она старее (та же проверка суммы)."""
+        if not is_prerelease(self._current):
+            raise InstallError(tr("стоит стабильная версия — возвращаться не на что"))
+        self._rollback = True
+        self.start()
 
     def _check_failed(self, error):
         # нет сети или GitHub недоступен — не беда, проверим в другой раз
@@ -278,16 +329,44 @@ class AppUpdater(Installer):
         threading.Thread(target=run, name="update-check", daemon=True).start()
 
     def _latest(self):
-        """Последний выпуск: версия, описание, страница и файлы архива."""
+        """
+        Последний выпуск: версия, описание, страница и файлы архива. С
+        тестовыми — самый новый из всех, тестовый или стабильный; без них —
+        последний стабильный (GitHub тестовые в «последний» не берёт).
+        """
+        if self._prereleases():
+            return self._release(self._newest_of(self._get_json(self._urls["releases"])))
+        return self._stable()
+
+    def _stable(self):
+        """Последний стабильный выпуск (GitHub тестовые в «последний» не берёт)."""
         data = self._get_json(self._urls["latest"])
+        if data.get("prerelease"):
+            raise InstallError(tr("GitHub назвал непонятную версию: {version}",
+                                  version=str(data.get("tag_name") or "")[:40]))
+        return self._release(data)
+
+    def _release(self, data):
+        """Выпуск из ответа GitHub: версия, описание, страница, файлы — с проверкой."""
         version = str(data.get("tag_name") or "").lstrip("vV")
         page = str(data.get("html_url") or "")
-        if parse_version(version) is None or data.get("draft") or data.get("prerelease"):
+        if version_key(version) is None or data.get("draft"):
             raise InstallError(tr("GitHub назвал непонятную версию: {version}", version=version[:40]))
         assets = {item.get("name"): item for item in data.get("assets") or [] if isinstance(item, dict)}
         return {"version": version, "notes": str(data.get("body") or "")[:4000],
                 "page": page if page.startswith("https://github.com/") else RELEASES_PAGE,
                 "assets": assets}
+
+    @staticmethod
+    def _newest_of(releases):
+        """Самый новый выпуск из списка GitHub, тестовые тоже; черновики — нет."""
+        if isinstance(releases, dict):
+            releases = [releases]               # свой сервер для проверки отдаёт один выпуск
+        candidates = [item for item in releases or () if isinstance(item, dict) and not item.get("draft")
+                      and version_key(str(item.get("tag_name") or "").lstrip("vV")) is not None]
+        if not candidates:
+            raise HttpError(tr("обновления: выпусков на GitHub пока нет"), 404)
+        return max(candidates, key=lambda item: version_key(str(item["tag_name"]).lstrip("vV")))
 
     # ------------------------------------------------------------ скачивание
 
@@ -298,9 +377,11 @@ class AppUpdater(Installer):
         if not self.can_install():
             raise InstallError(tr("эту копию программы не обновить отсюда — скачай выпуск "
                                   "со страницы GitHub"))
-        release = self._latest()
+        rollback, self._rollback = self._rollback, False
+        # возврат с тестовой — последний стабильный, хоть он и старее; иначе — только новее текущей
+        release = self._stable() if rollback else self._latest()
         version = release["version"]
-        if not is_newer(version, self._current):
+        if version == self._current or (not rollback and not is_newer(version, self._current)):
             self._set(version=version)
             return None
         name = (SETUP_ASSET if installed(self._folder) else ASSET).format(version=version)

@@ -8,9 +8,16 @@ import { requestPreview } from "./library.js";
 import { openLive } from "./player.js";
 
 // вкладки «Загрузок»: идущие записи, склейка начала эфира с записью (кончилась — строка
-// уходит в «Загрузки»), что докачивается, правка
+// уходит в «Загрузки»), что докачивается, чаты без видео, правка
 const DOWNLOAD_TABS = [["records", "Записи"], ["joining", "Склеивается"], ["downloads", "Загрузки"],
-                       ["edits", "Редактирование"]];
+                       ["chats", "Чаты"], ["edits", "Редактирование"]];
+
+// чат без видео: «только чат», из стороннего архива, пропуски чата — своей вкладкой
+// (archive/downloads.py: is_chat_job)
+const CHAT_JOBS = new Set(["chat", "chat-archive", "chat-gaps"]);
+function isChatJob(job) {
+  return CHAT_JOBS.has(job.quality);
+}
 
 // загрузка начала эфира, которое сейчас склеивается с записью
 function isJoining(job) {
@@ -67,6 +74,10 @@ export function renderDownloads(main) {
   view.joining = h("div", { class: "jobs" });
   view.joiningEmpty = h("div", { class: "empty" }, h("strong", { text: t("Сейчас ничего не склеивается") }),
     t("Когда запись началась посреди эфира, его начало докачивается и после записи склеивается с ней — ход виден здесь."));
+  // чаты без видео: скачанные «только чат», из архива, докачанные пропуски
+  view.chats = h("div", { class: "jobs" });
+  view.chatsEmpty = h("div", { class: "empty" }, h("strong", { text: t("Чатов пока нет") }),
+    t("Чаты, скачанные без видео, из стороннего архива и докачанные пропуски чата появятся здесь."));
   view.empty = h("div", { class: "empty" },
     h("strong", { text: t("Загрузок пока нет") }),
     t("Вставь ссылку на запись или клип в строку сверху либо найди там канал и выбери его записи."));
@@ -77,9 +88,10 @@ export function renderDownloads(main) {
       // убирает только строки списка — файлы остаются; корзина тут пугала бы
       view.clearFinished = button(t("Очистить список"), {
         icon: "close", title: t("Убрать завершённые загрузки из списка; файлы останутся на диске"),
-        onclick: () => bridge.call(view.downloadsTab === "edits" ? "clear_edits" : "clear_finished").catch(failed) })),
+        onclick: () => (view.downloadsTab === "edits" ? bridge.call("clear_edits")
+          : bridge.call("clear_finished", view.downloadsTab)).catch(failed) })),
     view.tabs, view.recordsBox, view.recordsEmpty, view.joining, view.joiningEmpty, view.editsBox, view.editsEmpty,
-    view.empty, view.jobs);
+    view.empty, view.jobs, view.chatsEmpty, view.chats);
   view.refresh = refreshDownloads;
   refreshDownloads();
 }
@@ -87,12 +99,14 @@ export function renderDownloads(main) {
 export function refreshDownloads() {
   const all = [...state.jobs.values()].sort((a, b) => b.created - a.created);
   const joining = all.filter(inJoinTab);
-  const jobs = all.filter((job) => !inJoinTab(job));
+  const chats = all.filter((job) => !inJoinTab(job) && isChatJob(job));
+  const jobs = all.filter((job) => !inJoinTab(job) && !isChatJob(job));
   const edits = [...state.edits.values()].sort((a, b) => b.created - a.created);
   const records = [...state.channels.values()].filter((channel) => channel.recording)
     .sort((a, b) => a.recording.started - b.recording.started);
   // у вкладки — сколько в ней строк
-  const counts = { records: records.length, joining: joining.length, downloads: jobs.length, edits: edits.length };
+  const counts = { records: records.length, joining: joining.length, downloads: jobs.length, chats: chats.length,
+                   edits: edits.length };
   const tab = view.downloadsTab || chosenTab(counts);
   view.downloadsTab = tab;
   // во вкладке что-то идёт — её название переливается фиолетовым: видно, не открывая
@@ -100,6 +114,7 @@ export function refreshDownloads() {
     records: records.length > 0,
     joining: joining.length > 0,
     downloads: jobs.some((job) => ["queued", "downloading", "processing"].includes(job.state)),
+    chats: chats.some((job) => ["queued", "downloading", "processing"].includes(job.state)),
     edits: edits.some((job) => ["queued", "running"].includes(job.state)),
   };
   for (const [name, button] of Object.entries(view.tabButtons)) {
@@ -115,13 +130,17 @@ export function refreshDownloads() {
   view.joiningEmpty.hidden = tab !== "joining" || joining.length > 0;
   view.jobs.hidden = tab !== "downloads";
   view.empty.hidden = tab !== "downloads" || jobs.length > 0;
+  view.chats.hidden = tab !== "chats";
+  view.chatsEmpty.hidden = tab !== "chats" || chats.length > 0;
   syncList(view.edits, edits, (job) => job.id, createJobRow, updateEditRow);
   syncList(view.records, records, (channel) => channel.id, createJobRow, updateRecordRow);
   const finished = (list) => list.some((job) => ["done", "cancelled", "failed"].includes(job.state));
-  view.clearFinished.hidden = tab === "records" || tab === "joining" || !finished(tab === "edits" ? edits : jobs);
+  view.clearFinished.hidden = tab === "records" || tab === "joining"
+    || !finished(tab === "edits" ? edits : tab === "chats" ? chats : jobs);
   view.clearFinished.title = tab === "edits" ? t("Убрать законченное из списка; файлы останутся на диске")
     : t("Убрать завершённые загрузки из списка; файлы останутся на диске");
   syncList(view.jobs, jobs, (job) => job.id, createJobRow, updateJobRow);
+  syncList(view.chats, chats, (job) => job.id, createJobRow, updateJobRow);
   syncList(view.joining, joining, (job) => job.id, createJobRow, updateJobRow);
 }
 
@@ -309,6 +328,7 @@ export function qualityText(quality) {
   const plain = String(quality || "").replace(/^h264:/, "");
   if (plain === CHAT_ONLY.quality) return t("только чат");
   if (plain === "chat-archive") return t("чат из стороннего архива logs.zonian.dev");
+  if (plain === "chat-gaps") return t("пропуски чата");
   const known = DOWNLOAD_QUALITIES.find((option) => option.quality === plain);
   return known ? t(known.label) : quality;
 }
@@ -350,7 +370,7 @@ export function awaitingJoin(job) {
 
 // идущая склейка: этап, проценты, сколько осталось, а дописана — кого ждёт
 export function joiningText(join) {
-  if (join.waiting) return t("склеено, ожидание закрытия записи в «{programs}»", { programs: join.waiting });
+  if (join.waiting) return t("склеено, ожидание закрытия файла в «{programs}»", { programs: join.waiting });
   if (join.stage === "repack") return t("подготовка записи к склейке…");
   // видео склеено: проверка, чат, замена файлов — секунды или минута, без процентов
   if (join.stage === "finish") return t("видео склеено, проверка и замена файлов…");

@@ -100,7 +100,12 @@ def clip_chat(source_json, target_json, start, end, length=None):
     result = dict(data)
     result["comments"] = comments
     length = round(length if length is not None else end - start, 3)
-    result["video"] = dict(video, start=0, end=length, length=length)
+    # пропуски чата (chatgaps) — те, что попали в отрезок, со временем от его начала
+    from . import chatgaps
+    description = video.get("description")
+    result["video"] = dict(video, start=0, end=length, length=length,
+                           description=chatgaps.with_marks(description, chatgaps.clip_marks(
+                               chatgaps.read_marks(description), start, end)))
     temporary = target_json + ".tmp"
     with open(temporary, "w", encoding="utf-8") as target:
         json.dump(result, target, ensure_ascii=False)

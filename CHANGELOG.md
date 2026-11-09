@@ -5,6 +5,77 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.14.0 — 2026-11-09
+
+### Added
+
+- **Test versions:** "Get test versions" in Settings → Program → Updates.
+  Test versions (0.14.0-beta.1 and so on) come out before stable ones and are
+  offered only to those who turned this on; whichever is newer, test or
+  stable, is offered. Everyone else keeps getting stable versions only.
+  With a test version installed, "Back to stable …" next to "Check for
+  updates" installs the latest stable version even if it is older, with the
+  same checksum check; settings, library and downloads are kept.
+- **Name suggestions in the chat window:** the "Add a name…" field suggests
+  names that contain what you typed (those starting with it first), with
+  their message counts; an empty field shows the most active viewers. The
+  exact name is not needed. Arrows and Enter pick a suggestion.
+- **Viewers panel in the chat window:** to the right of the feed, with the
+  name field first. Clicking a name in the feed adds the viewer there, and
+  their messages show next to the feed rather than instead of it; clicking
+  such a message goes to it in the feed.
+- **Dragging along the activity graph:** grab the white position line by its
+  handle (or hold the mouse button anywhere on the graph) and move left or
+  right, and the chat feed scrolls along.
+- **Gaps in a recording's chat:** the live chat now notes when the
+  connection to it dropped. The chat itself also shows other gaps: it
+  starts noticeably later than the video, ends earlier or goes silent for a
+  long time in the middle of a busy stretch. The threshold follows the pace
+  of the same chat around the pause, so the usual pauses of quiet channels
+  are not counted as gaps. The recording's "⋯" menu has "Fill chat gaps:
+  N stretches": they come from the Twitch VOD, and what is not there from the
+  chat archive, and are put into the chat only inside the gaps. If there are
+  no messages there either, the stretch is remembered as checked ("the chat
+  really was silent") and not offered again. The chat window hatches the
+  gaps on the activity graph. Twitch only for now: Kick and YouTube will
+  come later, VK Video Live has no source for them.
+- **"Chats" tab in Downloads:** chats without video (chat only, from the
+  third-party archive, filled gaps) are now apart from videos; "Clear list"
+  removes only the rows of its own tab.
+- **"Go to" without typing colons:** the field has three cells, hours,
+  minutes and seconds, two digits each; after two digits the cursor moves
+  on by itself. A pasted "1:23:45" is spread across the cells.
+
+### Fixed
+
+- A joined stream beginning open in a player (VLC, for example) kept the join
+  waiting silently at its last step: the program saw the player but did not
+  say so. Now it shows "joined, waiting for the file to be closed in …" for
+  any file it waits for.
+- The join strip on a library card blended into purple frames: it is now a
+  solid dark strip with white text, a blinking dot and a bright progress line
+  along its bottom edge.
+- The collapsed left panel showed an empty square instead of the "+" button,
+  and the collapse button took a whole row above the channels; it is now at
+  the bottom of the panel.
+- In the download window, wide gaps separated "Quality" and "Chat" from their
+  lists; the labels now sit right next to them.
+- The chat window of a recording without a chat file showed an empty search
+  and graph with a small note at the edge; now it is a small "No chat"
+  dialog that says where to download it, with "Stream summary" and "Close".
+- For a recording joined with the stream beginning and stopped mid-stream,
+  the chat window and the card took the chat length from the whole Twitch
+  VOD rather than the recording: the graph was stretched and the end looked
+  like a gap.
+- In the bar of selected videos on a channel page the counter sat at the
+  left edge and the options at the right, with a gap between them; now
+  "Selected" and "Clear selection" are on the left, what and how to download
+  next to them, and "Download" on the right. In a narrow window the labels
+  wrap together with their lists.
+- A chat file deleted or placed next to a recording showed up in the card
+  menu only after switching tabs; the menu now checks the chat files on
+  disk before opening.
+
 ## 0.13.0 — 2026-11-08
 
 ### Added

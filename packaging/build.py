@@ -113,7 +113,8 @@ def make_icon():
 
 def make_version():
     from streamvault import __version__
-    parts = [int(part) for part in __version__.split(".")][:4]
+    # в свойствах exe — только цифры: у тестовой «0.14.0-beta.1» берётся «0.14.0»
+    parts = [int(part) for part in __version__.split("-")[0].split(".")][:4]
     numbers = tuple(parts + [0] * (4 - len(parts)))
     with open(os.path.join(BUILD, "version.txt"), "w", encoding="utf-8") as target:
         target.write(VERSION_TEMPLATE.format(numbers=numbers, version=__version__))

@@ -424,7 +424,13 @@ def join_chat(head_json, tail_json, cut, length, target, shift=None):
     result = dict(head or tail)
     comments.sort(key=lambda comment: float(comment.get("content_offset_seconds", 0)))
     result["comments"] = comments
-    result["video"] = dict((head or tail).get("video") or {}, start=0, end=round(length), length=round(length))
+    # пропуски чата (chatgaps): у начала — до стыка, у записи — со сдвигом, как сообщения
+    from .. import chatgaps
+    head_video, tail_video = (head or {}).get("video") or {}, (tail or {}).get("video") or {}
+    marks = chatgaps.joined_marks(chatgaps.read_marks(head_video.get("description")) if head else None,
+                                  chatgaps.read_marks(tail_video.get("description")) if tail else None, cut, shift)
+    result["video"] = dict((head or tail).get("video") or {}, start=0, end=round(length), length=round(length),
+                           description=chatgaps.with_marks((head or tail).get("video", {}).get("description"), marks))
     result["embeddedData"] = _merge_embedded((head or {}).get("embeddedData"), (tail or {}).get("embeddedData"))
     temporary = target + ".tmp"
     with open(temporary, "w", encoding="utf-8") as output:
@@ -652,7 +658,7 @@ class Joiner(threading.Thread):
             util.remove_quietly(output)
             util.remove_quietly(main_chat["json"] + ".joined")
             return self._refuse(head, main, tr("запись открыта в другой программе"))
-        if target != main and os.path.exists(main) and not self._when_free(lambda: _remove_existing(main), main):
+        if target != main and os.path.exists(main) and not self._when_free(lambda: _remove_existing(main), main, waiting):
             logging.warning(tr("не удалить {name}: файл открыт в другой программе", name=os.path.basename(main)))
         if count is not None:
             os.replace(main_chat["json"] + ".joined", main_chat["json"])
@@ -660,7 +666,8 @@ class Joiner(threading.Thread):
             for key in ("html", "video"):
                 util.remove_quietly(main_chat[key])
         for path in [head, *head_chat.values()]:
-            if os.path.exists(path) and not self._when_free(lambda path=path: _remove_existing(path), path):
+            # начало эфира открыто в проигрывателе — окно скажет, что закрыть, а не будет тихо ждать
+            if os.path.exists(path) and not self._when_free(lambda path=path: _remove_existing(path), path, waiting):
                 # начало осталось рядом со склеенной записью: снова его не склеивать
                 logging.warning(tr("не удалить {name}: файл открыт в другой программе",
                                    name=os.path.basename(path)))

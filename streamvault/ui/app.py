@@ -105,7 +105,9 @@ def run(settings_path=DEFAULT_SETTINGS_PATH, browser=False, port=0, open_browser
     # обновление самой программы: чем кончилось прошлое, есть ли новее
     last_update = finish_previous(program_dir())
     app_updater = AppUpdater.for_this_program(
-        on_change=lambda install: bus.emit("app_update", install=install))
+        on_change=lambda install: bus.emit("app_update", install=install),
+        # тестовые версии — по настройке, её меняют на ходу
+        prereleases=lambda: bool(settings["update_prereleases"]))
     # не сразу: окно и записи важнее; дальше — раз в 12 часов, пока программа запущена
     update_checks = app_updater.check_periodically(lambda: settings["check_updates"], delay=10)
 

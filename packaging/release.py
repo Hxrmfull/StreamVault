@@ -76,6 +76,9 @@ def main():
         return 0
     command = ["gh", "release", "create", "v" + args.version, *files,
                "--repo", REPO, "--title", "StreamVault " + args.version]
+    # тестовая версия (0.14.0-beta.1) — с пометкой Pre-release: стабильные копии программы её не видят
+    if "-" in args.version:
+        command.append("--prerelease")
     command += ["--notes-file", args.notes] if args.notes else ["--generate-notes"]
     return subprocess.run(command).returncode
 

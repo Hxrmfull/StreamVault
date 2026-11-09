@@ -430,6 +430,14 @@ export function appUpdateBlock() {
         actions.append(button(t("Открыть страницу выпуска"), { icon: "external", onclick: page }));
       }
     }
+    // стоит тестовая — можно вернуться на стабильную, даже если она старее
+    if (update.prerelease && update.can_install && !busy && update.state !== "done") {
+      actions.append(button(update.stable ? t("Вернуться на стабильную {version}", { version: update.stable })
+                                          : t("Вернуться на стабильную"), {
+        icon: "refresh", kind: "ghost",
+        title: t("Скачать и поставить последнюю стабильную версию. Настройки, библиотека и загрузки сохранятся."),
+        onclick: () => bridge.call("rollback_app_update").then(setAppUpdate).catch(failed) }));
+    }
     body.append(actions);
     if (!update.can_install && update.state === "available") {
       body.append(h("div", { class: "faint", text: t("Эту копию программы отсюда не обновить: скачай выпуск " +
@@ -766,6 +774,9 @@ export function openSettings() {
       flag("check_updates", t("Проверять обновления: при запуске и раз в 12 часов"),
            t("Программа спрашивает GitHub, нет ли версии новее, — больше никуда и ничего о вас не отправляет. " +
              "Скачанное ставится, только если совпадает с контрольной суммой, которую сообщает GitHub.")),
+      flag("update_prereleases", t("Получать тестовые версии"),
+           t("Тестовые выходят раньше стабильных, чтобы проверить новое до всех, и могут содержать ошибки. " +
+             "Предлагается то, что новее: тестовая или стабильная. С тестовой на стабильную — кнопкой «Вернуться на стабильную» выше.")),
       select("log_level", t("Подробность журнала"),
              [["debug", t("всё, для отладки")], ["info", t("обычная")], ["warning", t("только предупреждения")], ["error", t("только ошибки")]])]],
   ].filter(Boolean);

@@ -36,7 +36,7 @@ import uuid
 
 import requests
 
-from .. import util
+from .. import chatgaps, util
 from ..archive import chat as archive_chat
 from ..i18n import plural, tr
 from ..settings import channel_setting
@@ -104,6 +104,10 @@ class ChatReader(threading.Thread):
         self._described = set()
         self.room_id = None
         self.messages = 0
+        # разрыв связи: когда чат последний раз точно был на связи и когда связь пропала —
+        # после переподключения разрыв ложится в файл части (chatgaps: пропуски чата)
+        self._alive = None
+        self._lost = None
 
     # ------------------------------------------------------------ управление
 
@@ -155,6 +159,15 @@ class ChatReader(threading.Thread):
         with self._lock:
             self._write_locked(record)
 
+    def _mark_alive(self):
+        """Связь с чатом есть (пришли данные): был разрыв — он записывается."""
+        now = time.time()
+        with self._lock:
+            if self._lost is not None and now - self._lost >= chatgaps.MIN_RECORDED:
+                self._write_locked({"type": "gap", "from": self._lost, "to": now})
+            self._lost = None
+            self._alive = now
+
     def _emit(self, record, emotes=(), badges=()):
         """
         Сообщение в файл части. emotes и badges — (id, название, адрес картинки)
@@ -181,6 +194,7 @@ class ChatReader(threading.Thread):
             except self.ERRORS as error:
                 if self._stopping.is_set():
                     break
+                self._note_lost()
                 # долгий обрыв не засоряет журнал: пишется первая неудача подряд
                 if not failures:
                     logging.info(tr("чат {channel}: связь прервалась ({error}), переподключение",
@@ -188,6 +202,7 @@ class ChatReader(threading.Thread):
             except Exception:
                 if self._stopping.is_set():
                     break
+                self._note_lost()
                 if not failures:
                     logging.exception(tr("чат {channel}: сбой, переподключение", channel=self.channel))
             finally:
@@ -196,6 +211,12 @@ class ChatReader(threading.Thread):
             failures = 0 if time.monotonic() - started > 60 else failures + 1
             delay = self.RECONNECT_DELAYS[min(failures, len(self.RECONNECT_DELAYS) - 1)]
             self._stopping.wait(delay)
+
+    def _note_lost(self):
+        """Связь пропала: с последнего знака жизни, а не с минуты, когда это заметили."""
+        with self._lock:
+            if self._lost is None and self._alive is not None:
+                self._lost = self._alive
 
     def _session(self):
         raise NotImplementedError
@@ -247,6 +268,7 @@ class TwitchChat(ChatReader):
             if not chunk:
                 raise OSError("closed")
             last_data = time.monotonic()
+            self._mark_alive()
             buffer += chunk
             *lines, buffer = buffer.split(b"\r\n")
             for raw in lines:
@@ -515,7 +537,7 @@ def convert(source, target, title="", channel="", fetch=fetch_image, shift=0.0, 
     третий — сообщения прямо в .chat.json, одно за другим.
     """
     start, room_id, platform = None, None, "twitch"
-    deleted, banned, emotes, badges = set(), {}, {}, {}
+    deleted, banned, emotes, badges, gaps = set(), {}, {}, {}, []
     index = 0
     for record in _jsonl_records(source):
         kind = record.get("type")
@@ -528,6 +550,8 @@ def convert(source, target, title="", channel="", fetch=fetch_image, shift=0.0, 
             room_id = room_id or record.get("room_id")
         elif kind == "msg":
             index += 1
+        elif kind == "gap" and isinstance(record.get("from"), (int, float)) and isinstance(record.get("to"), (int, float)):
+            gaps.append((record["from"], record["to"]))
         elif kind == "delete":
             deleted.add(record.get("id"))
         elif kind == "delete_user":
@@ -566,6 +590,10 @@ def convert(source, target, title="", channel="", fetch=fetch_image, shift=0.0, 
     if start is None:
         start = first
     length = max(1, int(round(length if length else end - start + shift)))
+    if gaps:
+        # разрывы связи при записи — меткой в описании: окно и докачка пропусков их знают
+        description = chatgaps.with_marks(description, {"gaps": [[ts_from - start + shift, ts_to - start + shift]
+                                                                  for ts_from, ts_to in gaps]})
 
     embedded, have_emotes, badge_names = None, set(), {}
     if platform != "twitch":

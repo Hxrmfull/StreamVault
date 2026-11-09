@@ -139,6 +139,8 @@ DEFAULTS = {
     "tray_notifications": True,
     # Спрашивать GitHub о новой версии программы при запуске.
     "check_updates": True,
+    # Предлагать и тестовые версии (0.14.0-beta.1 и т. п.): раньше стабильных, но могут быть ошибки.
+    "update_prereleases": False,
     "log_level": "info",
     "log_max_bytes": 5 * 1024 * 1024,
     "log_backup_count": 5,

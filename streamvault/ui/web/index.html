@@ -35,9 +35,6 @@
 </header>
 <div class="layout">
   <aside class="sidebar" id="sidebar">
-    <div class="sidebar-top">
-      <button class="icon-button small" id="sidebar-toggle" data-i18n-title="Свернуть панель" title="Свернуть панель"></button>
-    </div>
     <div class="sidebar-head" id="recording-head" hidden>
       <span data-i18n="Идёт запись">Идёт запись</span>
     </div>
@@ -50,6 +47,10 @@
     <div class="sidebar-empty" id="sidebar-empty" hidden>
       <span data-i18n="Каналов пока нет.">Каналов пока нет.</span>
       <button class="link-button" id="sidebar-add" data-i18n="Добавить канал">Добавить канал</button>
+    </div>
+    <!-- свернуть до аватарок — внизу панели: сверху кнопка занимала бы строку над каналами -->
+    <div class="sidebar-bottom">
+      <button class="icon-button small" id="sidebar-toggle" data-i18n-title="Свернуть панель" title="Свернуть панель"></button>
     </div>
   </aside>
   <main class="main" id="main"></main>

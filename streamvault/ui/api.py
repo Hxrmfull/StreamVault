@@ -25,6 +25,7 @@ from ..archive import downloads as dl
 from ..archive import chat, ytdlp
 from ..chatreplay import SEARCH_LIMIT, ChatReplay, LiveChatReplay
 from ..ffmpeg import read_version
+from ..installer import InstallError
 from ..library import broadcast_parts, piece_parts, probe_duration
 from ..live.livechat import jsonl_path, video_backlog
 from ..positions import Positions
@@ -49,13 +50,14 @@ EDITABLE = ("language", "root_path", "quality", "twitch_client_id", "twitch_clie
             "download_quality", "max_downloads", "download_fragments",
             "twitch_auth_token", "ytdlp_extra_args", "log_level",
             "close_to_tray", "tray_notifications",
-            "chat_mode", "chat_width", "chat_height", "chat_font_size", "check_updates",
+            "chat_mode", "chat_width", "chat_height", "chat_font_size", "check_updates", "update_prereleases",
             "live_chat", "convert_recordings", "convert_format", "mp4_faststart",
             "record_from_start", "join_beginning", "min_free_gb", "keep_days",
             "split_mode", "split_size_gb", "split_minutes", "split_count")
 
 # Да/нет из окна приходят как true/false.
-FLAGS = ("close_to_tray", "tray_notifications", "check_updates", "convert_recordings", "mp4_faststart",
+FLAGS = ("close_to_tray", "tray_notifications", "check_updates", "update_prereleases", "convert_recordings",
+         "mp4_faststart",
          "record_from_start", "join_beginning")
 
 # Секреты окну не отдаются: оно узнаёт только, заданы ли они.
@@ -108,16 +110,16 @@ class Api:
         "add_download", "pause_download", "resume_download", "cancel_download",
         "remove_download", "clear_finished", "downloads_snapshot",
         "open_file", "show_in_folder", "open_folder", "open_url", "watch", "chat_replay",
-        "chat_search", "open_chat", "save_position", "cut_clip", "overlay_chat", "split_recording", "cancel_edit",
+        "chat_search", "open_chat", "chat_names", "save_position", "cut_clip", "overlay_chat", "split_recording", "cancel_edit",
         "remove_edit", "clear_edits",
         "watch_live", "live_status", "chat_activity", "storyboard", "check_recording",
         "search_chats", "broadcast_summary",
-        "library", "library_preview", "delete_file",
+        "library", "library_preview", "library_chat", "delete_file", "chat_gaps_status", "recording_chat_gaps",
         "ffmpeg_status", "install_ffmpeg", "cancel_ffmpeg_install", "choose_ffmpeg",
         "check_ffmpeg", "ytdlp_status", "update_ytdlp", "cancel_ytdlp_update",
         "twitchdownloader_status", "install_twitchdownloader", "cancel_twitchdownloader_install",
         "download_chat", "recording_chat", "chat_archive_status", "recording_chat_archive", "convert_recording",
-        "app_update_status", "check_app_update", "install_app_update", "cancel_app_update",
+        "app_update_status", "check_app_update", "install_app_update", "rollback_app_update", "cancel_app_update",
         "apply_app_update",
         "get_settings", "save_settings", "choose_folder", "quit",
     )
@@ -533,6 +535,89 @@ class Api:
                 "reason": tr("за {date} в архиве чата нет — будет только за остальные дни",
                              date=", ".join(day.isoformat() for day in missing)) if missing else ""}
 
+    # ------------------------------------------------------------ пропуски чата
+
+    def _part_timeline(self, path):
+        """
+        Части своей записи эфира по порядку: (площадка, ник канала,
+        [(часть, когда началась — секунды эпохи, длина)]). Время — из имени
+        файла; склеенная с началом эфира запись начинается раньше — на стык.
+        """
+        from ..library import parse_recording_name
+        path = self._media(path)
+        platform, label = util.recording_channel(self._settings["root_path"], path)
+        if not platform:
+            raise ValueError(tr("пропуски чата докачиваются только у своих записей эфиров"))
+        parts = [part for _, part in broadcast_parts(path) if not os.path.splitext(part)[0].endswith(dl.PART00)]
+        if not parts:
+            raise ValueError(tr("начало эфира ещё не склеено с записью — его чат качается вместе с ним"))
+        moment = parse_recording_name(os.path.splitext(os.path.basename(parts[0]))[0]).get("timestamp")
+        if not moment:
+            raise ValueError(tr("не понять, когда шла запись: время — из имени файла"))
+        joined = next((job for job in self._downloads.snapshot()["jobs"] if job.get("joined") and job.get("file")
+                       and os.path.normcase(job["file"]) == os.path.normcase(parts[0])), None)
+        seam = None
+        if joined:
+            seam = joined.get("joined_seam") or max(0.0, (joined.get("section") or [0, 0])[1] - dl.BEGINNING_OVERLAP)
+        begin, timeline = moment - (seam or 0), []
+        for part in parts:
+            length = self._part_length(part)
+            if not length:
+                raise ValueError(tr("не узнать длину записи: {name}", name=os.path.basename(part)))
+            timeline.append((part, begin, length))
+            begin += length
+        return platform, str(label or "").lower(), timeline
+
+    def _chat_gaps(self, path):
+        """(площадка, ник, [(часть, её начало, [[с, по, вид]])]) — у частей с чатом и пропусками; нельзя — ValueError."""
+        from ..library import read_chat_facts
+        platform, login, timeline = self._part_timeline(path)
+        with_chat, found = 0, []
+        for part, start, _length in timeline:
+            json_path = chat.chat_paths(part)["json"]
+            if not os.path.isfile(json_path):
+                continue
+            with_chat += 1
+            facts = self._library.chat_facts(json_path) if self._library is not None else read_chat_facts(json_path)
+            if facts.get("gaps"):
+                found.append((part, start, facts["gaps"]))
+        if not with_chat:
+            raise ValueError(tr("у записи нет чата, его можно скачать целиком"))
+        if not found:
+            raise ValueError(tr("пропусков в чате не найдено"))
+        # откуда докачать: запись эфира на площадке и архив чатов есть только у Twitch
+        if platform == "vkvideolive":
+            raise ValueError(tr("у VK Video Live пропуски докачать неоткуда: чат записей эфиров площадка не отдаёт"))
+        if platform != "twitch":
+            raise ValueError(tr("докачка пропусков чата пока только у Twitch"))
+        return platform, login, found
+
+    def chat_gaps_status(self, path):
+        """
+        Есть ли в чате записи пропуски и можно ли их докачать: {"ok", "reason",
+        "gaps", "seconds"}. Только по самому чату, без сети: откуда докачать,
+        выяснит загрузка.
+        """
+        try:
+            _, _, found = self._chat_gaps(path)
+        except ValueError as error:
+            return {"ok": False, "reason": str(error)}
+        gaps = [gap for _, _, part_gaps in found for gap in part_gaps]
+        seconds = sum(gap[1] - gap[0] for gap in gaps)
+        exact = any(gap[2] == "recorded" for gap in gaps)
+        return {"ok": True, "gaps": len(gaps), "seconds": round(seconds),
+                "reason": tr("разрывы связи при записи") if exact else tr("чат молчал дольше обычного")}
+
+    def recording_chat_gaps(self, path):
+        """Докачать пропуски чата записи: по загрузке на часть. {"added": сколько поставлено}."""
+        from ..library import parse_recording_name
+        platform, login, found = self._chat_gaps(path)
+        title = parse_recording_name(os.path.splitext(os.path.basename(found[0][0]))[0]).get("title") or ""
+        mode = self._settings["chat_mode"] if self._settings["chat_mode"] != chat.NONE else chat.TEXT
+        for part, start, gaps in found:
+            self._downloads.add_gap_chat(part, platform, login, start, gaps, title=title, chat_mode=mode)
+        return {"added": len(found)}
+
     def recording_chat_archive(self, path):
         """Чат записи из архива чатов: по загрузке на часть. {"added": сколько поставлено}."""
         from ..library import parse_recording_name
@@ -570,8 +655,8 @@ class Api:
     def remove_download(self, job_id):
         self._downloads.remove(str(job_id))
 
-    def clear_finished(self):
-        self._downloads.clear_finished()
+    def clear_finished(self, kind=None):
+        self._downloads.clear_finished(kind if kind in ("chats", "downloads") else None)
 
     # ------------------------------------------------------------ файлы
 
@@ -909,6 +994,15 @@ class Api:
         # сообщения одного зрителя — все, сколько бы их ни было; поиск — первые
         return opened[2].search(str(text)[:100], limit=USER_MESSAGES if by == "user" else SEARCH_LIMIT, by=by)
 
+    def chat_names(self, chat_id, text=""):
+        """Ники открытого чата для подсказки: [[ник, сообщений]] — где есть text, или самые активные."""
+        with self._chats_lock:
+            opened = self._chats.get(str(chat_id))
+        if opened is None:
+            raise ValueError(tr("чат закрыт — открой запись заново"))
+        names = getattr(opened[2], "names", None)
+        return names(str(text)[:64]) if names else []
+
     def open_chat(self, path):
         """
         Чат для окна чата программы — без видео: по записи или по .chat.html
@@ -925,6 +1019,7 @@ class Api:
         chat_id, replay = self._open_chat(json_path)
         return {"id": chat_id, "count": len(replay.messages), "length": replay.length, "json": json_path, "source": getattr(replay, "source", ""),
                 "source_part": getattr(replay, "source_part", False),
+                "gaps": [[round(gap["start"], 3), round(gap["end"], 3), gap["kind"]] for gap in getattr(replay, "gaps", [])],
                 "images": [image if image.startswith("https://") else self._media_server.image_url(chat_id, index)
                            for index, image in enumerate(replay.images)]}
 
@@ -1005,6 +1100,19 @@ class Api:
 
     def library_preview(self, path):
         return self._need_library().preview(self._media(path))
+
+    def library_chat(self, paths):
+        """
+        Файлы чата у записей — прямо с диска: меню карточки не верит списку,
+        прочитанному раньше (чат могли удалить или положить рядом руками).
+        """
+        fresh = {}
+        for path in (paths if isinstance(paths, list) else [paths])[:64]:
+            try:
+                fresh[str(path)] = chat.existing(self._media(str(path)))
+            except ValueError:
+                fresh[str(path)] = {}
+        return fresh
 
     def convert_recording(self, path, split=None, fmt=None):
         """
@@ -1092,6 +1200,17 @@ class Api:
         self._app_updater.check_in_background()
         if self._components is not None:
             self._components.check_in_background()
+        return self._app_updater.snapshot()
+
+    def rollback_app_update(self):
+        """С тестовой версии — на последнюю стабильную, даже если она старее."""
+        if self._app_updater is None or not self._app_updater.can_install():
+            raise ValueError(tr("эту копию программы не обновить отсюда — скачай выпуск "
+                                "со страницы GitHub"))
+        try:
+            self._app_updater.start_rollback()
+        except InstallError as error:
+            raise ValueError(str(error))
         return self._app_updater.snapshot()
 
     def install_app_update(self):
@@ -1198,6 +1317,9 @@ class Api:
         if "ffmpeg_path" in changed and self._ffmpeg is not None:
             # путь к ffmpeg подхватывается сразу: конвертация спрашивает его каждый раз
             self._ffmpeg.refresh()
+        if "update_prereleases" in changed and self._app_updater is not None:
+            # тестовые версии включили или выключили — какая версия новее, видно сразу
+            self._app_updater.check_in_background()
         if changed:
             logging.info(tr("настройки изменены: {keys}", keys=", ".join(sorted(changed))))
         return {"restart": any(key in NEED_RESTART for key in changed),
