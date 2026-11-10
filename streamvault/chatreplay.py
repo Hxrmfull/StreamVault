@@ -76,6 +76,14 @@ def image_type(data):
     return "image/png"
 
 
+
+def _nick(name):
+    """
+    Ник для сравнения: без регистра и без «@» в начале — у YouTube ники вида
+    «@name», а окно отрезает «@», как у упоминаний в чате Twitch.
+    """
+    return str(name).strip().lstrip("@").casefold()
+
 class ChatReplay:
     """Чат одной записи. images — base64 встроенной картинки или адрес https."""
 
@@ -175,7 +183,7 @@ class ChatReplay:
         показывает их списком.
         """
         # users — несколько ников сразу (сообщения выбранных зрителей), text — их список
-        names = {str(name).strip().casefold() for name in text} if by == "users" else set()
+        names = {_nick(name) for name in text} if by == "users" else set()
         needle = "" if by == "users" else str(text).strip().casefold()
         if not needle and not names:
             return []
@@ -183,9 +191,9 @@ class ChatReplay:
         for message in self.messages:
             name = message[1].casefold()
             if by == "users":
-                hit = name in names
+                hit = _nick(name) in names
             elif by == "user":
-                hit = name == needle
+                hit = _nick(name) == _nick(needle)
             elif by == "name":
                 hit = needle in name
             else:
@@ -385,7 +393,7 @@ class LiveChatReplay:
 
     def search(self, text, limit=SEARCH_LIMIT, by="all"):
         """Как ChatReplay.search, по идущей записи."""
-        names = {str(name).strip().casefold() for name in text} if by == "users" else set()
+        names = {_nick(name) for name in text} if by == "users" else set()
         needle = "" if by == "users" else str(text).strip().casefold()
         if not needle and not names:
             return []
@@ -396,9 +404,9 @@ class LiveChatReplay:
                 message = entry[4]
                 name = message[0].casefold()
                 if by == "users":
-                    hit = name in names
+                    hit = _nick(name) in names
                 elif by == "user":
-                    hit = name == needle
+                    hit = _nick(name) == _nick(needle)
                 elif by == "name":
                     hit = needle in name
                 else:

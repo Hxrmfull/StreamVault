@@ -5,9 +5,61 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.16.0 — 2026-11-10
+
+### Added
+
+- Chat gaps are filled on Kick, YouTube and VK Video Live too, from the
+  stream recording on the platform (only Twitch has the chat archive as
+  well); dropped connections noted while recording are filled by
+  themselves there as well. A Kick stream recording counts while the stream
+  is still going.
+- Deno in Settings → Tools: yt-dlp solves with it the JavaScript puzzles
+  YouTube puts in front of videos, as a browser does. Without it YouTube
+  gives fewer formats and is to stop downloading in time. A download button
+  (about 40 MB, checksum checked on GitHub and in the scoop catalog), and
+  updates like TwitchDownloader's. An installed Deno is found by itself, and
+  without Deno yt-dlp may use an installed Node.js.
 
 ### Fixed
+
+- Recording in the worst quality, the stream beginning was downloaded in
+  the best one: gigabytes instead of megabytes, and it could not be joined
+  (different frame size).
+- With a long stream title and a long path to the recordings folder the
+  stream beginning got a differently shortened name than the recording and
+  never joined. Names are now cut alike, and a beginning that already has
+  such a name is paired by channel and recording start time.
+- "Fetch the stream beginning" was offered while the program itself was
+  waiting for the stream recording to take the beginning (YouTube, VK
+  Video Live): the beginning could download twice.
+- Chat window, Viewers panel: YouTube names ("@name") showed no messages,
+  and VK Video Live and YouTube names with spaces ("Анна Москва") typed into
+  the field fell apart into several viewers.
+- "Download chat" for a downloaded VK Video Live clip whose Downloads row is
+  gone said "recording not found": by the id in the file name a clip looks
+  like a stream recording. The id is now tried as a clip too.
+- Downloading only a section from the middle of a VK Video Live recording
+  failed ("ffmpeg exited with code …"): ffmpeg does not trust the CDN
+  certificate. Such sections now download with the program's own requests,
+  as the beginning already did.
+- Filling chat gaps outside Twitch reported "emotes not embedded":
+  TwitchDownloader does not understand other platforms' chats. Their emotes
+  now come along with the filled messages.
+- ffmpeg installed by another program was often not found: the search
+  remembered "not found" until a restart, read PATH as it was when the
+  program started (an installer adds to it later) and knew few folders.
+  Now a missing ffmpeg is searched for again every minute, in PATH as
+  Windows has it now, and in more places: folders like
+  C:fmpeg-7.1-essentials_buildin, C:fmpeg without bin, Program Files
+  (x86), the user's programs folder.
+- Waiting for a stream recording to take its beginning asked the platform
+  every 5 minutes for up to 6 hours; YouTube answers frequent requests with
+  "confirm you're not a bot". Checks now get rarer, up to once in 30
+  minutes.
+- YouTube streams were placed by the time they were published (half an
+  hour after the end) or created, not by when they started: finding the
+  stream recording for the beginning, chat or gaps could miss it.
 
 - "Fetch the stream beginning" was offered for a recording already joined
   with its beginning before 0.15.0 (the seam was not remembered then, and a

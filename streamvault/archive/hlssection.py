@@ -88,19 +88,33 @@ def _clock(seconds):
 
 def first_segments(segments, length):
     """Куски с начала, покрывающие первые length секунд."""
-    chosen, covered = [], 0.0
-    for duration, url in segments:
-        if covered >= length:
-            break
-        chosen.append(url)
-        covered += duration
-    return chosen
+    return segments_between(segments, 0, length)[0]
 
 
-def download(playlist_url, headers, length, target, progress=None, stopped=None, session=None, workers=1):
+def segments_between(segments, start, end):
     """
-    Первые length секунд записи по медиаплейлисту — в target (.ts, а у
-    фрагментов mp4 — .mp4). progress(доля 0..1, байт), stopped() — прервать.
+    Куски, покрывающие отрезок start–end (секунды от начала записи):
+    ([ссылки], сколько секунд у первого куска до start — их потом отрезать).
+    """
+    chosen, position, lead = [], 0.0, 0.0
+    for duration, url in segments:
+        if position >= end:
+            break
+        if position + duration > start:
+            if not chosen:
+                lead = max(0.0, start - position)
+            chosen.append(url)
+        position += duration
+    return chosen, lead
+
+
+def download(playlist_url, headers, length, target, progress=None, stopped=None, session=None, workers=1,
+             start=0, found=None):
+    """
+    Записи по медиаплейлисту до length секунд — в target (.ts, а у фрагментов
+    mp4 — .mp4); start — с этого места (отрезок из середины: куски, что его
+    покрывают; found["lead"] — сколько секунд в начале файла до start, их
+    отрежет from_zero). progress(доля 0..1, байт), stopped() — прервать.
     workers — сколько кусков качать сразу. Возвращает путь файла;
     недокачанное удаляется.
     """
@@ -118,7 +132,10 @@ def download(playlist_url, headers, length, target, progress=None, stopped=None,
     if available < length and "#EXT-X-ENDLIST" not in answer.text:
         raise NotYet(tr("запись эфира на площадке ещё не дошла до начала записи ({have} из {need})",
                         have=_clock(available), need=_clock(length)))
-    urls = ([init] if init else []) + first_segments(segments, length)
+    chosen, lead = segments_between(segments, start, length)
+    if found is not None:
+        found["lead"] = lead
+    urls = ([init] if init else []) + chosen
     path = target + (".mp4" if init else ".ts")
     partial = path + ".part"
     written = 0
@@ -166,20 +183,23 @@ def download(playlist_url, headers, length, target, progress=None, stopped=None,
     return path
 
 
-def from_zero(ffmpeg, path):
+def from_zero(ffmpeg, path, lead=0.0, length=None):
     """
     Склеенные куски HLS идут со временем самой записи (у Twitch — с 64-й
     секунды и дальше), а не с нуля, как у отрезка от ffmpeg. Склейка начала
     с записью по такому стыку не совпадала кадр в кадр: перепаковать в mp4
-    без перекодирования, со временем от нуля — как отрезок от ffmpeg.
+    без перекодирования, со временем от нуля — как отрезок от ffmpeg. lead —
+    отрезок из середины: столько секунд в начале лишние (по ключевому кадру,
+    как у ffmpeg), length — сколько оставить.
     Возвращает путь готового файла; не вышло — исходный, как есть.
     """
     target = os.path.splitext(path)[0] + ".mp4"
     partial = target + ".zero"
     try:
         # звук в .ts — AAC в обёртке ADTS: mp4 её не принимает
-        result = subprocess.run([ffmpeg, "-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-i", path,
-                                 "-map", "0:v?", "-map", "0:a?", "-c", "copy", "-bsf:a", "aac_adtstoasc",
+        cut = (["-ss", "%.3f" % lead] if lead else []) + (["-t", "%.3f" % length] if length else [])
+        result = subprocess.run([ffmpeg, "-hide_banner", "-nostdin", "-y", "-loglevel", "error", *cut[:2], "-i", path,
+                                 *cut[2:], "-map", "0:v?", "-map", "0:a?", "-c", "copy", "-bsf:a", "aac_adtstoasc",
                                  # и первый кадр — ровно с нуля: иначе на стыке лишний кадр
                                  "-avoid_negative_ts", "make_zero",
                                  "-movflags", "+faststart", "-f", "mp4", partial], capture_output=True,

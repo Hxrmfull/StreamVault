@@ -292,6 +292,11 @@ class LiveService:
         if self._bus is not None:
             self._bus.emit("joining", **event)
 
+    def beginning_awaited(self, path):
+        """Начало эфира записи path ещё ждётся само (live/beginning.py): кнопкой не докачивать."""
+        beginning = self._beginning
+        return bool(beginning is not None and beginning.awaited(path))
+
     def join_status(self):
         """Склейки начала эфира за этот запуск: [{"head", "main", "state", …}]."""
         with self._lock:

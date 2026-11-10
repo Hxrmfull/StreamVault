@@ -358,6 +358,91 @@ export function startTwitchdownloaderInstall() {
   }).catch(failed);
 }
 
+export const denoBlocks = new Set();
+
+function denoInstallText(install) {
+  const progress = install.progress || {};
+  switch (install.state) {
+    case "checking": return t("Сверка контрольной суммы на GitHub и в каталоге scoop…");
+    case "downloading": {
+      const params = { version: install.version || "", source: install.source || "",
+                       done: fmt.size(progress.downloaded || 0), total: fmt.size(progress.total) };
+      const text = install.source ? t("Скачивание Deno {version} с {source}: {done} из {total}", params)
+                                  : t("Скачивание Deno {version}: {done} из {total}", params);
+      return progress.speed ? text + " · " + t("{speed}/с", { speed: fmt.size(progress.speed) }) : text;
+    }
+    case "installing": return t("Проверка и установка…");
+    case "done": return t("Deno установлен");
+    case "current": return t("Уже последняя версия");
+    case "failed": return t("Не установился: {error}", { error: install.error });
+    case "cancelled": return t("Установка отменена");
+    default: return "";
+  }
+}
+
+// Deno — JavaScript для yt-dlp: без него YouTube качается хуже, а со временем — никак
+export function denoBlock() {
+  const box = h("div", { class: "ffmpeg-box" });
+  box._fill = () => {
+    const status = state.deno || {};
+    const install = status.install || {};
+    const busy = INSTALLING.includes(install.state);
+    const body = h("div", { class: "ffmpeg-body" });
+    if (status.path) {
+      body.append(h("div", null, t("Найден: {path}", { path: status.path }),
+        status.version ? h("span", { class: "faint", text: " · " + status.version }) : null));
+    } else if (status.node) {
+      body.append(h("div", { text: t("Deno нет, вместо него yt-dlp возьмёт Node.js: {path}", { path: status.node }) }));
+    } else {
+      body.append(h("div", { text: t("Для YouTube нужен Deno (около 40 МБ): yt-dlp решает им задачки на JavaScript, " +
+                                     "которые YouTube ставит перед видео, как это делает браузер. Без него YouTube " +
+                                     "отдаёт не все форматы, а со временем перестанет качаться совсем.") }));
+    }
+    const note = denoInstallText(install);
+    if (note) {
+      body.append(h("div", { class: install.state === "failed" ? "row-sub error"
+                                   : ["done", "current"].includes(install.state) ? "ok-text" : "faint", text: note }));
+    }
+    const progress = install.progress || {};
+    if (install.state === "downloading" && progress.total) {
+      const bar = h("div", { class: "bar" });
+      bar.style.width = Math.min(100, (progress.downloaded || 0) * 100 / progress.total) + "%";
+      body.append(h("div", { class: "progress" }, bar));
+    }
+    const actions = h("div", { class: "toolbar" });
+    if (busy) {
+      actions.append(button(t("Отменить"), { onclick: () => bridge.call("cancel_deno_install").catch(failed) }));
+    } else {
+      actions.append(button(status.own ? t("Обновить Deno") : t("Скачать Deno"), {
+        kind: status.path || status.node ? "" : "primary", icon: status.own ? "refresh" : "download",
+        onclick: () => startDenoInstall() }));
+      if (install.state === "failed" && install.manual_page) {
+        actions.append(button(t("Скачать вручную"), {
+          icon: "external", onclick: () => bridge.call("open_url", install.manual_page).catch(failed) }));
+      }
+    }
+    body.append(actions);
+    box.replaceChildren(body);
+  };
+  box._fill();
+  denoBlocks.add(box);
+  return box;
+}
+
+export function refreshDenoBlocks() {
+  for (const box of denoBlocks) {
+    if (document.body.contains(box)) box._fill();
+    else denoBlocks.delete(box);
+  }
+}
+
+function startDenoInstall() {
+  bridge.call("install_deno").then((install) => {
+    state.deno = Object.assign({}, state.deno, { install: install });
+    refreshDenoBlocks();
+  }).catch(failed);
+}
+
 export const appUpdateBlocks = new Set();
 // кнопка сверху видна, когда есть что ставить
 export const UPDATE_BADGE_STATES = ["available", "downloading", "installing", "done"];
@@ -486,6 +571,9 @@ export function openComponentUpdates() {
   }
   if (found.TwitchDownloader) {
     blocks.push(h("div", { class: "muted field-gap", text: t("Вышел TwitchDownloader {version}: им делаются HTML и видео чата.", { version: found.TwitchDownloader }) }), twitchdownloaderBlock(false));
+  }
+  if (found.Deno) {
+    blocks.push(h("div", { class: "muted field-gap", text: t("Вышел Deno {version}: им yt-dlp открывает видео YouTube.", { version: found.Deno }) }), denoBlock());
   }
   modal.body.append(h("h2", { text: t("Обновления компонентов") }), ...blocks,
     h("div", { class: "actions" }, button(t("Закрыть"), { onclick: () => modal.close() })));
@@ -787,7 +875,9 @@ export function openSettings() {
       subhead("yt-dlp"),
       ytdlpBlock(),
       h("div", { class: "hint", text: t("Сайты меняются, и старый yt-dlp перестаёт их понимать. " +
-        "Обновление проверяется подписью разработчиков yt-dlp.") })]],
+        "Обновление проверяется подписью разработчиков yt-dlp.") }),
+      subhead("Deno"),
+      denoBlock()]],
     [t("Программа"), [
       h("div", { class: "field" }, h("label", null, "Язык · Language"), language),
       subhead(t("Обновления")),

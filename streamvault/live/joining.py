@@ -457,7 +457,12 @@ def join_chat(head_json, tail_json, cut, length, target, shift=None):
 # ------------------------------------------------------------ кто склеивает
 
 def beginning_parts(root_path):
-    """[(начало, запись)] — пары в папке готовых записей, у которых есть оба файла."""
+    """
+    [(начало, запись)] — пары в папке готовых записей, у которых есть оба файла.
+    Запись — с тем же именем без « - part00», а нет такой — та же запись эфира
+    (ник и время начала): название у начала могло обрезаться иначе.
+    """
+    from ..library import EDIT_MARK, PIECE_MARK, broadcast_key, parse_recording_name
     pairs = []
     for folder, _, names in os.walk(os.path.join(root_path, util.FINISHED_DIR)):
         for name in names:
@@ -466,6 +471,15 @@ def beginning_parts(root_path):
                 continue
             base = os.path.join(folder, stem[:-len(PART00)])
             main = next((base + ext for ext in util.RECORDING_EXTENSIONS if os.path.isfile(base + ext)), None)
+            if main is None and broadcast_key(stem) is not None:
+                # первая часть того же эфира: без номера части, не кусок деления и не правка
+                same = sorted(os.path.join(folder, other) for other in names
+                              if os.path.splitext(other)[1].lower() in util.RECORDING_EXTENSIONS
+                              and not LEFTOVER.search(other)
+                              and broadcast_key(os.path.splitext(other)[0]) == broadcast_key(stem)
+                              and parse_recording_name(os.path.splitext(other)[0]).get("part") is None
+                              and not PIECE_MARK.search(os.path.splitext(other)[0]) and not EDIT_MARK.search(os.path.splitext(other)[0]))
+                main = same[0] if len(same) == 1 else None
             if main:
                 pairs.append((os.path.join(folder, name), main))
     return pairs

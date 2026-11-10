@@ -507,12 +507,15 @@ async function fetchBeginning(item) {
   }
 }
 
-// пропуски в чате записи: участки — с Twitch, чего там нет — из архива чатов; ход в «Загрузках»
+// пропуски в чате записи: участки — из записи эфира на площадке, у Twitch чего там нет — из
+// архива чатов; ход в «Загрузках»
 async function fetchChatGaps(item) {
   try {
     await bridge.call("recording_chat_gaps", item.path);
     try { sessionStorage.setItem("downloads-tab", "chats"); } catch (error) { /* не помним — не беда */ }
-    toast(t("Пропуски чата докачиваются: с Twitch, потом из архива чатов, ход в «Загрузках»"), "ok", "#downloads");
+    toast(item.platform === "twitch"
+      ? t("Пропуски чата докачиваются: с Twitch, потом из архива чатов, ход в «Загрузках»")
+      : t("Пропуски чата докачиваются из записи эфира на площадке, ход в «Загрузках»"), "ok", "#downloads");
   } catch (error) {
     failed(error);
   }

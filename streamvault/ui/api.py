@@ -10,7 +10,6 @@
 
 import collections
 import copy
-import glob
 import json
 import logging
 import os
@@ -121,6 +120,7 @@ class Api:
         "ffmpeg_status", "install_ffmpeg", "cancel_ffmpeg_install", "choose_ffmpeg",
         "check_ffmpeg", "ytdlp_status", "update_ytdlp", "cancel_ytdlp_update",
         "twitchdownloader_status", "install_twitchdownloader", "cancel_twitchdownloader_install",
+        "deno_status", "install_deno", "cancel_deno_install",
         "download_chat", "recording_chat", "chat_archive_status", "recording_chat_archive", "convert_recording",
         "app_update_status", "check_app_update", "install_app_update", "rollback_app_update", "cancel_app_update",
         "apply_app_update",
@@ -130,6 +130,7 @@ class Api:
     def __init__(self, settings, live, downloads, logs=None, problems=(), library=None,
                  autostart=None, tray=False, ffmpeg=None, installer=None, ytdlp_copy=None,
                  ytdlp_updater=None, twitchdownloader=None, twitchdownloader_installer=None,
+                 deno=None, deno_installer=None,
                  app_updater=None, last_update=None, positions=None, editor=None, components=None,
                  integrity=None, checker=None, storyboards=None, chat_index=None):
         """
@@ -146,6 +147,7 @@ class Api:
         записей и сводка эфира (ChatIndex).
         """
         self._settings = settings
+        self._seam_lock = threading.Lock()
         self._live = live
         self._downloads = downloads
         self._search = None      # ChannelSearch: создаётся при первом поиске
@@ -161,6 +163,9 @@ class Api:
         self._ytdlp_updater = ytdlp_updater
         self._twitchdownloader = twitchdownloader
         self._twitchdownloader_installer = twitchdownloader_installer
+        # Deno — JavaScript для yt-dlp (YouTube): DenoLocator и его установщик
+        self._deno = deno
+        self._deno_installer = deno_installer
         self._app_updater = app_updater
         self._components = components
         self._last_update = last_update
@@ -241,8 +246,9 @@ class Api:
             "ffmpeg": self.ffmpeg_status(),
             "ytdlp": self.ytdlp_status(),
             "twitchdownloader": self.twitchdownloader_status(),
+            "deno": self.deno_status(),
             "app_update": self.app_update_status(),
-            # новые версии yt-dlp и TwitchDownloader: {название: версия}
+            # новые версии yt-dlp, TwitchDownloader и Deno: {название: версия}
             "component_updates": self._components.snapshot() if self._components else {},
             "last_update": self._last_update,
             # для кнопок «По умолчанию» в настройках записи (общих и у канала)
@@ -627,11 +633,7 @@ class Api:
             raise ValueError(tr("у записи нет чата, его можно скачать целиком"))
         if not found:
             raise ValueError(tr("пропусков в чате не найдено"))
-        # откуда докачать: запись эфира на площадке и архив чатов есть только у Twitch
-        if platform == "vkvideolive":
-            raise ValueError(tr("у VK Video Live пропуски докачать неоткуда: чат записей эфиров площадка не отдаёт"))
-        if platform != "twitch":
-            raise ValueError(tr("докачка пропусков чата пока только у Twitch"))
+        # откуда докачать — запись эфира на площадке (у всех четырёх), у Twitch ещё и архив чатов
         return platform, login, found
 
     def _chat_job_going(self, path, quality):
@@ -670,7 +672,7 @@ class Api:
     def fill_recorded_gaps(self, video):
         """
         Чат записи готов: точные разрывы связи с чатом (отмеченные при записи)
-        докачиваются сами, без кнопки, — только у Twitch, откуда их есть взять.
+        докачиваются сами, без кнопки, — из записи эфира на площадке.
         Догадки (тишина, позднее начало) — только кнопкой: там чат мог и молчать.
         Начало эфира ещё не склеено — ждём: после склейки чат готовится заново.
         Возвращает id загрузки или None.
@@ -681,13 +683,12 @@ class Api:
         except ValueError:
             return None
         stem = os.path.splitext(video)[0]
-        if glob.glob(glob.escape(stem + dl.PART00) + ".*"):
+        # начало эфира ещё рядом (не склеено): его имя бывает обрезано иначе — по частям эфира
+        if any(os.path.splitext(part)[0].endswith(dl.PART00) for _, part in broadcast_parts(video)):
             return None
         try:
             platform, login, timeline = self._part_timeline(video)
         except ValueError:
-            return None
-        if platform != "twitch":
             return None
         start = next((begin for part, begin, _ in timeline if os.path.normcase(part) == os.path.normcase(video)), None)
         json_path = chat.chat_paths(video)["json"]
@@ -733,6 +734,8 @@ class Api:
         if any(os.path.splitext(part)[0].endswith(dl.PART00) for part in parts):
             raise ValueError(tr("начало эфира уже скачано, склейка после конца записи"))
         first = parts[0]
+        if hasattr(self._live, "beginning_awaited") and self._live.beginning_awaited(first):
+            raise ValueError(tr("начало эфира скачается само, как только площадка выложит запись эфира"))
         head = os.path.normcase(os.path.splitext(first)[0] + dl.PART00)
         jobs = self._downloads.snapshot()["jobs"]
         if self._seam(first) is not None:
@@ -773,13 +776,19 @@ class Api:
         seam = self._downloads.joined_seam(first)
         if seam is not None:
             return seam
-        seam = self._chat_seam(first)
-        if seam is None:
-            return None
-        self._downloads.mark_joined(os.path.splitext(first)[0] + dl.PART00, first, seam)
-        # докачка пропусков у такой записи шла по времени без стыка — её «проверено,
-        # чат молчал» про другой отрезок: пропуски предлагаются снова
-        self._forget_checked(first)
+        # окно спрашивает меню записи несколькими вызовами сразу: стык ищется и
+        # чат переписывается один раз, остальные берут уже запомненный
+        with self._seam_lock:
+            seam = self._downloads.joined_seam(first)
+            if seam is not None:
+                return seam
+            seam = self._chat_seam(first)
+            if seam is None:
+                return None
+            self._downloads.mark_joined(os.path.splitext(first)[0] + dl.PART00, first, seam)
+            # докачка пропусков у такой записи шла по времени без стыка — её «проверено,
+            # чат молчал» про другой отрезок: пропуски предлагаются снова
+            self._forget_checked(first)
         from ..live.beginning import clock
         logging.info(tr("стык склейки найден по чату: {name} — {at}", name=os.path.basename(first), at=clock(seam)))
         return seam
@@ -1578,6 +1587,28 @@ class Api:
     def cancel_twitchdownloader_install(self):
         if self._twitchdownloader_installer is not None:
             self._twitchdownloader_installer.cancel()
+
+    # ------------------------------------------------------------ Deno
+
+    def deno_status(self):
+        """Где Deno для yt-dlp, какой версии, есть ли вместо него Node.js и как идёт установка."""
+        if self._deno is None:
+            status = {"path": None, "version": None, "own": False, "node": None}
+        else:
+            status = self._deno.status()
+        installer = self._deno_installer
+        status["install"] = installer.snapshot() if installer else None
+        return status
+
+    def install_deno(self):
+        if self._deno_installer is None:
+            raise ValueError(tr("установка Deno здесь недоступна"))
+        self._deno_installer.start()
+        return self._deno_installer.snapshot()
+
+    def cancel_deno_install(self):
+        if self._deno_installer is not None:
+            self._deno_installer.cancel()
 
     def choose_ffmpeg(self):
         """Выбрать ffmpeg.exe на диске. Возвращает путь и версию либо None."""

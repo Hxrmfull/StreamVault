@@ -27,6 +27,9 @@ FFPROBE_EXE = "ffprobe.exe" if os.name == "nt" else "ffprobe"
 
 # Так раньше писался путь по умолчанию: "найди в PATH".
 _AUTO_VALUES = ("", "ffmpeg", "ffmpeg.exe")
+# ffmpeg не нашёлся — искать снова не чаще этого (секунды): его могли поставить,
+# пока программа открыта, а поиск ходит по диску
+MISSING_RECHECK = 60
 
 
 def own_dir_for(settings):
@@ -35,22 +38,69 @@ def own_dir_for(settings):
 
 
 def common_locations():
-    """Где ffmpeg оказывается после установки руками, через winget, scoop или chocolatey."""
+    """
+    Где ffmpeg оказывается после установки руками, через winget, scoop, chocolatey
+    или сторонним установщиком: в PATH Windows, записанном уже после запуска
+    программы, и в папках вида C:\\ffmpeg-7.1-essentials_build\\bin.
+    """
     local = os.environ.get("LOCALAPPDATA", "")
     home = os.path.expanduser("~")
     program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+    program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
     program_data = os.environ.get("ProgramData", r"C:\ProgramData")
     winget = os.path.join(local, "Microsoft", "WinGet")
+    drive = "C:" + os.sep
+
+    def newest(pattern):
+        # версии в имени папки — сначала новые
+        return sorted(glob.glob(pattern), reverse=True)
+
     return [
         os.path.join(winget, "Links", FFMPEG_EXE),
-        *sorted(glob.glob(os.path.join(winget, "Packages", "*FFmpeg*", "*", "bin", FFMPEG_EXE)),
-                reverse=True),
+        *newest(os.path.join(winget, "Packages", "*FFmpeg*", "*", "bin", FFMPEG_EXE)),
         os.path.join(home, "scoop", "shims", FFMPEG_EXE),
         os.path.join(home, "scoop", "apps", "ffmpeg", "current", "bin", FFMPEG_EXE),
         os.path.join(program_data, "chocolatey", "bin", FFMPEG_EXE),
-        os.path.join("C:" + os.sep, "ffmpeg", "bin", FFMPEG_EXE),
+        *[os.path.join(folder, FFMPEG_EXE) for folder in registry_path()],
+        os.path.join(drive, "ffmpeg", "bin", FFMPEG_EXE),
+        os.path.join(drive, "ffmpeg", FFMPEG_EXE),
+        *newest(os.path.join(drive, "ffmpeg*", "bin", FFMPEG_EXE)),
+        *newest(os.path.join(drive, "ffmpeg*", "*", "bin", FFMPEG_EXE)),
         os.path.join(program_files, "ffmpeg", "bin", FFMPEG_EXE),
+        os.path.join(program_files, "ffmpeg", FFMPEG_EXE),
+        *newest(os.path.join(program_files, "ffmpeg*", "bin", FFMPEG_EXE)),
+        os.path.join(program_files_x86, "ffmpeg", "bin", FFMPEG_EXE),
+        *newest(os.path.join(local, "Programs", "ffmpeg*", "bin", FFMPEG_EXE)),
+        *newest(os.path.join(home, "ffmpeg*", "bin", FFMPEG_EXE)),
     ]
+
+
+def registry_path():
+    """
+    PATH, каким он записан в Windows сейчас (пользователя и системный), а не каким
+    был при запуске программы: установщик дописывает его, но уже запущенные
+    программы (и запущенные с рабочего стола до перезахода) этого не видят.
+    """
+    if os.name != "nt":
+        return []
+    try:
+        import winreg
+    except ImportError:
+        return []
+    keys = ((winreg.HKEY_CURRENT_USER, "Environment"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"))
+    folders = []
+    for hive, name in keys:
+        try:
+            with winreg.OpenKey(hive, name) as key:
+                value = winreg.QueryValueEx(key, "Path")[0]
+        except OSError:
+            continue
+        for folder in str(value or "").split(os.pathsep):
+            folder = os.path.expandvars(folder.strip().strip('"'))
+            if folder and folder not in folders:
+                folders.append(folder)
+    return folders
 
 
 def read_version(path):
@@ -78,6 +128,7 @@ class FFmpegLocator:
         self._lock = threading.Lock()
         self._found = None
         self._searched = False
+        self._searched_at = 0.0
         self._versions = {}
 
     @property
@@ -86,9 +137,11 @@ class FFmpegLocator:
 
     def path(self):
         with self._lock:
-            if not self._searched:
+            # не нашёлся — через минуту снова: его могли поставить, пока программа открыта
+            if not self._searched or (self._found is None and time.monotonic() - self._searched_at > MISSING_RECHECK):
                 self._found = self._find()
                 self._searched = True
+                self._searched_at = time.monotonic()
             return self._found
 
     def refresh(self):

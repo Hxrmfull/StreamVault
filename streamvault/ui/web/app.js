@@ -15,7 +15,7 @@ import { START_WAIT, bridge, button, ensureProfiles, failed, fmt, h, icon, openM
 import { refreshSidebar, renderChannel, renderLink, renderLive } from "./channels.js";
 import { convertingText, refreshDownloadsCount, renderDownloads } from "./downloads.js";
 import { renderLibrary, scheduleLibraryReload, showLibrary } from "./library.js";
-import { ffmpegBlock, openAppUpdate, openComponentUpdates, openSettings, refreshAppUpdate, refreshComponentBadge, refreshFfmpegBlocks, refreshTwitchdownloaderBlocks, refreshYtdlpBlocks, setAppUpdate } from "./settings.js";
+import { ffmpegBlock, openAppUpdate, openComponentUpdates, openSettings, refreshAppUpdate, refreshComponentBadge, refreshFfmpegBlocks, refreshTwitchdownloaderBlocks, refreshYtdlpBlocks, refreshDenoBlocks, setAppUpdate } from "./settings.js";
 import { attachChannelSearch, openAddChannel } from "./search.js";
 import { enhanceSelects } from "./dropdown.js";
 
@@ -89,6 +89,10 @@ export function receive(batch) {
       case "twitchdownloader":
         state.twitchdownloader = Object.assign({}, event.status, { install: event.install });
         refreshTwitchdownloaderBlocks();
+        break;
+      case "deno":
+        state.deno = Object.assign({}, event.status, { install: event.install });
+        refreshDenoBlocks();
         break;
       case "app_update":
         setAppUpdate(event.install);
@@ -464,6 +468,7 @@ export async function start() {
   state.ffmpeg = data.ffmpeg || {};
   state.ytdlp = data.ytdlp || {};
   state.twitchdownloader = data.twitchdownloader || {};
+  state.deno = data.deno || {};
   state.appUpdate = data.app_update || {};
   refreshAppUpdate();
   state.componentUpdates = data.component_updates || {};

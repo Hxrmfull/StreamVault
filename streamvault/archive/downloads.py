@@ -26,7 +26,7 @@ from ..ffmpeg import FFmpegLocator, own_dir_for
 from ..twitchdownloader import TwitchDownloaderLocator
 from ..twitchdownloader import own_dir_for as twitchdownloader_dir
 from ..i18n import tr
-from ..platforms import channel_label
+from ..platforms import channel_label, stream_url
 from ..util import MAX_PATH_LEN, sanitize_filename
 from . import chat, dashsection, hlssection, vodchat, ytdlp, ytdlp_update
 
@@ -375,6 +375,12 @@ class DownloadManager:
                     and entry["timestamp"] - VOD_SLACK <= moment <= entry["timestamp"] + entry["duration"] + VOD_SLACK]
         if covering:
             return min(covering, key=lambda entry: abs(moment - entry["timestamp"]))
+        # запись идущего эфира: длины ещё нет (у Kick — 0) — самая свежая покрывает всё от
+        # своего начала до сих пор
+        latest = max((entry for entry in entries if entry.get("timestamp")), key=lambda entry: entry["timestamp"],
+                     default=None)
+        if latest is not None and not latest.get("duration")                 and latest["timestamp"] - VOD_SLACK <= moment <= time.time() + VOD_SLACK:
+            return latest
         # время не сошлось (у YouTube в списке бывает время выкладки) — то же название эфира
         wanted = _plain_title(title)
         named = [entry for entry in entries if wanted and _plain_title(entry.get("title")) == wanted]
@@ -465,7 +471,7 @@ class DownloadManager:
                     break
             else:
                 existing = None
-                snapshot = self._new_job("https://www.twitch.tv/" + channel, CHAT_GAPS, None,
+                snapshot = self._new_job(stream_url(platform, channel), CHAT_GAPS, None,
                                          {"title": title, "channel": channel, "platform": platform, "kind": "vod",
                                           "timestamp": start},
                                          chat_mode if chat_mode in (chat.TEXT, chat.RENDER) else chat.TEXT, stem)
@@ -1018,7 +1024,9 @@ class DownloadManager:
         if job["quality"] == CHAT_ONLY:
             return self._chat_without_video(job_id, runtime, job)
 
-        if job["platform"] in OWN_SECTION_PLATFORMS and job["section"] and not job["section"][0]:
+        # отрезок из середины своими запросами — только у VK (ffmpeg не доверяет сертификату CDN);
+        # у остальных его качает ffmpeg через yt-dlp, как и раньше
+        if job["platform"] in OWN_SECTION_PLATFORMS and job["section"]                 and (not job["section"][0] or job["platform"] == "vkvideolive"):
             done = self._own_section(job_id, runtime, job)
             if done:
                 return None
@@ -1061,6 +1069,9 @@ class DownloadManager:
         hls = len(chosen) == 1 and protocols[0].startswith("m3u8")
         dash = all(protocol == "https" for protocol in protocols) \
             and all(item.get("ext") in ("mp4", "m4a") for item in chosen)
+        # отрезок из середины — только HLS (куски плейлиста); видео и звук mp4 — ffmpeg, как раньше
+        start = float(job["section"][0] or 0)
+        dash = dash and not start
         ffmpeg = self._ffmpeg.path()
         if not all(item.get("url") for item in chosen) or not (hls or (dash and ffmpeg)):
             return False
@@ -1085,11 +1096,13 @@ class DownloadManager:
         stopped = lambda: bool(runtime["stop"])     # noqa: E731
         try:
             if hls:
+                found = {}
                 produced = hlssection.download(chosen[0]["url"], chosen[0].get("http_headers"), job["section"][1],
                                                job["target"], progress, stopped=stopped,
-                                               workers=self._settings["download_fragments"])
+                                               workers=self._settings["download_fragments"], start=start, found=found)
                 if ffmpeg:
-                    produced = hlssection.from_zero(ffmpeg, produced)
+                    produced = hlssection.from_zero(ffmpeg, produced, found.get("lead") or 0.0,
+                                                    job["section"][1] - start if start else None)
             else:
                 produced = dashsection.download([(item["url"], item.get("http_headers")) for item in chosen],
                                                 job["section"][1], job["target"], ffmpeg, progress, stopped=stopped)
@@ -1315,7 +1328,8 @@ class DownloadManager:
     def _fill_chat_gaps(self, job_id, runtime, job):
         """
         Пропуски чата части своей записи (add_gap_chat): каждый участок — сначала
-        из записи эфира на Twitch, чего там нет — из архива чатов. Найденное
+        из записи эфира на площадке, чего там нет — из архива чатов (он есть
+        только у Twitch). Найденное
         вклеивается в чат части только внутрь своих участков; остальной чат не
         трогается. Участок, который источник покрыл, запоминается проверенным,
         даже если сообщений там нет и у источника: чат тогда просто молчал.
@@ -1334,6 +1348,10 @@ class DownloadManager:
         progress, started, stopped = self._chat_watchers(job_id, runtime)
         logging.info(tr("пропуски чата: {name}, участков: {count}", name=os.path.basename(video), count=len(gaps)))
         found, covered, notes = {}, set(), []
+        # смайлы и значки докачанных сообщений Kick, YouTube и VK Video Live — сразу с ними
+        # (свой загрузчик встраивает их сам); TwitchDownloader чаты не Twitch не понимает
+        # (в runtime, а не в загрузке: та сохраняется в downloads.json, а картинки — мегабайты)
+        embedded = runtime.setdefault("embedded", [])
         steps = max(1, len(gaps)) * 2
         counter = [0]
         stem = os.path.splitext(video)[0]
@@ -1342,18 +1360,23 @@ class DownloadManager:
             progress("gaps", min(99, round((counter[0] - 1 + (percent or 0) / 100) / steps * 100)))
 
         try:
-            self._gaps_from_vod(runtime, info, gaps, stem, found, covered, notes, counter, step_progress,
+            self._gaps_from_vod(runtime, job, info, gaps, stem, found, covered, notes, counter, step_progress,
                                 started, stopped)
             if runtime["stop"]:
                 return self._finish(job_id, runtime, None, chat_progress=None)
-            self._gaps_from_archive(runtime, info, gaps, stem, found, covered, notes, counter, step_progress,
-                                    stopped)
+            if job.get("platform", "twitch") == "twitch":
+                self._gaps_from_archive(runtime, info, gaps, stem, found, covered, notes, counter, step_progress,
+                                        stopped)
             if runtime["stop"]:
                 return self._finish(job_id, runtime, None, chat_progress=None)
             # найденное — в чат части; проверенные участки запоминаются
             with open(main_json, encoding="utf-8") as source:
                 data = json.load(source)
             added = chatgaps.fill(data, gaps, found, sorted(covered))
+            if added and embedded:
+                from ..live.joining import _merge_embedded
+                for extra in embedded:
+                    data["embeddedData"] = _merge_embedded(data.get("embeddedData"), extra)
             if covered:
                 temporary = main_json + ".gaps"
                 with open(temporary, "w", encoding="utf-8") as output:
@@ -1364,8 +1387,10 @@ class DownloadManager:
                                 error=tr("пропуски чата не докачаны: {error}", error=error))
         notes = [note for note in notes if note]
         if added:
-            # смайлы новых сообщений — внутрь; HTML (и видео чата) — заново
-            notes += [note for note in (self._embed_chat(job_id, runtime, main_json),
+            # смайлы новых сообщений — внутрь (у Twitch — TwitchDownloader, у остальных они уже
+            # вклеены вместе с сообщениями); HTML (и видео чата) — заново
+            twitch = job.get("platform", "twitch") == "twitch"
+            notes += [note for note in ((self._embed_chat(job_id, runtime, main_json) if twitch else ""),
                                         self._remake_chat_html(job_id, runtime, job, video)) if note]
         silent = sum(1 for index in covered if not any(
             gaps[index][0] < float(comment.get("content_offset_seconds") or 0) < gaps[index][1]
@@ -1380,8 +1405,10 @@ class DownloadManager:
             summary = [tr("пропущенных сообщений не найдено: чат в это время молчал")]
         else:
             summary = []
-        if missing:
+        if missing and job.get("platform", "twitch") == "twitch":
             summary.append(tr("не докачать участков: {count} (их нет ни на Twitch, ни в архиве)", count=missing))
+        elif missing:
+            summary.append(tr("не докачать участков: {count} (их нет в записи эфира на площадке)", count=missing))
         logging.info(tr("пропуски чата: {name}, {summary}", name=os.path.basename(video), summary="; ".join(summary)))
         if not covered:
             return self._finish(job_id, runtime, FAILED, chat_progress=None,
@@ -1389,20 +1416,26 @@ class DownloadManager:
         return self._finish(job_id, runtime, DONE, file=video, chat_files=chat.existing(video), chat_progress=None,
                             chat_error="; ".join(summary + notes))
 
-    def _gaps_from_vod(self, runtime, info, gaps, stem, found, covered, notes, counter, step_progress,
+    def _gaps_from_vod(self, runtime, job, info, gaps, stem, found, covered, notes, counter, step_progress,
                        started, stopped):
-        """Участки пропусков — из записи эфира на Twitch (TwitchDownloader, отрезок на участок)."""
+        """
+        Участки пропусков — из записи эфира на площадке, отрезок на участок: у Twitch
+        чат качает TwitchDownloader, у Kick, YouTube и VK Video Live — свой загрузчик
+        (vodchat, как чат скачанных записей).
+        """
+        platform = job.get("platform") or "twitch"
+        site = sites.site(platform).NAME
         cli = self._twitchdownloader.command()
-        if not cli:
+        if platform == "twitch" and not cli:
             notes.append(tr("с площадки не докачать: нужен TwitchDownloader"))
             return
         try:
-            vod = self.find_vod("twitch", info["channel"], info["start"] + (gaps[0][0] if gaps else 0))
+            vod = self.find_vod(platform, info["channel"], info["start"] + (gaps[0][0] if gaps else 0))
         except Exception as error:          # сеть, yt-dlp: дальше — архив
             logging.info(tr("пропуски чата: запись эфира не нашлась ({error})", error=error))
             vod = None
         if vod is None:
-            notes.append(tr("записи эфира на Twitch нет"))
+            notes.append(tr("записи эфира на {site} нет", site=site))
             return
         shift = info["start"] - (vod.get("timestamp") or info["start"])
         duration = vod.get("duration") or 0
@@ -1415,25 +1448,36 @@ class DownloadManager:
             if on_vod[1] <= 0 or (duration and on_vod[0] >= duration):
                 continue                    # участка в записи эфира нет
             target = stem + ".gap%d.chat.json" % index
-            command = [*cli, "chatdownload", "--id", vod["url"], "-o", target,
-                       "-b", "%ds" % max(0, int(on_vod[0])), "-e", "%ds" % (int(on_vod[1]) + 1),
-                       *chat._common(temp_dir)]
+            asked = max(0, int(on_vod[0]))
             try:
-                chat.run([("download", command)], lambda _stage, percent: step_progress(percent), started, stopped)
-                with open(target, encoding="utf-8") as source:
-                    data = json.load(source)
+                if platform == "twitch":
+                    command = [*cli, "chatdownload", "--id", vod["url"], "-o", target,
+                               "-b", "%ds" % asked, "-e", "%ds" % (int(on_vod[1]) + 1), *chat._common(temp_dir)]
+                    chat.run([("download", command)], lambda _stage, percent: step_progress(percent), started, stopped)
+                    with open(target, encoding="utf-8") as source:
+                        data = json.load(source)
+                else:
+                    # время — от начала отрезка; сообщений нет — файла нет, участок молчал
+                    count = vodchat.download(platform, vod["url"], target, channel=info["channel"],
+                                             section=(asked, int(on_vod[1]) + 1), duration=duration or None,
+                                             progress=step_progress, on_process=started, stopped=stopped,
+                                             env=self._ytdlp.environment())
+                    data = {"comments": []}
+                    if count:
+                        with open(target, encoding="utf-8") as source:
+                            data = json.load(source)
+                        runtime.setdefault("embedded", []).append(data.get("embeddedData"))
             except chat.ChatStopped:
                 return
             except (chat.ChatError, OSError, ValueError) as error:
                 # запись скрыта, только для подписчиков, удалена — дальше архив
-                notes.append(tr("с Twitch не докачать: {error}", error=error))
+                notes.append(tr("с {site} не докачать: {error}", site=site, error=error))
                 return
             finally:
                 util.remove_quietly(target)
             comments = data.get("comments") or []
             # TwitchDownloader считает время от начала записи эфира (отрезок — в video.start);
-            # вдруг от начала отрезка — к нему прибавляется начало отрезка (как в _shift_chat)
-            asked = max(0, int(on_vod[0]))
+            # свой загрузчик — от начала отрезка: к нему прибавляется начало отрезка (как в _shift_chat)
             offsets = [float(comment.get("content_offset_seconds") or 0) for comment in comments]
             absolute = float((data.get("video") or {}).get("start") or 0) >= asked - 1 or (
                 offsets and min(offsets) >= asked - 5)

@@ -54,12 +54,15 @@ def helper_exe():
 # Свои расширения yt-dlp (клипы VK Video Live): папка рядом с модулями
 # программы, в сборке — среди её данных.
 YTDLP_PLUGINS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ytdlp_plugins")
+# JavaScript для YouTube: Deno yt-dlp ищет в PATH сам (своя копия — add_child_path),
+# а Node.js разрешается отдельно — если Deno нет, а Node есть (deno.py)
+_JS_RUNTIMES = ["--js-runtimes", "node"]
 if FROZEN:
     STREAMLINK = [helper_exe(), RUN_STREAMLINK]
-    YTDLP = [helper_exe(), RUN_YTDLP, "--plugin-dirs", YTDLP_PLUGINS]
+    YTDLP = [helper_exe(), RUN_YTDLP, "--plugin-dirs", YTDLP_PLUGINS, *_JS_RUNTIMES]
 else:
     STREAMLINK = ["streamlink"]
-    YTDLP = [console_python(), "-c", "import yt_dlp; yt_dlp.main()", "--plugin-dirs", YTDLP_PLUGINS]
+    YTDLP = [console_python(), "-c", "import yt_dlp; yt_dlp.main()", "--plugin-dirs", YTDLP_PLUGINS, *_JS_RUNTIMES]
 
 _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _WHITESPACE = re.compile(r"\s+")
@@ -130,8 +133,10 @@ def build_recording_path(directory, label, title, moment, part, extension=".ts")
     part_tag = " - part%02d" % part if part != 1 else ""
     title = sanitize_filename(title or "")
 
+    # запас под пометку части — у всех частей один: иначе у начала эфира (part00)
+    # название обрезалось бы короче, чем у записи, и пара по имени не сходилась
     budget = (MAX_PATH_LEN - len(directory) - len(os.sep) - len(prefix)
-              - len(part_tag) - len(extension) - len(" - "))
+              - max(len(part_tag), len(" - part00")) - len(extension) - len(" - "))
     if title and budget > 0:
         title = title[:budget].rstrip(". ")
     else:
@@ -168,12 +173,27 @@ def subprocess_flags():
     return 0
 
 
+# папки своих программ (Deno), которые запускаемым нужно найти в PATH
+_CHILD_PATHS = []
+
+
+def add_child_path(folder):
+    """Папка — в начало PATH запускаемых программ (своя копия Deno для yt-dlp)."""
+    if folder and folder not in _CHILD_PATHS:
+        _CHILD_PATHS.append(folder)
+
+
 def child_environment():
     """
     Окружение для streamlink и yt-dlp. Их вывод идёт в файл или канал,
     а не в консоль, и без явной кодировки Python писал бы его в cp1251.
+    Свои программы (Deno) — первыми в PATH, если они уже скачаны.
     """
-    return dict(os.environ, PYTHONIOENCODING="utf-8")
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    own = [folder for folder in _CHILD_PATHS if os.path.isdir(folder)]
+    if own:
+        env["PATH"] = os.pathsep.join(own + [env.get("PATH", "")])
+    return env
 
 
 def kill_process_tree(process):

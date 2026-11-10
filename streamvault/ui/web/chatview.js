@@ -375,6 +375,13 @@ export function openChatView(item, options) {
     chips.hidden = !users.length;
   }
 
+  // несколько ников — через запятую; у Twitch и Kick ники без пробелов — и через пробел,
+  // а у VK Video Live и YouTube пробел бывает в самом нике («Анна Москва»)
+  const spacedNames = !["twitch", "kick"].includes(item.platform);
+  const pieces = (text) => text.split(spacedNames ? /,/ : /[\s,]+/).map((name) => name.trim());
+  const splitNames = (text) => pieces(text).filter(Boolean);
+  const lastName = (text) => pieces(text).pop() || "";
+
   function addUser(name) {
     name = String(name).trim().replace(/^@/, "");
     if (!name || users.some((known) => known.toLowerCase() === name.toLowerCase())) return;
@@ -417,7 +424,7 @@ export function openChatView(item, options) {
   function showSuggestions() {
     const mine = ++suggestGeneration;
     // несколько ников через запятую — подсказка к последнему
-    const typed = userInput.value.split(/[\s,]+/).pop();
+    const typed = lastName(userInput.value);
     bridge.call("chat_names", chat.id, typed).then((names) => {
       if (closed || mine !== suggestGeneration || document.activeElement !== userInput) return;
       const chosen = new Set(users.map((name) => name.toLowerCase()));
@@ -451,7 +458,7 @@ export function openChatView(item, options) {
   }
 
   function takeSuggestion(name) {
-    const before = userInput.value.split(/[\s,]+/).slice(0, -1).filter(Boolean);
+    const before = pieces(userInput.value).slice(0, -1).filter(Boolean);
     for (const earlier of before) addUser(earlier);
     addUser(name);
     userInput.value = "";
@@ -470,7 +477,7 @@ export function openChatView(item, options) {
     if ((event.key === "ArrowDown" || event.key === "ArrowUp") && suggestions.length) {
       event.preventDefault();
       picked = (picked + (event.key === "ArrowDown" ? 1 : -1) + suggestions.length) % suggestions.length;
-      drawSuggestions(userInput.value.split(/[\s,]+/).pop());
+      drawSuggestions(lastName(userInput.value));
       return;
     }
     if (event.key === "Escape" && !suggest.hidden) {
@@ -485,7 +492,7 @@ export function openChatView(item, options) {
       takeSuggestion(suggestions[picked][0]);
       return;
     }
-    for (const name of userInput.value.split(/[\s,]+/).filter(Boolean)) addUser(name);
+    for (const name of splitNames(userInput.value)) addUser(name);
     userInput.value = "";
     suggest.hidden = true;
   });

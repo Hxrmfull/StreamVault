@@ -75,7 +75,17 @@ def download(platform, url, target, title="", channel="", section=None, duration
         elif platform == "kick":
             records = _kick(url, section, progress, stopped, session or requests.Session())
         elif platform == "vkvideolive":
-            records = _vk(url, section, duration, progress, stopped, session or requests.Session())
+            session = session or requests.Session()
+            try:
+                records = _vk(url, section, duration, progress, stopped, session)
+            except _NotFound:
+                # у VK по id из имени файла не отличить запись эфира от клипа: записи нет —
+                # тот же id как клип
+                match = VK_RECORD.search(url)
+                if not match:
+                    raise
+                clip = "https://live.vkvideo.ru/%s/clip/%s" % (match.group(1), match.group(2))
+                records = _vk(clip, section, duration, progress, stopped, session)
         else:
             raise chat.ChatError(tr("у этой площадки чата записей нет"))
         with open(jsonl, "w", encoding="utf-8") as output:
@@ -210,6 +220,10 @@ def _last_offset(folder):
 
 # ------------------------------------------------------------ Kick
 
+class _NotFound(chat.ChatError):
+    """Площадка ответила 404: такой записи (или клипа) нет."""
+
+
 def _get_json(session, url, stopped, **params):
     for attempt, pause in enumerate(RETRIES + (None,)):
         if stopped():
@@ -217,7 +231,7 @@ def _get_json(session, url, stopped, **params):
         try:
             response = session.get(url, params=params, headers=HEADERS, timeout=REQUEST_TIMEOUT)
             if response.status_code == 404:
-                raise chat.ChatError(tr("запись не найдена — её удалили или она закрыта"))
+                raise _NotFound(tr("запись не найдена — её удалили или она закрыта"))
             if response.status_code < 400:
                 return response.json()
             problem = "HTTP %d" % response.status_code

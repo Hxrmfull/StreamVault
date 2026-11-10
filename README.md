@@ -40,7 +40,9 @@ themselves from the app.
   way their websites do for a viewer who is not logged in.
 - **FFmpeg** is not bundled: the app finds an installed one or downloads it
   with a button in the window (a [gyan.dev](https://www.gyan.dev/ffmpeg/builds/)
-  build, checked against its checksum).
+  build, checked against its checksum). The same goes for
+  [Deno](https://deno.com/), which yt-dlp needs for YouTube; without it an
+  installed Node.js is used.
 - **SmartScreen** ("Windows protected your PC"): the app has no digital
   signature. Click "More info" → "Run anyway".
 - **Settings, logs and the downloaded FFmpeg** live in the app folder, or
@@ -73,10 +75,9 @@ themselves from the app.
   VOD is hidden or deleted, the chat of your recording can come from a
   public chat archive (logs.zonian.dev) — Twitch only: Kick, YouTube and
   VK Video Live have no such archives. Gaps in a recorded chat (dropped
-  connection, suspicious silence) are found and filled from the Twitch VOD
-  or the archive, dropped connections by themselves right after recording;
-  Kick and YouTube are not supported yet, VK Video Live has no source for
-  them.
+  connection, suspicious silence) are found and filled from the stream
+  recording on the platform (on Twitch also from the archive), dropped
+  connections by themselves right after recording.
 - **Downloads:** VODs, highlights and clips from a link or a channel tab,
   quality choice, only a section of a video, "Download all" for a whole tab.
   Paused and interrupted downloads resume, even after a restart.
@@ -144,6 +145,7 @@ Code — [MIT](LICENSE). The Windows build bundles
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) (Unlicense),
 [pywebview](https://pywebview.flowrl.com/) (BSD-3-Clause),
 [pystray](https://github.com/moses-palmer/pystray) (LGPL-3.0) and other
-libraries under their own licenses. FFmpeg (GPL) and
-[TwitchDownloader](https://github.com/lay295/TwitchDownloader) (MIT) are not
-bundled: the app downloads them when you ask for them.
+libraries under their own licenses. FFmpeg (GPL),
+[TwitchDownloader](https://github.com/lay295/TwitchDownloader) (MIT) and
+[Deno](https://github.com/denoland/deno) (MIT) are not bundled: the app
+downloads them when you ask for them.

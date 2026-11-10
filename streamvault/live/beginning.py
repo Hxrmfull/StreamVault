@@ -37,6 +37,9 @@ OVERLAP = 15
 LIVE_RETRIES = (30, 60, 120, 300)
 # Опубликованную после эфира запись ждать, проверяя раз в столько секунд, и до какого срока.
 ENDED_CHECK = 300
+# каждая следующая проверка — в полтора раза позже, но не реже раза в полчаса: эфир, который
+# идёт ещё часы, не спрашивается каждые 5 минут (YouTube за частые запросы просит войти)
+ENDED_CHECK_MAX = 1800
 ENDED_PATIENCE = 6 * 3600
 
 
@@ -48,6 +51,9 @@ def download_quality(quality):
     first = str(quality or "best").split(",")[0].strip().lower()
     if first.startswith("audio"):
         return "audio"
+    # худшее у записи — худшее и у начала, а не лучшее: иначе гигабайты и не склеить
+    if first == "worst":
+        return H264 + "worst"
     match = re.match(r"(\d{3,4})p", first)
     return H264 + (match.group(1) if match else "best")
 
@@ -88,6 +94,20 @@ class Beginning:
         seam — стык, chat — был ли у начала чат (нет — его докачают потом).
         """
         self._downloads.mark_joined(head, main, seam, chat)
+
+    def awaited(self, path):
+        """
+        Начало эфира записи path программа уже ждёт сама (эфир идёт или его запись
+        ещё не выложена): докачивать его кнопкой незачем — скачалось бы дважды.
+        """
+        from ..library import broadcast_key
+        folder, key = _same(os.path.dirname(path)), broadcast_key(os.path.splitext(os.path.basename(path))[0])
+        if key is None:
+            return False
+        with self._lock:
+            requests = list(self._pending.values()) + list(self._waiting.values())
+        return any(_same(os.path.dirname(request["target"])) == folder
+                   and broadcast_key(os.path.basename(request["target"])) == key for request in requests)
 
     def busy(self, path):
         """Начало эфира path (файл «… - part00») ещё качается — с чатом или без."""
@@ -226,14 +246,16 @@ class Beginning:
         # срок — от конца эфира, а не от запуска программы: перезапуск его не продлевает
         deadline = float(request.get("ended") or time.time()) + ENDED_PATIENCE
         reason = ""
+        pause = ENDED_CHECK
         while not self._stop.is_set() and time.time() < deadline:
             url, reason = self._archive(request)
             if url:
                 self._done_waiting(request)
                 self._queue(request, url)
                 return
-            if self._stop.wait(ENDED_CHECK):
+            if self._stop.wait(pause):
                 return
+            pause = min(ENDED_CHECK_MAX, pause * 1.5)
         if not self._stop.is_set():
             self._done_waiting(request)
             self._give_up(request, reason)

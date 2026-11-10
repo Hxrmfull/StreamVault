@@ -551,6 +551,15 @@
     "Добавить ник…": "Add a name…",
     "Зрителей не больше {count}": "No more than {count} viewers",
     "Зрители": "Viewers",
+    "Скачивание Deno {version} с {source}: {done} из {total}": "Downloading Deno {version} from {source}: {done} of {total}",
+    "Скачивание Deno {version}: {done} из {total}": "Downloading Deno {version}: {done} of {total}",
+    "Deno установлен": "Deno installed",
+    "Deno нет, вместо него yt-dlp возьмёт Node.js: {path}": "No Deno: yt-dlp will use Node.js instead: {path}",
+    "Для YouTube нужен Deno (около 40 МБ): yt-dlp решает им задачки на JavaScript, которые YouTube ставит перед видео, как это делает браузер. Без него YouTube отдаёт не все форматы, а со временем перестанет качаться совсем.":
+      "YouTube needs Deno (about 40 MB): yt-dlp uses it to solve the JavaScript puzzles YouTube puts in front of videos, as a browser does. Without it YouTube gives fewer formats, and in time will stop downloading at all.",
+    "Обновить Deno": "Update Deno",
+    "Скачать Deno": "Download Deno",
+    "Вышел Deno {version}: им yt-dlp открывает видео YouTube.": "Deno {version} is out: yt-dlp opens YouTube videos with it.",
     "Прежний файл с чатом переедет в папку whole и будет в библиотеке отдельной карточкой.":
       "The previous file with its chat moves to the whole folder and shows in the library as its own card.",
     "Прежний файл уйдёт в корзину Windows. Файл больше корзины Windows удаляет насовсем.":
@@ -603,6 +612,7 @@
     "{count}, всего {length}: {reason}": "{count}, {length} in total: {reason}",
     "участок|участка|участков": "stretch|stretches",
     "Пропуски чата докачиваются: с Twitch, потом из архива чатов, ход в «Загрузках»": "Chat gaps are being filled: from Twitch, then from the chat archive; progress in “Downloads”",
+    "Пропуски чата докачиваются из записи эфира на площадке, ход в «Загрузках»": "Chat gaps are being filled from the stream recording on the platform; progress in “Downloads”",
     "докачка пропусков чата": "filling chat gaps",
     "пропуски чата": "chat gaps",
     "Пропуск в чате {from}–{to}: связь с чатом прерывалась при записи.": "Chat gap {from}–{to}: the connection to the chat dropped while recording.",

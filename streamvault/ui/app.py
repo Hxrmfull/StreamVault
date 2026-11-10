@@ -22,6 +22,8 @@ from ..archive.downloads import DownloadManager
 from ..editing import Editor
 from ..events import EventBus
 from ..ffmpeg import FFmpegInstaller, FFmpegLocator, own_dir_for
+from ..deno import DenoInstaller, DenoLocator
+from ..deno import own_dir_for as deno_dir
 from ..twitchdownloader import TwitchDownloaderInstaller, TwitchDownloaderLocator
 from ..twitchdownloader import own_dir_for as twitchdownloader_dir
 from ..update import AppUpdater, finish_previous, program_dir, ComponentUpdates
@@ -121,16 +123,20 @@ def run(settings_path=DEFAULT_SETTINGS_PATH, browser=False, port=0, open_browser
 
     twitchdownloader_installer = TwitchDownloaderInstaller(
         twitchdownloader, on_change=twitchdownloader_changed)
-    # новые версии yt-dlp и TwitchDownloader — как у программы: при запуске и раз в 12 часов
+    # Deno — JavaScript для yt-dlp (YouTube); скачивается кнопкой, как TwitchDownloader
+    deno = DenoLocator(deno_dir(settings))
+    deno_installer = DenoInstaller(deno, on_change=lambda install: bus.emit("deno", install=install,
+                                                                            status=deno.status()))
+    # новые версии yt-dlp, TwitchDownloader и Deno — как у программы: при запуске и раз в 12 часов
     components = ComponentUpdates({"yt-dlp": ytdlp_updater.newer_version,
-                                   "TwitchDownloader": twitchdownloader_installer.newer_version},
+                                   "TwitchDownloader": twitchdownloader_installer.newer_version,
+                                   "Deno": deno_installer.newer_version},
                                   on_change=lambda found: bus.emit("component_updates", updates=found))
     component_checks = components.check_periodically(lambda: settings["check_updates"])
     # обновили кнопкой — кнопка сверху больше не нужна
-    bus.subscribe(lambda event: components.forget(
-        {"ytdlp": "yt-dlp", "twitchdownloader": "TwitchDownloader"}[event["type"]])
-        if event["type"] in ("ytdlp", "twitchdownloader") and (event.get("install") or {}).get("state") == "done"
-        else None)
+    names = {"ytdlp": "yt-dlp", "twitchdownloader": "TwitchDownloader", "deno": "Deno"}
+    bus.subscribe(lambda event: components.forget(names[event["type"]])
+                  if event["type"] in names and (event.get("install") or {}).get("state") == "done" else None)
     live = LiveService(settings, bus=bus, ffmpeg=ffmpeg, twitchdownloader=twitchdownloader,
                        ytdlp_copy=ytdlp_copy)
     downloads = DownloadManager(settings, bus=bus, ffmpeg=ffmpeg, ytdlp_copy=ytdlp_copy,
@@ -173,6 +179,7 @@ def run(settings_path=DEFAULT_SETTINGS_PATH, browser=False, port=0, open_browser
               ffmpeg=ffmpeg, installer=installer, ytdlp_copy=ytdlp_copy,
               ytdlp_updater=ytdlp_updater, twitchdownloader=twitchdownloader,
               twitchdownloader_installer=twitchdownloader_installer,
+              deno=deno, deno_installer=deno_installer,
               app_updater=app_updater, last_update=last_update, components=components,
               positions=Positions(os.path.join(app_dir, "cache", "positions.json")),
               editor=editor, integrity=integrity, checker=checker,
@@ -198,6 +205,7 @@ def run(settings_path=DEFAULT_SETTINGS_PATH, browser=False, port=0, open_browser
         installer.cancel()
         ytdlp_updater.cancel()
         twitchdownloader_installer.cancel()
+        deno_installer.cancel()
         app_updater.cancel()
         update_checks.set()
         component_checks.set()

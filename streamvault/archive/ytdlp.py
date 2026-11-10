@@ -108,6 +108,10 @@ def _thumbnail(info):
 
 
 def _timestamp(info):
+    # у эфира YouTube timestamp — не начало: у прошедшего — время выкладки (через полчаса
+    # после конца), у идущего — создания трансляции; начало эфира — release_timestamp
+    if info.get("live_status") in ("is_live", "was_live", "post_live")             and isinstance(info.get("release_timestamp"), (int, float)):
+        return info["release_timestamp"]
     for key in ("timestamp", "release_timestamp"):
         if isinstance(info.get(key), (int, float)):
             return info[key]
@@ -333,6 +337,9 @@ def format_args(quality):
     lowered = value.lower()
     if lowered.startswith(H264):
         rest = value[len(H264):]
+        if rest.lower() == "worst":
+            same = "wv*[vcodec^=avc1]+wa[acodec^=mp4a]/w[vcodec^=avc1]/"
+            return ["-f", same + format_args(rest)[1]]
         if rest.lower() == "best":
             limit = ""
         elif re.fullmatch(r"\d{3,4}p?", rest.lower()):
