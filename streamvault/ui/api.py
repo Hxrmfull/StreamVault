@@ -499,7 +499,7 @@ class Api:
         ffmpeg = self._ffmpeg.path() if self._ffmpeg else None
         lengths = [(part, probe_duration(ffmpeg, part)) for part in parts]
         # склеенная с началом эфира запись начинается с начала эфира, а не с времени в имени
-        from_start = self._downloads.joined_seam(parts[0]) is not None
+        from_start = self._seam(parts[0]) is not None
         added, _ = self._downloads.chat_for_recording(platform, label, lengths, moment, from_start,
                                                       self._settings["chat_mode"] if self._settings["chat_mode"]
                                                       != chat.NONE else chat.TEXT)
@@ -533,7 +533,7 @@ class Api:
         if not moment:
             raise ValueError(tr("не понять, когда шла запись: время — из имени файла"))
         # склеенная с началом эфира запись начинается с начала эфира — раньше времени в имени
-        seam = self._downloads.joined_seam(parts[0])
+        seam = self._seam(parts[0])
         joined = next((job for job in self._downloads.snapshot()["jobs"] if job.get("joined") and job.get("file")
                        and os.path.normcase(job["file"]) == os.path.normcase(parts[0])), None)
         begin = moment - (seam or 0)
@@ -600,7 +600,7 @@ class Api:
         moment = parse_recording_name(os.path.splitext(os.path.basename(parts[0]))[0]).get("timestamp")
         if not moment:
             raise ValueError(tr("не понять, когда шла запись: время — из имени файла"))
-        seam = self._downloads.joined_seam(parts[0])
+        seam = self._seam(parts[0])
         begin, timeline = moment - (seam or 0), []
         for part in parts:
             length = self._part_length(part)
@@ -735,7 +735,7 @@ class Api:
         first = parts[0]
         head = os.path.normcase(os.path.splitext(first)[0] + dl.PART00)
         jobs = self._downloads.snapshot()["jobs"]
-        if self._downloads.joined_seam(first) is not None or self._starts_before_recording(first):
+        if self._seam(first) is not None:
             raise ValueError(tr("начало эфира уже склеено с записью"))
         own = [job for job in jobs if os.path.normcase(job.get("fixed_target") or "") == head]
         if any(job["state"] in (dl.QUEUED, dl.DOWNLOADING, dl.PROCESSING) for job in own):
@@ -753,30 +753,59 @@ class Api:
         gap = moment - vod["timestamp"]
         if gap < MIN_GAP:
             raise ValueError(tr("запись началась с начала эфира, докачивать нечего"))
+        # запись длиннее, чем эфир шёл после её начала, — начало уже в ней (склеили,
+        # когда стыки ещё не запоминались): так и запомнить
+        length = self._part_length(first)
+        if vod.get("duration") and length and length > vod["timestamp"] + vod["duration"] - moment + 120:
+            self._downloads.mark_joined(os.path.splitext(first)[0] + dl.PART00, first, gap)
+            raise ValueError(tr("начало эфира уже склеено с записью"))
         if failed:
             return "retry", failed
         return "new", {"vod": vod, "gap": gap, "length": gap + OVERLAP, "first": first, "platform": platform,
                        "channel": label, "title": named.get("title") or ""}
 
-    @staticmethod
-    def _starts_before_recording(video):
+    def _seam(self, first):
         """
-        Склеена ли запись с началом эфира, даже если строки загрузки уже нет:
-        по чату — время сообщений в нём идёт от начала эфира, раньше времени в имени.
+        Стык склейки записи с началом эфира (секунды от начала файла) или None —
+        не склеена. Запомненный при склейке, а у склеенных раньше, чем стыки стали
+        запоминаться, — по чату; найденный так запоминается.
+        """
+        seam = self._downloads.joined_seam(first)
+        if seam is not None:
+            return seam
+        seam = self._chat_seam(first)
+        if seam is None:
+            return None
+        self._downloads.mark_joined(os.path.splitext(first)[0] + dl.PART00, first, seam)
+        # докачка пропусков у такой записи шла по времени без стыка — её «проверено,
+        # чат молчал» про другой отрезок: пропуски предлагаются снова
+        self._forget_checked(first)
+        from ..live.beginning import clock
+        logging.info(tr("стык склейки найден по чату: {name} — {at}", name=os.path.basename(first), at=clock(seam)))
+        return seam
+
+    @staticmethod
+    def _chat_seam(video):
+        """
+        Склеена ли запись с началом эфира, даже если стык не запомнен: по чату —
+        время сообщений в нём идёт от начала эфира, раньше времени в имени файла.
+        Сдвиг (длина начала) — стык; нет сдвига — None.
         """
         import datetime
+        import statistics
         from ..library import parse_recording_name
         moment = parse_recording_name(os.path.splitext(os.path.basename(video))[0]).get("timestamp")
         json_path = chat.chat_paths(video)["json"]
         if not moment or not os.path.isfile(json_path):
-            return False
+            return None
         # чат бывает в сотню мегабайт: хватит первых сообщений — начало файла
         try:
             with open(json_path, encoding="utf-8", errors="replace") as source:
                 head = source.read(1 << 20)
         except OSError:
-            return False
+            return None
         pairs = re.findall(r'"created_at":\s*"([^"]+)"[^{}]*?"content_offset_seconds":\s*([\d.]+)', head)
+        shifts = []
         for created, offset in pairs[:200]:
             try:
                 sent = datetime.datetime.fromisoformat(created.replace("Z", "+00:00")).timestamp()
@@ -784,9 +813,35 @@ class Api:
                 continue
             # в записи сообщение стоит позже, чем прошло от её начала, — перед записью
             # склеено начало эфира (сдвиг — его длина), даже если чата у начала не было
-            if float(offset) - (sent - moment) > 60:
-                return True
-        return False
+            shifts.append(float(offset) - (sent - moment))
+        if not shifts:
+            return None
+        shift = statistics.median(shifts)
+        return round(shift, 3) if shift > 60 else None
+
+    @staticmethod
+    def _forget_checked(video):
+        """Убрать из чата записи отметки «проверено» докачки пропусков: они про другой отрезок."""
+        from .. import chatgaps
+        json_path = chat.chat_paths(video)["json"]
+        try:
+            with open(json_path, encoding="utf-8") as source:
+                data = json.load(source)
+        except (OSError, ValueError):
+            return
+        info = data.get("video") or {}
+        marks = chatgaps.read_marks(info.get("description"))
+        if not marks["checked"]:
+            return
+        info["description"] = chatgaps.with_marks(info.get("description"), dict(marks, checked=[]))
+        data["video"] = info
+        try:
+            temporary = json_path + ".tmp"
+            with open(temporary, "w", encoding="utf-8") as target:
+                json.dump(data, target, ensure_ascii=False)
+            os.replace(temporary, json_path)
+        except OSError as error:
+            logging.warning("%s", error)
 
     def beginning_status(self, path, look=False):
         """
@@ -828,7 +883,12 @@ class Api:
         meta = {"title": found["title"], "channel": found["channel"], "platform": found["platform"],
                 "kind": "video" if found["platform"] == "youtube" else "vod", "timestamp": vod["timestamp"],
                 "live_status": "was_live"}
-        mode = self._settings["chat_mode"] if self._settings["chat_mode"] != chat.NONE else chat.TEXT
+        # чат начала — только если он есть у записи, как при записи с начала эфира: иначе
+        # после склейки чат был бы только у начала, а дальше пусто
+        if chat.existing(found["first"]).get("json"):
+            mode = self._settings["chat_mode"] if self._settings["chat_mode"] != chat.NONE else chat.TEXT
+        else:
+            mode = chat.NONE
         job_id = self._downloads.add(vod["url"], quality=download_quality("%dp" % height if height else "best"),
                                      section=(0, found["length"]), meta=meta, chat_mode=mode,
                                      target=os.path.splitext(found["first"])[0] + dl.PART00)

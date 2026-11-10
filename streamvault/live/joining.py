@@ -118,6 +118,21 @@ def find_seam(ffmpeg, head, tail, estimate):
     return best_at
 
 
+def starts_alike(ffmpeg, head, tail):
+    """
+    Запись (tail) начинается тем же, что и начало эфира (head): начало уже в
+    ней — её склеили раньше, а начало скачали заново. Первые кадры записи
+    ищутся в первых SEARCH_BEFORE секундах начала.
+    """
+    wanted = [frame for _, frame in thumbnails(ffmpeg, tail, count=FRAMES_TO_MATCH)]
+    window = thumbnails(ffmpeg, head, length=SEARCH_BEFORE)
+    if not wanted or len(window) < len(wanted):
+        return False
+    best = min(sum(_difference(window[index + k][1], wanted[k]) for k in range(len(wanted))) / len(wanted)
+               for index in range(len(window) - len(wanted) + 1))
+    return best <= MATCH_LIMIT
+
+
 def envelope(ffmpeg, path, start=None, length=None):
     """
     Громкость звука по шагам ENVELOPE_STEP отсчётов: [средний модуль]. Время —
@@ -567,6 +582,21 @@ class Joiner(threading.Thread):
         self._report(head, main, "failed", reason=reason)
         return False
 
+    def _already_joined(self, head, main, seam):
+        """
+        Начало эфира уже внутри записи: скачанное заново (и его чат) не нужно.
+        Стык запоминается (seam — по длине начала), чтобы начало не предлагали снова.
+        """
+        for path in [head, *archive_chat.chat_paths(head).values()]:
+            if os.path.exists(path) and not self._when_free(lambda path=path: _remove_existing(path), path):
+                logging.warning(tr("не удалить {name}: файл открыт в другой программе",
+                                   name=os.path.basename(path)))
+                self._failed.add((head, main))
+        logging.info(tr("начало эфира уже было в записи {name}: скачанное заново убрано",
+                        name=os.path.basename(main)))
+        self._report(head, main, "done", seam=seam, already=True)
+        return True
+
     def join(self, head, main):
         """Склеивает пару; True — склеено, False — части остались как есть."""
         from ..editing import probe
@@ -615,8 +645,16 @@ class Joiner(threading.Thread):
             main_length = probe(ffmpeg, tail)[0] or main_length
         seam = find_sound_seam if sound_only else find_seam
         cut = seam(ffmpeg, head, tail, max(0.0, head_length - OVERLAP))
+        if cut is not None and cut < 1.0:
+            # запись начинается там же, где начало: оно уже в ней
+            util.remove_quietly(tail if tail != main else "")
+            return self._already_joined(head, main, max(0.0, head_length - OVERLAP))
         if cut is None:
             util.remove_quietly(tail if tail != main else "")
+            # запись склеили раньше, а начало скачали ещё раз («Докачать начало эфира»
+            # у записи, склеенной до того, как стыки стали запоминаться)
+            if not sound_only and starts_alike(ffmpeg, head, main):
+                return self._already_joined(head, main, max(0.0, head_length - OVERLAP))
             return self._refuse(head, main, tr("стык не найден"))
         output = stem + JOINING + extension
         logging.info(tr("склейка начала эфира с записью: {name}", name=name))

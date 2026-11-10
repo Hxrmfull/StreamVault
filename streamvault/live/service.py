@@ -910,19 +910,17 @@ class LiveService:
             probe = self._streamlink_probe
         return probe
 
-    def _slot_rank(self, cid):
+    def _slot_ranks(self):
         """
-        Очерёдность на место при лимите: сначала свой приоритет канала (высокий,
-        обычный, низкий), затем каналы с автозаписью или из избранного — раньше
-        записанных кнопкой разово.
+        Очерёдность каналов на место при лимите — {id: (приоритет, разовость)}: сначала
+        свой приоритет канала (высокий, обычный, низкий), затем каналы с автозаписью
+        или из избранного — раньше записанных кнопкой разово. Считается заново при
+        каждой раздаче: канал добавили в избранное, пока он ждёт, — он уже впереди.
         """
         with self._lock:
-            entry = next((entry for entry in self._entries if self._key(entry) == cid), None)
-            if entry is None:
-                return (PRIORITY_RANK["normal"], 1)
-            chosen = (entry.get("options") or {}).get("record_priority", "normal")
-            return (PRIORITY_RANK.get(chosen, PRIORITY_RANK["normal"]),
-                    0 if entry["enabled"] or self._favorite(entry) else 1)
+            return {self._key(entry): (
+                PRIORITY_RANK.get((entry.get("options") or {}).get("record_priority"), PRIORITY_RANK["normal"]),
+                0 if entry["enabled"] or self._favorite(entry) else 1) for entry in self._entries}
 
     @staticmethod
     def _over_limit(slots, platform, limits):
@@ -945,7 +943,9 @@ class LiveService:
         записи ради очереди не останавливаются.
         """
         limits = self._settings["record_limits"]
-        rank = self._slot_rank(cid)
+        ranks = self._slot_ranks()
+        default = (PRIORITY_RANK["normal"], 1)
+        rank = ranks.get(cid, default)
         now = time.monotonic()
         with self._slots_lock:
             for key in [key for key, wait in self._waiting.items() if now - wait[3] > WAIT_FRESH]:
@@ -954,9 +954,10 @@ class LiveService:
             refusal = self._over_limit(others, platform, limits)
             since = self._waiting[cid][2] if cid in self._waiting else now
             if refusal is None and cid not in self._slots:
-                # место есть, но его ждёт канал впереди, которому оно тоже подходит
-                ahead = sorted((wait[0], wait[2], key) for key, wait in self._waiting.items()
-                               if key != cid and (wait[0], wait[2]) < (rank, since)
+                # место есть, но его ждёт канал впереди, которому оно тоже подходит;
+                # приоритет ждущих — нынешний, а не тот, что был при их отказе
+                ahead = sorted((ranks.get(key, wait[0]), wait[2], key) for key, wait in self._waiting.items()
+                               if key != cid and (ranks.get(key, wait[0]), wait[2]) < (rank, since)
                                and self._over_limit(others, wait[1], limits) is None)
                 if ahead:
                     refusal = tr("лимит одновременных записей: освободившееся место ждёт {channel} "

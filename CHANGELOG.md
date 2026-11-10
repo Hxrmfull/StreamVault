@@ -5,6 +5,34 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- "Fetch the stream beginning" was offered for a recording already joined
+  with its beginning before 0.15.0 (the seam was not remembered then, and a
+  later archive chat hid it): the beginning downloaded again and did not
+  join, "seam not found", and stayed next to the recording. Now a
+  recording longer than the stream ran after its start is recognised as
+  joined, and a beginning that turns out to be inside the recording already
+  (its first frames match) is removed instead of left next to it.
+- Chat gaps and the archive chat of a recording joined with its beginning
+  before 0.15.0 were taken from the wrong stretch: without the remembered
+  seam the recording was thought to start when recording began, not with
+  the stream. Nothing was added, and the gap was marked as checked ("the
+  chat was silent"). The seam of such recordings is now found from the
+  chat itself (message times are shifted by the beginning's length) and
+  remembered, and their earlier "checked" marks are dropped so the gaps can
+  be filled again.
+- "Fetch the stream beginning" downloaded the beginning's chat even for a
+  recording without chat, so after joining only the beginning had chat. The
+  beginning now comes with chat only if the recording has one, as when
+  recording from the start.
+- The queue for the recording limit used a channel's priority from its last
+  refusal: a channel added to favorites while waiting still went after a
+  one-off recording that had waited longer. The priority is now taken fresh
+  each time a slot frees up.
+
 ## 0.15.0 — 2026-11-09
 
 ### Added

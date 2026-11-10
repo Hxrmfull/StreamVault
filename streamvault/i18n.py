@@ -731,6 +731,9 @@ STRINGS = {
     'размер кадра разный ({head} и {main})': 'different frame sizes ({head} and {main})',
     'кодеки разные ({head} и {main})': 'different codecs ({head} and {main})',
     'стык не найден': 'the seam was not found',
+    'стык склейки найден по чату: {name} — {at}': 'join seam found from the chat: {name} at {at}',
+    'начало эфира уже было в записи {name}: скачанное заново убрано':
+        'the stream beginning was already in the recording {name}: the downloaded copy is removed',
     'длина вышла {got} вместо {want}': 'the length came out {got} instead of {want}',
     'чат не склеился: {error}': 'the chat was not joined: {error}',
     'начало эфира склеено с записью: {name} — стык на {at}, вышло {length}':
