@@ -386,6 +386,54 @@ export function buildChannelHeader() {
 // канала, а нет своего — на общем; совпало с общим — у канала своего нет,
 // и смена общих настроек его тоже меняет
 
+// список слов плашками: Enter или запятая добавляет, × и Backspace убирают.
+// suggestions() — что подсказать под полем (категории, которые программа сейчас видит)
+function tagInput(values, placeholder, suggestions) {
+  let items = [];
+  const input = h("input", { type: "text", placeholder: placeholder });
+  const box = h("div", { class: "tags" });
+  const offered = h("div", { class: "tags-offer" });
+  const has = (word) => items.some((item) => item.toLowerCase() === word.toLowerCase());
+  const draw = () => {
+    // поле остаётся на месте: вынуть и вставить его заново — потерять курсор посреди набора
+    for (const old of [...box.querySelectorAll(".tag")]) old.remove();
+    if (input.parentNode !== box) box.append(input);
+    for (const item of items) {
+      box.insertBefore(h("span", { class: "tag" }, h("span", { text: item }),
+        h("button", { type: "button", "aria-label": t("Убрать «{word}»", { word: item }), text: "×",
+                      onclick: () => { items = items.filter((other) => other !== item); draw(); } })), input);
+    }
+    input.placeholder = items.length ? "" : placeholder;
+    const more = (suggestions ? suggestions() : []).filter((word) => word && !has(word));
+    offered.hidden = !more.length;
+    offered.replaceChildren(...more.map((word) => h("button", { type: "button", class: "tag-offer", text: "+ " + word,
+      onclick: () => { add(word); input.focus(); } })));
+  };
+  const add = (text) => {
+    for (const word of String(text).split(",").map((part) => part.trim().replace(/\s+/g, " ")).filter(Boolean)) {
+      if (!has(word)) items.push(word);
+    }
+    draw();
+  };
+  input.addEventListener("keydown", (event) => {
+    if ((event.key === "Enter" || event.key === ",") && input.value.trim()) {
+      event.preventDefault();
+      add(input.value);
+      input.value = "";
+    } else if (event.key === "Backspace" && !input.value && items.length) {
+      items = items.slice(0, -1);
+      draw();
+    }
+  });
+  // недописанное слово не теряется: ушли из поля — оно добавлено
+  input.addEventListener("blur", () => { if (input.value.trim()) { add(input.value); input.value = ""; } });
+  box.addEventListener("click", (event) => { if (event.target === box) input.focus(); });
+  add((values || []).join(","));
+  return { control: h("div", { class: "tags-field" }, box, offered),
+           get: () => { if (input.value.trim()) { add(input.value); input.value = ""; } return items.slice(); },
+           set: (list) => { items = []; input.value = ""; add((list || []).join(",")); } };
+}
+
 export function openChannelOptions(id) {
   // канала у программы ещё нет — свои настройки его и заведут (не в избранном)
   const channel = state.channels.get(id) || { options: {}, quality: null, keep_days: null };
@@ -446,6 +494,25 @@ export function openChannelOptions(id) {
   const quality = liveQualitySelect(channel.quality || general.quality);
   const keep = keepDaysSelect(channel.keep_days === undefined || channel.keep_days === null
                               ? general.keep_days || 0 : channel.keep_days);
+  // фильтры автозаписи: в общих настройках их нет — только свои у канала.
+  // Подсказки категорий — то, что сейчас идёт у этого канала и у остальных из списка
+  const knownGames = () => {
+    const games = [];
+    const own = state.channels.get(id);
+    for (const item of [own, ...state.channels.values()]) {
+      const game = item && item.stream && item.stream.game;
+      if (game && !games.includes(game)) games.push(game);
+    }
+    return games.slice(0, 6);
+  };
+  const filters = {
+    record_categories: tagInput(options.record_categories, t("любые"), knownGames),
+    record_categories_skip: tagInput(options.record_categories_skip, t("нет"), knownGames),
+    record_title_has: tagInput(options.record_title_has, t("любое")),
+    record_title_skip: tagInput(options.record_title_skip, t("нет")),
+  };
+  const filterStop = h("input", { type: "checkbox" });
+  filterStop.checked = Boolean(options.record_filter_stop);
   const numberFields = {
     size: field(t("Часть не больше, ГБ"), numbers.split_size_gb),
     duration: field(t("Часть длиной, минут"), numbers.split_minutes),
@@ -476,6 +543,11 @@ export function openChannelOptions(id) {
       changes[key] = value === "" ? null : Number.isNaN(Number(value)) ? value : own(key, Number(value));
     }
     changes.record_priority = priority.value === "normal" ? null : priority.value;
+    for (const [key, item] of Object.entries(filters)) {
+      const words = item.get();
+      changes[key] = words.length ? words : null;
+    }
+    changes.record_filter_stop = filterStop.checked ? true : null;
     save.disabled = true;
     const days = Number(keep.value) === (general.keep_days || 0) ? null : Number(keep.value);
     const qualityOwn = quality.value === general.quality ? null : quality.value;
@@ -502,6 +574,8 @@ export function openChannelOptions(id) {
       setLiveQuality(quality, general.quality);
       keep.value = String(general.keep_days || 0);
       priority.value = "normal";
+      for (const item of Object.values(filters)) item.set([]);
+      filterStop.checked = false;
       refresh();
       toast(t("Поставлено как в общих настройках — нажми «Сохранить», чтобы так и осталось"), "ok");
     } });
@@ -527,6 +601,17 @@ export function openChannelOptions(id) {
         fields.mp4_faststart.control,
         field(t("Делить запись на части"), fields.split_mode.control),
         numberFields.size, numberFields.duration, numberFields.count)),
+    h("section", { class: "options-section options-filters" },
+      h("div", { class: "options-section-title", text: t("Фильтры автозаписи") }),
+      h("div", { class: "options-filter-grid" },
+        field(t("Только категории"), filters.record_categories.control),
+        field(t("Кроме категорий"), filters.record_categories_skip.control),
+        field(t("В названии есть"), filters.record_title_has.control),
+        field(t("В названии нет"), filters.record_title_skip.control)),
+      h("div", { class: "options-filter-foot" },
+        h("label", { class: "switch" }, filterStop, h("span", { class: "track" }),
+          h("span", { text: t("Останавливать запись, когда эфир перестал подходить") })),
+        h("div", { class: "hint", text: t("Несколько — через запятую или Enter. Категория — как её называет площадка, целиком; слова названия — любой его частью. Пусто — записывается всё. На «Начать запись» фильтры не действуют.") }))),
     h("div", { class: "actions" }, asGeneral, h("span", { class: "spacer" }),
       button(t("Отмена"), { onclick: () => modal.close() }), save));
 }

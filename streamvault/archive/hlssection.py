@@ -109,18 +109,20 @@ def segments_between(segments, start, end):
 
 
 def download(playlist_url, headers, length, target, progress=None, stopped=None, session=None, workers=1,
-             start=0, found=None):
+             start=0, found=None, proxies=None):
     """
     Записи по медиаплейлисту до length секунд — в target (.ts, а у фрагментов
     mp4 — .mp4); start — с этого места (отрезок из середины: куски, что его
     покрывают; found["lead"] — сколько секунд в начале файла до start, их
     отрежет from_zero). progress(доля 0..1, байт), stopped() — прервать.
-    workers — сколько кусков качать сразу. Возвращает путь файла;
+    workers — сколько кусков качать сразу. proxies — прокси площадки
+    (netproxy.requests_proxies) или None. Возвращает путь файла;
     недокачанное удаляется.
     """
     headers = dict(headers or {})
     try:
-        answer = (session or requests).get(playlist_url, headers=headers, timeout=TIMEOUT)
+        answer = (session or requests).get(playlist_url, headers=headers, timeout=TIMEOUT,
+                                           **({"proxies": proxies} if proxies else {}))
         answer.raise_for_status()
     except requests.RequestException as error:
         raise PlaylistError(tr("плейлист записи не скачался: {error}", error=error))
@@ -149,6 +151,8 @@ def download(playlist_url, headers, length, target, progress=None, stopped=None,
             return _fetch(session, url, headers)
         if not hasattr(local, "session"):
             local.session = requests.Session()
+            if proxies:
+                local.session.proxies.update(proxies)
         return _fetch(local.session, url, headers)
 
     workers = max(1, int(workers or 1))
@@ -194,16 +198,23 @@ def from_zero(ffmpeg, path, lead=0.0, length=None):
     Возвращает путь готового файла; не вышло — исходный, как есть.
     """
     target = os.path.splitext(path)[0] + ".mp4"
-    partial = target + ".zero"
+    partial, whole = target + ".zero", target + ".whole"
+    base = [ffmpeg, "-hide_banner", "-nostdin", "-y", "-loglevel", "error"]
     try:
         # звук в .ts — AAC в обёртке ADTS: mp4 её не принимает
-        cut = (["-ss", "%.3f" % lead] if lead else []) + (["-t", "%.3f" % length] if length else [])
-        result = subprocess.run([ffmpeg, "-hide_banner", "-nostdin", "-y", "-loglevel", "error", *cut[:2], "-i", path,
-                                 *cut[2:], "-map", "0:v?", "-map", "0:a?", "-c", "copy", "-bsf:a", "aac_adtstoasc",
-                                 # и первый кадр — ровно с нуля: иначе на стыке лишний кадр
-                                 "-avoid_negative_ts", "make_zero",
-                                 "-movflags", "+faststart", "-f", "mp4", partial], capture_output=True,
-                                timeout=3600, creationflags=util.subprocess_flags())
+        # и первый кадр — ровно с нуля: иначе на стыке лишний кадр
+        result = subprocess.run([*base, "-i", path, "-map", "0:v?", "-map", "0:a?", "-c", "copy",
+                                 "-bsf:a", "aac_adtstoasc", "-avoid_negative_ts", "make_zero",
+                                 "-movflags", "+faststart", "-f", "mp4", whole if lead or length else partial],
+                                capture_output=True, timeout=3600, creationflags=util.subprocess_flags())
+        if result.returncode == 0 and (lead or length) and os.path.getsize(whole) > 0:
+            # отрезок из середины режется уже из mp4: в .ts ffmpeg ищет место примерно и мог
+            # встать на ключевой кадр после него — первая секунда шла со звуком, но без видео.
+            # В mp4 он встаёт на ключевой кадр перед местом, а кадры до него не показываются
+            cut = (["-ss", "%.3f" % lead] if lead else []) + ["-i", whole] + (["-t", "%.3f" % length] if length else [])
+            result = subprocess.run([*base, *cut, "-map", "0:v?", "-map", "0:a?", "-c", "copy",
+                                     "-movflags", "+faststart", "-f", "mp4", partial],
+                                    capture_output=True, timeout=3600, creationflags=util.subprocess_flags())
         if result.returncode == 0 and os.path.getsize(partial) > 0:
             os.replace(partial, target)
             if target != path:
@@ -213,6 +224,11 @@ def from_zero(ffmpeg, path, lead=0.0, length=None):
                         error=result.stderr.decode("utf-8", "replace").strip()[-200:]))
     except (OSError, subprocess.TimeoutExpired) as error:
         logging.info(tr("начало записи осталось со своим временем: {error}", error=error))
+    finally:
+        try:
+            os.remove(whole)
+        except OSError:
+            pass
     try:
         os.remove(partial)
     except OSError:

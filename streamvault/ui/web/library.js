@@ -456,6 +456,14 @@ async function openCardMenu(card, at) {
                       count: fmt.counted(answer.gaps, t("участок|участка|участков")),
                       length: fmt.duration(answer.seconds), reason: answer.reason }) : answer.reason })),
                   onclick: () => fetchChatGaps(item) } : null,
+     // пропуски видео: куски, которых в записи нет, — из записи эфира на площадке
+     can.beginningLater ? { icon: "download", label: t("Докачать пропуски видео"), checking: t("поиск пропусков в записи…"),
+                            check: () => bridge.call("video_gaps_status", item.path).then((answer) => ({
+                              disabled: !answer.ok,
+                              hint: answer.ok ? t("{count}, всего {length}", {
+                                count: fmt.counted(answer.gaps, t("участок|участка|участков")),
+                                length: fmt.duration(answer.seconds) }) : answer.reason })),
+                            onclick: () => fetchVideoGaps(item) } : null,
      can.beginningLater ? { icon: "download", label: t("Докачать начало эфира"), checking: t("проверка…"),
                             check: () => bridge.call("beginning_status", item.path).then((answer) => ({
                               disabled: !answer.ok, hint: answer.reason })),
@@ -502,6 +510,17 @@ async function fetchBeginning(item) {
     toast(answer.retry ? t("Начало эфира скачивается заново, ход во вкладке «Склеивается»")
                        : t("Начало эфира скачивается, после этого склеится с записью; ход во вкладке «Склеивается»"),
           "ok", "#downloads");
+  } catch (error) {
+    failed(error);
+  }
+}
+
+// пропуски видео записи: отрезки вокруг них — из записи эфира на площадке, вклеиваются по кадрам
+async function fetchVideoGaps(item) {
+  try {
+    await bridge.call("recording_video_gaps", item.path);
+    try { sessionStorage.setItem("downloads-tab", "downloads"); } catch (error) { /* не помним — не беда */ }
+    toast(t("Пропуски видео докачиваются из записи эфира на площадке, ход в «Загрузках»"), "ok", "#downloads");
   } catch (error) {
     failed(error);
   }

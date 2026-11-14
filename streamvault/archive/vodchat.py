@@ -30,7 +30,7 @@ from urllib.parse import quote
 
 import requests
 
-from .. import util
+from .. import netproxy, util
 from ..i18n import tr
 from ..live import chatreaders, livechat
 from . import chat
@@ -73,9 +73,9 @@ def download(platform, url, target, title="", channel="", section=None, duration
             records = _youtube(url, folder, section, duration, progress, stopped, on_process, env,
                                command or util.YTDLP)
         elif platform == "kick":
-            records = _kick(url, section, progress, stopped, session or requests.Session())
+            records = _kick(url, section, progress, stopped, session or netproxy.session("kick"))
         elif platform == "vkvideolive":
-            session = session or requests.Session()
+            session = session or netproxy.session("vkvideolive")
             try:
                 records = _vk(url, section, duration, progress, stopped, session)
             except _NotFound:
@@ -156,7 +156,8 @@ def _youtube(url, folder, section, duration, progress, stopped, on_process, env,
     with open(log_path, "wb") as log:
         try:
             process = subprocess.Popen(
-                [*command, "--skip-download", "--write-subs", "--sub-langs", "live_chat",
+                [*command, *netproxy.ytdlp_args(platform="youtube"),
+                 "--skip-download", "--write-subs", "--sub-langs", "live_chat",
                  "--no-part", "--no-warnings", "--color", "never", "--no-progress",
                  "-o", os.path.join(folder, "video"), "--", url],
                 stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,

@@ -11,6 +11,7 @@ import threading
 
 import requests
 
+from .. import netproxy
 from ..i18n import tr
 from ..platforms import is_url
 from .common import get_json, search_result, unix_time
@@ -104,7 +105,8 @@ class PublicProfiles:
             try:
                 response = requests.post(GQL_URL, json={"query": GQL_PROFILES,
                                                         "variables": {"logins": chunk}},
-                                         headers={"Client-ID": GQL_CLIENT_ID}, timeout=15)
+                                         headers={"Client-ID": GQL_CLIENT_ID}, timeout=15,
+                                         **netproxy.requests_kwargs("twitch"))
                 response.raise_for_status()
                 users = (response.json().get("data") or {}).get("users") or []
             except (requests.exceptions.RequestException, ValueError, AttributeError) as error:

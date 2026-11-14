@@ -17,7 +17,7 @@ import os
 import re
 import subprocess
 
-from .. import util
+from .. import netproxy, util
 from ..i18n import tr
 
 NONE, TEXT, RENDER = "none", "text", "render"
@@ -76,6 +76,21 @@ def chat_paths(video_path):
 def existing(video_path):
     """Уже готовые файлы чата у этого видео."""
     return {key: path for key, path in chat_paths(video_path).items() if os.path.isfile(path)}
+
+
+def companion_paths(video_path):
+    """
+    Все спутники записи — то, что лежит рядом и ездит вместе с ней (в папку
+    целых записей, в корзину, под новое имя): файлы чата и разделы эфира
+    по категориям (chapters.py).
+    """
+    from .. import chapters
+    return dict(chat_paths(video_path), chapters=chapters.path_for(video_path))
+
+
+def companions(video_path):
+    """Спутники записи, которые есть на диске."""
+    return {key: path for key, path in companion_paths(video_path).items() if os.path.isfile(path)}
 
 
 def commands(cli, url, video_path, mode, section=None, ffmpeg=None, size=(422, 1080, 18),
@@ -174,7 +189,8 @@ def run(steps, on_progress=None, on_process=None, stopped=lambda: False):
             on_progress(stage, None)
         try:
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                       stdin=subprocess.DEVNULL, creationflags=util.subprocess_flags())
+                                       stdin=subprocess.DEVNULL, creationflags=util.subprocess_flags(),
+                                       env=netproxy.child_environment(util.child_environment(), "twitch"))
         except OSError as error:
             raise ChatError(tr("не удалось запустить TwitchDownloader: {error}", error=error))
         if on_process:

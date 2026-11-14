@@ -9,7 +9,7 @@ import re
 
 from ..i18n import tr
 from ..platforms import is_url
-from .common import SiteError, https, search_result
+from .common import Gone, SiteError, https, search_result
 
 NAME = "YouTube"
 
@@ -45,6 +45,10 @@ UNSUPPORTED = {
 PROFILE_TIMEOUT = 30
 # Сведения о только что кончившемся эфире yt-dlp собирает дольше: 30 с не хватало.
 ARCHIVE_TIMEOUT = 120
+# Ответы yt-dlp о видео, которого уже не будет: удалено, закрыто, канал закрыт.
+# Спрашивать о нём снова незачем — YouTube за частые запросы просит войти.
+_GONE = re.compile(r"removed by the uploader|has been removed|Private video|video is private"
+                   r"|has been terminated|no longer available|members-only", re.IGNORECASE)
 
 
 def youtube_results(entries, limit=5):
@@ -139,7 +143,12 @@ def archive_for(channel, started, meta=None, tools=None):
     if tools is None or not video_id:
         return None, tr("не известен номер трансляции")
     url = WATCH.format(id=video_id)
-    data = tools.ytdlp_json(["-J", "--no-warnings", "--color", "never", "--", url], ARCHIVE_TIMEOUT)
+    try:
+        data = tools.ytdlp_json(["-J", "--no-warnings", "--color", "never", "--", url], ARCHIVE_TIMEOUT)
+    except Exception as error:
+        if _GONE.search(str(error)):
+            raise Gone(tr("запись эфира на YouTube удалена или закрыта"))
+        raise
     status = (data or {}).get("live_status") if isinstance(data, dict) else None
     if status == "was_live":
         return url, ""

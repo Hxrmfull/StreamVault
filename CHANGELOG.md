@@ -5,6 +5,90 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.17.0 — 2026-11-15
+
+### Added
+
+- Autorecord filters for a channel: "only these categories", "except these
+  categories", "title contains" and "title does not contain", several
+  values each. A stream that does not match is only shown, with the reason
+  ("the category … is not on the list"); once the streamer moves to a
+  wanted category, recording starts. The switch "Stop recording when the
+  stream no longer matches": without it a started recording runs to the
+  end of the stream. Filters do not apply to "Start recording". A category
+  is compared in full, by the platform's own name for it (the current one
+  can be added with one click), title words match any part of the title;
+  case is ignored. A stream beginning that autorecord skipped because of
+  the filters is not fetched.
+- Stream sections by category. While a recording runs, the program asks the
+  platform once a minute what is on air and remembers category changes. In
+  the player the seek bar is cut at the start of every section, the tooltip
+  under the cursor names the category, and a button next to the time shows
+  the current section: a click opens the list of sections to jump to.
+  Sections live in a "….chapters.json" file next to the recording and
+  travel with it: they are split across parts, shifted when the stream
+  beginning is joined, carried into a clip and into the recycle bin. Works
+  on all four platforms, for any recording format and for a recording in
+  progress too. A section boundary is accurate to a minute: the platform is
+  not asked more often.
+- The category and title of a stream being recorded are now kept up to date
+  in the window instead of staying as they were when the recording began.
+- A proxy in the settings: an address (http://, socks5://, socks5h://,
+  socks4://, with a login and password if needed) and the platforms that go
+  through it. Everything that belongs to a chosen platform uses the proxy:
+  live checks, recording, downloads, recording lists, live chat and
+  recording chat. Other platforms and updates of the program and its tools
+  go directly. The "Check" button asks every chosen platform through the
+  proxy before saving. It takes effect at once, without a restart; the
+  password is not written to the log. Before, a proxy could only be given
+  to yt-dlp as an extra argument.
+- "Fill video gaps" in a recording's menu: the pieces missing from a
+  recording (it fell behind the stream, the connection dropped) are taken
+  from the stream recording on the platform and spliced in without
+  re-encoding, frame-accurately — no repeated frame and no hole, and the
+  sound stays continuous. A section with a margin is downloaded around each
+  gap, and all gaps are spliced in one pass. The recording is replaced by
+  the result only when it is ready and its length adds up; otherwise it is
+  left as it was, with the reason shown in Downloads. Works for converted
+  recordings (MP4, MKV) on all four platforms while the stream recording
+  is still available on the platform.
+
+### Fixed
+
+- A section from the middle of a YouTube recording downloaded several
+  times slower than the video plays (five minutes took half an hour). It
+  is now fetched with the program's own requests by the file's index, like
+  a stream beginning: the file header and only the pieces needed. With the
+  worst quality the video is taken as a file, not as a playlist. Sections
+  from the middle of Twitch and Kick recordings download several pieces at
+  once the same way.
+- YouTube refuses a freshly issued video link for the first seconds (error
+  403), and for longer than the program waited when another download runs
+  next to it: a stream beginning did not download on the first try. The
+  program now waits longer, and if its own requests cannot start, yt-dlp
+  downloads the section.
+- A YouTube stream recording removed or made private by its author was
+  awaited for six more hours, with YouTube asked about it again and again.
+  Waiting for the stream beginning now ends at once, with the reason.
+- Kick chat: a message's time was taken from the viewer's clock. A viewer
+  with a wrong clock (another time zone, for example) had the message
+  placed hours later in the recording's chat, and the chat came out longer
+  than the video. The time is now Kick's.
+- VK Video Live and YouTube chat: a dropped connection while recording was
+  marked as a chat gap even when the platform itself returned everything
+  written during it afterwards. A gap is now marked only if messages could
+  have been lost.
+- Downloads: while ffmpeg fetching a section had not written anything yet,
+  the progress line showed "48 B of 2.0 KB · 0.0020664143694423473 B/s".
+- A dropped chat connection was written to the log twice in a row.
+- A section from the middle of a recording served in pieces (Twitch, Kick)
+  could start with sound but no video: the place in the pieces was found
+  only roughly. Both video and sound now start with the section.
+- Joining a stream beginning with the recording: where frame times are
+  uneven (a boundary between stream pieces) the seam could come out with
+  one repeated frame. Frames are now compared one per file frame, without
+  frame-rate padding.
+
 ## 0.16.0 — 2026-11-10
 
 ### Added

@@ -17,7 +17,7 @@ import logging
 from ..i18n import tr
 from ..platforms import PLATFORMS, clean_profile, is_url
 from . import kick, twitch, vkvideolive, youtube
-from .common import Memo, SiteError
+from .common import Gone, Memo, SiteError
 
 SITES = {"twitch": twitch, "kick": kick, "youtube": youtube, "vkvideolive": vkvideolive}
 
@@ -174,9 +174,14 @@ def stream_started(platform, channel, meta=None, tools=None):
 
 
 def archive_for(platform, channel, started, meta=None, tools=None):
-    """Где взять начало эфира: (ссылка, "") или (None, почему нет)."""
+    """
+    Где взять начало эфира: (ссылка, "") или (None, почему нет). Записи нет
+    и не будет (удалена, закрыта) — Gone: ждать её незачем.
+    """
     try:
         url, reason = site(platform).archive_for(channel, started, meta, tools)
+    except Gone:
+        raise
     except SiteError as error:
         return None, str(error)
     return url, reason
@@ -256,6 +261,6 @@ def for_window():
     return result
 
 
-__all__ = ["SITES", "CAPABILITIES", "SiteError", "Profiles", "capabilities", "for_window",
+__all__ = ["SITES", "CAPABILITIES", "SiteError", "Gone", "Profiles", "capabilities", "for_window",
            "listings", "live_preview", "make_chat", "own_lister", "recording_chat", "search",
            "site", "unsupported"]

@@ -16,13 +16,13 @@ import shutil
 import threading
 import time
 
-from .. import sites, util
+from .. import chapters, sites, util
 from ..ffmpeg import FFmpegLocator, own_dir_for
 from ..twitchdownloader import TwitchDownloaderLocator
 from ..twitchdownloader import own_dir_for as twitchdownloader_dir
 from ..i18n import tr
 from ..integrity import IntegrityStore, integrity_path
-from ..platforms import (MIN_REFRESH_API, MIN_REFRESH_STREAMLINK, channel_id,
+from ..platforms import (FILTER_STOP, MIN_REFRESH_API, MIN_REFRESH_STREAMLINK, channel_id, record_refusal,
                          channel_label, clean_profile, is_url, normalize_channels,
                          parse_channel, refresh_for)
 from .probes import PublicProfiles, Status, TwitchProbe, build_probes, describe_stream
@@ -229,7 +229,7 @@ class LiveService:
                 max_attempts=self._settings["ffmpeg_attempts"],
                 retry_delay=self._settings["ffmpeg_retry_delay"],
                 drain_grace=self._settings["drain_grace"],
-                bus=_ProcessingBus(self) if self._bus is not None else None, on_done=self._chat_finisher.finish,
+                bus=_ProcessingBus(self) if self._bus is not None else None, on_done=self._recording_done,
                 faststart=lambda recorded=None: self._recording_setting(recorded, "mp4_faststart"),
                 convert_format=lambda recorded=None: self._recording_setting(recorded, "convert_format"),
                 # пропуски в записи ищутся до конвертации; итог видит окно
@@ -488,7 +488,11 @@ class LiveService:
             else:
                 entry.pop("options", None)
             removed = self._settle(entry)
+            recorder = self._recorders.get(cid)
         self._announce(cid, removed)
+        # фильтры автозаписи могли смениться: идущий эфир сверяется с ними сразу
+        if not removed and recorder is not None and recorder.is_alive():
+            recorder.check_now()
 
     def is_running(self):
         return self._started and not self._stop.is_set()
@@ -885,6 +889,26 @@ class LiveService:
             self._settings.update(channels=[copy.deepcopy(entry) for entry in self._entries
                                             if not entry.get("temporary")])
 
+    def _recording_done(self, recorded, video):
+        """
+        Очередь обработки сделала из записи recorded файл video (или куски, если её
+        поделили): рядом с ним встают разделы эфира по категориям и чат.
+        """
+        from ..library import probe_duration
+        videos = list(video) if isinstance(video, (list, tuple)) else [video]
+        try:
+            chapters.finish(recorded, videos,
+                            lambda: [probe_duration(self._ffmpeg.path(), piece) for piece in videos])
+        except Exception:
+            logging.exception(tr("разделы эфира: сбой"))
+        self._chat_finisher.finish(recorded, video)
+
+    def _own_options(self, cid):
+        """Свои настройки канала как есть (фильтры автозаписи: в общих настройках их нет)."""
+        with self._lock:
+            entry = next((entry for entry in self._entries if self._key(entry) == cid), None)
+            return dict(entry.get("options") or {}) if entry else {}
+
     def _option(self, cid, key):
         """Настройка записи канала: своя (options) или общая."""
         with self._lock:
@@ -1017,7 +1041,10 @@ class LiveService:
                                    autorecord=entry["enabled"],
                                    once=bool(entry.get("temporary")),
                                    on_exit=self._recorder_exited,
-                                   slots=(self._take_slot, self._free_slot))
+                                   slots=(self._take_slot, self._free_slot),
+                                   record_filter=lambda stream, strict=True: record_refusal(
+                                       self._own_options(cid), stream, strict),
+                                   filter_stop=lambda: bool(self._own_options(cid).get(FILTER_STOP)))
         if record_now:
             recorder.record_now()
         self._recorders[cid] = recorder

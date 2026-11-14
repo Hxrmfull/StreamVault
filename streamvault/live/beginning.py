@@ -219,27 +219,33 @@ class Beginning:
 
     def _archive(self, request):
         """
-        Запись эфира на площадке: (ссылка, "") или (None, почему нет). Сбой
-        (нет связи, yt-dlp не ответил) — тоже «пока нет»: поток ожидания от
-        него не падает, а пробует снова в свой срок.
+        Запись эфира на площадке: (ссылка, "", ждать ли дальше) или (None,
+        почему нет, ждать ли дальше). Сбой (нет связи, yt-dlp не ответил) —
+        тоже «пока нет»: поток ожидания от него не падает, а пробует снова
+        в свой срок. Записи нет и не будет (sites.Gone) — ждать незачем.
         """
         try:
-            return sites.archive_for(request["platform"], request["channel"], request["started"],
-                                     request["meta"], self._downloads)
+            url, reason = sites.archive_for(request["platform"], request["channel"], request["started"],
+                                            request["meta"], self._downloads)
+            return url, reason, True
+        except sites.Gone as error:
+            return None, str(error), False
         except Exception as error:
             logging.warning(tr("{tag}: запись эфира на площадке не проверить ({error}), повтор позже",
                                tag=request["tag"], error=error))
-            return None, str(error)
+            return None, str(error), True
 
     def _from_live(self, request):
         reason = ""
         for delay in (0,) + LIVE_RETRIES:
             if self._stop.wait(delay):
                 return
-            url, reason = self._archive(request)
+            url, reason, wait = self._archive(request)
             if url:
                 self._queue(request, url)
                 return
+            if not wait:
+                break
         self._give_up(request, reason)
 
     def _from_published(self, request):
@@ -248,11 +254,13 @@ class Beginning:
         reason = ""
         pause = ENDED_CHECK
         while not self._stop.is_set() and time.time() < deadline:
-            url, reason = self._archive(request)
+            url, reason, wait = self._archive(request)
             if url:
                 self._done_waiting(request)
                 self._queue(request, url)
                 return
+            if not wait:
+                break
             if self._stop.wait(pause):
                 return
             pause = min(ENDED_CHECK_MAX, pause * 1.5)

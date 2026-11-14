@@ -354,6 +354,15 @@ class Editor(threading.Thread):
                                                      begin, job["end"])
                 except (OSError, ValueError) as error:
                     logging.warning(tr("чат клипа не сохранился: {error}", error=error))
+        if job["kind"] == CLIP:
+            # разделы эфира по категориям — те, что попали в клип
+            from . import chapters
+            cut = chapters.clip(chapters.read(source), job["start"], job["end"])
+            if len(cut) > 1:
+                try:
+                    chapters.write(job["target"], cut)
+                except OSError as error:
+                    logging.debug("разделы клипа не сохранились: %s", error)
         logging.info(tr("готово: {name}", name=os.path.basename(job["target"])))
         self._finish(job, DONE)
 
@@ -404,9 +413,12 @@ class Editor(threading.Thread):
         pieces = [util.unique_path(piece_name(named, number, len(produced)))
                   for number in range(1, len(produced) + 1)]
         chats = self._split_chat(source, pieces, lengths)
+        # разделы эфира по категориям — тоже по кускам (читаются сейчас: дальше целая переедет)
+        from . import chapters
+        source_chapters = chapters.read(source)
         # целая запись — в подпапку whole или в корзину. Открыта (проигрыватель,
         # плеер) — не выйдет, и тогда куски не нужны: иначе рядом были бы и целая, и куски
-        whole_chat = chat.existing(source)
+        whole_chat = chat.companions(source)
         try:
             # и ещё раз: могли открыть, пока делилось
             self._refuse_if_open(source)
@@ -436,14 +448,23 @@ class Editor(threading.Thread):
         for key, path in whole_chat.items():
             try:
                 if job["keep_whole"]:
-                    if path != chat.chat_paths(whole)[key]:
-                        os.replace(path, chat.chat_paths(whole)[key])
+                    if path != chat.companion_paths(whole)[key]:
+                        os.replace(path, chat.companion_paths(whole)[key])
                 else:
                     util.send_to_recycle_bin(path)
             except OSError as error:
                 logging.warning("%s", error)
         for partial, piece in zip(produced, pieces):
             os.replace(partial, piece)
+        if source_chapters:
+            begin = 0.0
+            try:
+                for number, (piece, length) in enumerate(zip(pieces, lengths), 1):
+                    end = begin + (length or 0) if number < len(pieces) else float("inf")
+                    chapters.write(piece, chapters.clip(source_chapters, begin, end))
+                    begin += length or 0
+            except OSError as error:
+                logging.warning(tr("разделы эфира не поделились по частям записи: {error}", error=error))
         self._split_gaps(source, job.get("checked"), pieces, lengths)
         if job["keep_whole"] and self._integrity is not None and job.get("checked") is not None:
             # пропуски целой — при ней же: путь сменился
@@ -479,14 +500,14 @@ class Editor(threading.Thread):
         if not os.path.isfile(partial) or not os.path.getsize(partial):
             self._drop([partial])
             raise EditError(tr("не сконвертировалось: {name}", name=job["name"]))
-        source_chat = chat.existing(source)
+        source_chat = chat.companions(source)
         try:
             self._refuse_if_open(source)
         except EditError:
             self._drop([partial])
             raise
-        # чат — к новому файлу (своё имя), прежний чат — при прежнем файле, если он остаётся
-        new_chat = chat.chat_paths(target)
+        # чат и разделы эфира — к новому файлу (своё имя), прежние — при прежнем файле, если он остаётся
+        new_chat = chat.companion_paths(target)
         try:
             if job["keep_whole"] and again:
                 whole = source
@@ -507,11 +528,11 @@ class Editor(threading.Thread):
             try:
                 if whole and path == new_chat[key]:
                     # новый файл — под тем же именем: чат остаётся на месте, прежнему — копия
-                    shutil.copy2(path, chat.chat_paths(whole)[key])
+                    shutil.copy2(path, chat.companion_paths(whole)[key])
                 elif whole:
                     shutil.copy2(path, new_chat[key])
-                    if path != chat.chat_paths(whole)[key]:
-                        os.replace(path, chat.chat_paths(whole)[key])
+                    if path != chat.companion_paths(whole)[key]:
+                        os.replace(path, chat.companion_paths(whole)[key])
                 elif path != new_chat[key]:
                     os.replace(path, new_chat[key])
             except OSError as error:

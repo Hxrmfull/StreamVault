@@ -236,14 +236,24 @@ CHANNEL_CHOICES = {"live_chat": ("none", "text", "render"), "split_mode": ("off"
                    # очередь на место при лимите одновременных записей (live/service.py)
                    "record_priority": ("high", "normal", "low")}
 CHANNEL_NUMBERS = {"split_size_gb": (0.1, 1000, float), "split_minutes": (5, 1440, int), "split_count": (2, 100, int)}
-CHANNEL_OPTIONS = CHANNEL_FLAGS + tuple(CHANNEL_CHOICES) + tuple(CHANNEL_NUMBERS)
+# Фильтры автозаписи — какие эфиры канала программа записывает сама (record_refusal).
+# В общих настройках их нет: это всегда своё у канала. Списки — названия категорий
+# и слова из названия эфира; FILTER_STOP — останавливать ли запись, когда эфир
+# перестал подходить (сменили категорию или название).
+CHANNEL_LISTS = ("record_categories", "record_categories_skip", "record_title_has", "record_title_skip")
+FILTER_STOP = "record_filter_stop"
+LIST_LIMIT, LIST_ITEM_LIMIT = 50, 120
+CHANNEL_OPTIONS = CHANNEL_FLAGS + tuple(CHANNEL_CHOICES) + tuple(CHANNEL_NUMBERS) + CHANNEL_LISTS + (FILTER_STOP,)
 
 
 def channel_option_value(key, value):
     """Значение своей настройки канала или ValueError: окно и settings.json проверяются одинаково."""
-    if key in CHANNEL_FLAGS:
+    if key in CHANNEL_FLAGS or key == FILTER_STOP:
         if isinstance(value, bool):
             return value
+    elif key in CHANNEL_LISTS:
+        if isinstance(value, list) and all(isinstance(item, str) for item in value):
+            return clean_words(value)
     elif key in CHANNEL_CHOICES:
         if value in CHANNEL_CHOICES[key]:
             return value
@@ -257,6 +267,17 @@ def channel_option_value(key, value):
     raise ValueError(tr("{key} задан непонятно: {value}", key=key, value=repr(value)))
 
 
+def clean_words(words):
+    """Список слов фильтра: без пустых и повторов (регистр не различается), в разумных пределах."""
+    clean, seen = [], set()
+    for word in words:
+        word = " ".join(str(word).split())[:LIST_ITEM_LIMIT]
+        if word and word.casefold() not in seen:
+            seen.add(word.casefold())
+            clean.append(word)
+    return clean[:LIST_LIMIT]
+
+
 def clean_channel_options(options):
     """Свои настройки канала из settings.json: негодные пропускаются с записью в лог."""
     clean = {}
@@ -265,7 +286,45 @@ def clean_channel_options(options):
             clean[key] = channel_option_value(key, value)
         except ValueError as error:
             logging.warning(tr("настройки канала: {error}", error=error))
+            continue
+        # пустой список и «не останавливать» — то же, что настройки нет
+        if key in CHANNEL_LISTS + (FILTER_STOP,) and not clean[key]:
+            del clean[key]
     return clean
+
+
+def has_record_filter(options):
+    """Заданы ли у канала фильтры автозаписи."""
+    return any((options or {}).get(key) for key in CHANNEL_LISTS)
+
+
+def record_refusal(options, stream, strict=True):
+    """
+    Подходит ли эфир под фильтры автозаписи канала: None — подходит, иначе
+    почему нет (для окна и журнала). stream — сведения об эфире
+    (probes.describe_stream): title и game. Регистр не различается; категория
+    сверяется целиком («Dota 2»), слова названия — как часть названия.
+    strict=False — для остановки уже идущей записи: категория, которую
+    площадка в этот раз не назвала, записи не мешает.
+    """
+    options = options or {}
+    game = " ".join(str((stream or {}).get("game") or "").split())
+    title = str((stream or {}).get("title") or "").casefold()
+    only = {word.casefold() for word in options.get("record_categories") or ()}
+    skip = {word.casefold() for word in options.get("record_categories_skip") or ()}
+    if only and game.casefold() not in only:
+        if not game:
+            return tr("категория эфира неизвестна") if strict else None
+        return tr("категория «{game}» не из списка", game=game)
+    if game and game.casefold() in skip:
+        return tr("категория «{game}» исключена", game=game)
+    wanted = [word for word in options.get("record_title_has") or () if word]
+    if wanted and not any(word.casefold() in title for word in wanted):
+        return tr("в названии эфира нет нужных слов")
+    for word in options.get("record_title_skip") or ():
+        if word and word.casefold() in title:
+            return tr("в названии эфира есть «{word}»", word=word)
+    return None
 
 
 def normalize_channels(raw, enabled=False):

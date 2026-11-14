@@ -330,8 +330,8 @@ def read_chat_facts(json_path):
 
 
 def delete_with_chat(path):
-    """В корзину Windows: случайно удалённое можно вернуть. Чат видео — туда же."""
-    for target in [path, *chat.existing(path).values()]:
+    """В корзину Windows: случайно удалённое можно вернуть. Чат видео и разделы эфира — туда же."""
+    for target in [path, *chat.companions(path).values()]:
         util.send_to_recycle_bin(target)
         logging.info(tr("отправлено в корзину: {path}", path=target))
 

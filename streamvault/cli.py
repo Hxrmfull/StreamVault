@@ -21,7 +21,7 @@ import os
 import sys
 import time
 
-from . import __version__, i18n, sites, util
+from . import __version__, i18n, netproxy, sites, util
 from .archive import chat
 from .archive import downloads as dl
 from .archive import ytdlp
@@ -199,6 +199,8 @@ def load_settings_and_log(args, parser):
     log_dir = os.path.join(os.path.dirname(os.path.abspath(settings.path)), "logs")
     setup_logging(level, os.path.join(log_dir, "streamvault.log"),
                   settings["log_max_bytes"], settings["log_backup_count"])
+    # прокси — до первых запросов к площадкам
+    netproxy.configure(settings["proxy_url"], settings["proxy_platforms"])
     return settings
 
 

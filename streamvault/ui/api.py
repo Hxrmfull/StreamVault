@@ -9,6 +9,7 @@
 """
 
 import collections
+import concurrent.futures
 import copy
 import json
 import logging
@@ -21,7 +22,7 @@ import subprocess
 import threading
 import time
 
-from .. import __version__, i18n, sites, util
+from .. import __version__, chapters, i18n, netproxy, sites, util
 from ..archive import downloads as dl
 from ..archive import chat, ytdlp
 from ..chatreplay import SEARCH_LIMIT, ChatReplay, LiveChatReplay
@@ -31,7 +32,8 @@ from ..library import broadcast_parts, piece_parts, probe_duration
 from ..live.livechat import jsonl_path, video_backlog
 from ..positions import Positions
 from ..i18n import tr
-from ..platforms import PLATFORMS, channel_id, channel_option_value, is_url, parse_channel, vk_video_url
+from ..platforms import (CHANNEL_LISTS, FILTER_STOP, PLATFORMS, channel_id, channel_option_value, is_url,
+                         parse_channel, vk_video_url)
 from ..search import ChannelSearch, SearchError
 from ..settings import DEFAULTS
 from .media import MediaServer
@@ -49,7 +51,7 @@ USERS_LIMIT = 20
 EDITABLE = ("language", "root_path", "quality", "twitch_client_id", "twitch_client_secret",
             "refresh", "probe_timeout", "ffmpeg_path", "downloads_path",
             "download_quality", "max_downloads", "download_fragments",
-            "twitch_auth_token", "ytdlp_extra_args", "log_level",
+            "twitch_auth_token", "ytdlp_extra_args", "proxy_url", "proxy_platforms", "log_level",
             "close_to_tray", "tray_notifications",
             "chat_mode", "chat_width", "chat_height", "chat_font_size", "check_updates", "update_prereleases",
             "live_chat", "convert_recordings", "convert_format", "mp4_faststart",
@@ -120,7 +122,8 @@ class Api:
         "ffmpeg_status", "install_ffmpeg", "cancel_ffmpeg_install", "choose_ffmpeg",
         "check_ffmpeg", "ytdlp_status", "update_ytdlp", "cancel_ytdlp_update",
         "twitchdownloader_status", "install_twitchdownloader", "cancel_twitchdownloader_install",
-        "deno_status", "install_deno", "cancel_deno_install",
+        "deno_status", "install_deno", "cancel_deno_install", "check_proxy",
+        "video_gaps_status", "recording_video_gaps",
         "download_chat", "recording_chat", "chat_archive_status", "recording_chat_archive", "convert_recording",
         "app_update_status", "check_app_update", "install_app_update", "rollback_app_update", "cancel_app_update",
         "apply_app_update",
@@ -375,6 +378,10 @@ class Api:
             raise ValueError(tr("настройки — объект"))
         clean = {key: None if value is None else channel_option_value(key, value)
                  for key, value in changes.items()}
+        # пустой список фильтра и «не останавливать» — то же, что настройки нет
+        for key in CHANNEL_LISTS + (FILTER_STOP,):
+            if key in clean and not clean[key]:
+                clean[key] = None
         self._live.set_options(str(cid), clean)
 
     def vk_video_live(self, url):
@@ -713,6 +720,72 @@ class Api:
             self._downloads.add_gap_chat(part, platform, login, start, gaps, title=title, chat_mode=mode)
         return {"added": len(found)}
 
+    # ------------------------------------------------------------ пропуски видео
+
+    # Вклеить отрезок без перекодирования можно в запись в этих контейнерах: у .ts время кадров
+    # своё, а пропуски в нём ещё не склеены конвертацией.
+    GAP_FILL_FORMATS = (".mp4", ".mkv")
+
+    def _video_gaps(self, path):
+        """
+        (площадка, ник, [(часть, её начало, пропуски, высота кадра)]) — части своей
+        записи с пропусками видео, длина которых известна; нельзя — ValueError.
+        """
+        from ..editing import probe
+        path = self._media(path)
+        if not util.recording_channel(self._settings["root_path"], path)[0]:
+            raise ValueError(tr("пропуски видео докачиваются только у своих записей эфиров"))
+        platform, login, timeline = self._part_timeline(path)
+        ffmpeg = self._ffmpeg.path() if self._ffmpeg is not None else None
+        if not ffmpeg:
+            raise ValueError(tr("нужен ffmpeg — его можно скачать в настройках"))
+        found, unchecked, raw = [], 0, 0
+        for part, start, _length in timeline:
+            if os.path.splitext(part)[1].lower() not in self.GAP_FILL_FORMATS:
+                raw += 1
+                continue
+            checked = self._integrity.get(part) if self._integrity is not None else None
+            if checked is None:
+                unchecked += 1
+                if self._checker is not None:
+                    self._checker.check(part)
+                continue
+            if any(gap.get("length") for gap in checked["gaps"]):
+                size = probe(ffmpeg, part)[1]
+                if not size:
+                    raise ValueError(tr("в записи нет видео: {name}", name=os.path.basename(part)))
+                found.append((part, start, checked["gaps"], size[1]))
+        if found:
+            return platform, login, found
+        if unchecked:
+            raise ValueError(tr("запись проверяется на пропуски — загляни сюда через минуту"))
+        if raw:
+            raise ValueError(tr("запись в .ts: сконвертируй её в MP4 или MKV («Редактирование…»), и пропуски можно будет докачать"))
+        raise ValueError(tr("пропусков в записи не найдено"))
+
+    def video_gaps_status(self, path):
+        """
+        Есть ли в записи пропуски видео и можно ли их докачать: {"ok", "reason",
+        "gaps", "seconds"}. Без сети: есть ли запись эфира на площадке, выяснит загрузка.
+        """
+        if self._chat_job_going(path, dl.VIDEO_GAPS):
+            return {"ok": False, "reason": tr("пропуски видео докачиваются, ход в «Загрузках»")}
+        try:
+            _, _, found = self._video_gaps(path)
+        except ValueError as error:
+            return {"ok": False, "reason": str(error)}
+        gaps = [gap for _, _, part_gaps, _ in found for gap in part_gaps if gap.get("length")]
+        return {"ok": True, "gaps": len(gaps), "seconds": round(sum(gap["length"] for gap in gaps)), "reason": ""}
+
+    def recording_video_gaps(self, path):
+        """Докачать пропуски видео записи: по загрузке на часть. {"added": сколько поставлено}."""
+        from ..library import parse_recording_name
+        platform, login, found = self._video_gaps(path)
+        title = parse_recording_name(os.path.splitext(os.path.basename(found[0][0]))[0]).get("title") or ""
+        for part, start, gaps, height in found:
+            self._downloads.add_gap_video(part, platform, login, start, gaps, title=title, height=height)
+        return {"added": len(found)}
+
     # ------------------------------------------------------------ начало эфира позже
 
     def _beginning_plan(self, path, look=True):
@@ -988,13 +1061,15 @@ class Api:
         remux — запись в .ts, которую ffmpeg перепаковывает на лету: место
         задаётся параметром ?start=, длительность — duration. position — где
         просмотр остановился в прошлый раз (None — с начала). parts — части
-        того же эфира по порядку: [{"part", "path", "name"}].
+        того же эфира по порядку: [{"part", "path", "name"}]. chapters — разделы
+        эфира по категориям: [{"start", "game", "title"}] (chapters.py).
         """
         path = self._media(path)
         if path.lower().endswith(".chat.html"):
             raise ValueError(tr("этот файл программа не открывает: {path}", path=path))
         result = {"video": self._media_server.file_url(path), "chat": None, "remux": False, "duration": None,
-                  "position": self._positions.get(path), "parts": self._parts(path), "gaps": self._gaps(path)}
+                  "position": self._positions.get(path), "parts": self._parts(path), "gaps": self._gaps(path),
+                  "chapters": chapters.read(path)}
         if path.lower().endswith(".ts") and self._ffmpeg is not None and self._ffmpeg.path():
             # проверка знает длительность без склеенных пропусков — она точнее заголовка .ts
             checked = self._integrity.get(path) if self._integrity is not None else None
@@ -1169,6 +1244,7 @@ class Api:
         result = {
             "video": self._media_server.remux_url(path, follow=True), "remux": True, "live": True,
             "duration": status["duration"] or 0, "position": None, "chat": None,
+            "chapters": status["chapters"],
             "parts": [{"part": recording.get("part") or 1, "path": path, "name": os.path.basename(path)}],
             "item": {"path": path, "name": os.path.basename(path), "kind": "record", "video_kind": "stream",
                      "title": stream.get("title") or "", "channel_id": cid,
@@ -1205,7 +1281,9 @@ class Api:
         for replay in opened:
             if same and replay.start is not None:
                 replay.shift = max(replay.shift, video_backlog(duration, replay.start, time.time()))
-        return {"duration": duration, "growing": same, "next": bool(current) and not same}
+        # разделы по категориям — какие уже набрались у пишущейся части
+        return {"duration": duration, "growing": same, "next": bool(current) and not same,
+                "chapters": chapters.live(path)}
 
     def _open_live_chat(self, chat_file):
         """Чат идущей записи — один на файл: он дочитывается, а не открывается заново."""
@@ -1675,6 +1753,9 @@ class Api:
         if "ffmpeg_path" in changed and self._ffmpeg is not None:
             # путь к ffmpeg подхватывается сразу: конвертация спрашивает его каждый раз
             self._ffmpeg.refresh()
+        if "proxy_url" in changed or "proxy_platforms" in changed:
+            # прокси действует сразу: со следующего запроса, записи и загрузки
+            netproxy.configure(self._settings["proxy_url"], self._settings["proxy_platforms"])
         if "update_prereleases" in changed and self._app_updater is not None:
             # тестовые версии включили или выключили — какая версия новее, видно сразу
             self._app_updater.check_in_background()
@@ -1682,6 +1763,43 @@ class Api:
             logging.info(tr("настройки изменены: {keys}", keys=", ".join(sorted(changed))))
         return {"restart": any(key in NEED_RESTART for key in changed),
                 "settings": self.get_settings()}
+
+    # Что спросить у площадки через прокси, чтобы понять, отвечает ли она: главная страница.
+    PROXY_CHECK = {"twitch": "https://www.twitch.tv/", "kick": "https://kick.com/",
+                   "youtube": "https://www.youtube.com/generate_204", "vkvideolive": "https://live.vkvideo.ru/"}
+
+    def check_proxy(self, url, platforms):
+        """
+        Проверка прокси до сохранения: отвечает ли через него каждая выбранная
+        площадка. {"url": адрес в принятом виде, "results": [{"platform", "ok",
+        "seconds" или "error"}]}. Ответ площадки с любым кодом — связь есть.
+        """
+        import requests
+        proxy = netproxy.normalize(url)
+        if not proxy:
+            raise ValueError(tr("впиши адрес прокси"))
+        chosen = self._checked("proxy_platforms", platforms)
+        if not chosen:
+            raise ValueError(tr("не выбрано ни одной площадки"))
+
+        def ask(platform):
+            began = time.monotonic()
+            try:
+                with requests.get(self.PROXY_CHECK[platform], proxies={"http": proxy, "https": proxy}, timeout=15,
+                                  stream=True, headers={"User-Agent": "StreamVault"}):
+                    pass
+            except requests.RequestException as error:
+                # в тексте ошибки requests бывает адрес прокси с паролем — в окно он не идёт
+                reason = error.__class__.__name__
+                if isinstance(error, requests.exceptions.ProxyError):
+                    reason = tr("прокси не отвечает или не принимает соединение")
+                elif isinstance(error, requests.exceptions.ConnectTimeout):
+                    reason = tr("нет ответа за 15 с")
+                return {"platform": platform, "ok": False, "error": reason}
+            return {"platform": platform, "ok": True, "seconds": round(time.monotonic() - began, 1)}
+
+        with concurrent.futures.ThreadPoolExecutor(len(chosen)) as pool:
+            return {"url": proxy, "results": list(pool.map(ask, chosen))}
 
     def _checked(self, key, value):
         if key in FLAGS:
@@ -1700,6 +1818,12 @@ class Api:
             return split_args(value) if isinstance(value, str) else [str(v) for v in value]
         if key == "twitch_auth_token":
             return ytdlp.normalize_auth_token(str(value))
+        if key == "proxy_url":
+            return netproxy.normalize(value)
+        if key == "proxy_platforms":
+            if not isinstance(value, (list, tuple)) or any(name not in PLATFORMS for name in value):
+                raise ValueError(tr("площадки прокси — из списка: {names}", names=", ".join(PLATFORMS)))
+            return [name for name in PLATFORMS if name in value]
         if key in LIMITS:
             try:
                 number = int(value)

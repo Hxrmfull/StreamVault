@@ -29,7 +29,7 @@ import subprocess
 import tempfile
 import threading
 
-from .. import util
+from .. import chapters, util
 from ..archive import chat as archive_chat
 from ..i18n import tr
 from ..settings import channel_setting
@@ -62,16 +62,40 @@ REPLACE_STEP = 5
 
 # ------------------------------------------------------------ кадры и стык
 
+_PASSTHROUGH = {}
+
+
+def frame_passthrough(ffmpeg):
+    """
+    Аргументы ffmpeg «кадры на выходе — как в файле, по одному на кадр». Без них
+    ffmpeg выравнивает частоту кадров, и там, где время кадров неровное (стык
+    кусков эфира), повторяет кадр: счёт кадров и их время после этого места
+    сдвигались на один, и стык выходил с повтором кадра. У ffmpeg до 5.1 это
+    -vsync 0, новее — -fps_mode.
+    """
+    if ffmpeg not in _PASSTHROUGH:
+        try:
+            listed = subprocess.run([ffmpeg, "-hide_banner", "-h", "long"], capture_output=True, timeout=60,
+                                    creationflags=util.subprocess_flags()).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            listed = b"fps_mode"
+        _PASSTHROUGH[ffmpeg] = ["-fps_mode", "passthrough"] if b"fps_mode" in listed else ["-vsync", "0"]
+    return _PASSTHROUGH[ffmpeg]
+
+
 def _thumbs_command(ffmpeg, path, start=None, length=None, count=None):
     command = [ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "info"]
     if start:
         command += ["-ss", "%.3f" % start]
     command += ["-copyts", "-i", path, "-map", "0:v:0"]
     if length:
-        command += ["-t", "%.3f" % length]
+        # время кадров — как в файле (-copyts), и конец окна — тоже: с -t окно от start
+        # длиной length выходило пустым, стоило start превысить length
+        command += ["-to", "%.3f" % ((start or 0) + length)]
     if count:
         command += ["-frames:v", str(count)]
-    return command + ["-vf", "scale=%d:%d:flags=area,format=gray,showinfo" % THUMB, "-f", "rawvideo", "pipe:1"]
+    return command + [*frame_passthrough(ffmpeg),
+                      "-vf", "scale=%d:%d:flags=area,format=gray,showinfo" % THUMB, "-f", "rawvideo", "pipe:1"]
 
 
 def thumbnails(ffmpeg, path, start=None, length=None, count=None):
@@ -717,6 +741,13 @@ class Joiner(threading.Thread):
             # HTML и видео чата — заново, по склеенному чату
             for key in ("html", "video"):
                 util.remove_quietly(main_chat[key])
+        # разделы эфира по категориям сдвигаются на вклеенное начало: что шло в нём, не известно
+        try:
+            sections = chapters.read(main)
+            if sections:
+                chapters.write(target, chapters.shifted(sections, cut))
+        except OSError as error:
+            logging.debug("разделы эфира после склейки не сохранились: %s", error)
         for path in [head, *head_chat.values()]:
             # начало эфира открыто в проигрывателе — окно скажет, что закрыть, а не будет тихо ждать
             if os.path.exists(path) and not self._when_free(lambda path=path: _remove_existing(path), path, waiting):

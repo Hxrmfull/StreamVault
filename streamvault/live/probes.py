@@ -20,7 +20,7 @@ import time
 
 import requests
 
-from .. import sites, util
+from .. import netproxy, sites, util
 from ..platforms import PLATFORMS, stream_url
 from ..i18n import tr
 # GQL сайта Twitch и аватарки без ключей живут в модуле площадки
@@ -112,7 +112,7 @@ class AccessToken:
                     data={"client_id": self._client_id,
                           "client_secret": self._client_secret,
                           "grant_type": "client_credentials"},
-                    timeout=15)
+                    timeout=15, **netproxy.requests_kwargs("twitch"))
             except requests.exceptions.RequestException as error:
                 logging.warning(tr("токен Twitch: сеть недоступна ({error}), повтор через "
                                    "{delay} с", error=error.__class__.__name__, delay=delay))
@@ -192,7 +192,7 @@ class TwitchProbe:
                 return self._exists[login]
         try:
             response = requests.get(USERS_URL, params={"login": login},
-                                    headers=headers, timeout=15)
+                                    headers=headers, timeout=15, **netproxy.requests_kwargs("twitch"))
             response.raise_for_status()
             exists = bool(response.json().get("data"))
         except (requests.exceptions.RequestException, ValueError):
@@ -214,7 +214,7 @@ class TwitchProbe:
             chunk = missing[start:start + 100]
             try:
                 response = requests.get(USERS_URL, params=[("login", login) for login in chunk],
-                                        headers=headers, timeout=15)
+                                        headers=headers, timeout=15, **netproxy.requests_kwargs("twitch"))
                 response.raise_for_status()
                 users = response.json().get("data") or []
             except (requests.exceptions.RequestException, ValueError) as error:
@@ -239,7 +239,7 @@ class TwitchProbe:
 
         try:
             response = requests.get(STREAMS_URL, params={"user_login": channel},
-                                    headers=headers, timeout=15)
+                                    headers=headers, timeout=15, **netproxy.requests_kwargs("twitch"))
         except requests.exceptions.RequestException as error:
             logging.debug("%s: запрос не прошёл (%s)", channel, error)
             return Status.NETWORK_ERROR, None
@@ -315,7 +315,10 @@ class StreamlinkProbe:
         Ожидание завершения самого процесса от этого не зависит.
         """
         with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
-            process = subprocess.Popen([*util.STREAMLINK, "--retry-open", "1", *args],
+            # прокси — по площадке канала: его ссылка — последний аргумент
+            proxy = netproxy.for_url(args[-1]) if args else None
+            process = subprocess.Popen([*util.STREAMLINK, *(["--http-proxy", proxy] if proxy else []),
+                                        "--retry-open", "1", *args],
                                        stdout=out, stderr=err,
                                        stdin=subprocess.DEVNULL,
                                        env=util.child_environment(),

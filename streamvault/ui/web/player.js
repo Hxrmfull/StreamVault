@@ -133,8 +133,11 @@ export function openWatch(item, options) {
   seekPreview.hidden = true;
   // пропуски в записи — пометки на шкале
   const seekGaps = h("div", { class: "watch-seek-gaps" });
+  // разделы эфира по категориям — деления на шкале
+  const seekChapters = h("div", { class: "watch-seek-chapters" });
   const seek = h("div", { class: "watch-seek", role: "slider", "aria-label": t("Перемотка"), tabindex: "-1" },
-    h("div", { class: "watch-seek-track" }, seekBuffer, seekFill, seekGaps), seekThumb, seekPreview, seekTip);
+    h("div", { class: "watch-seek-track" }, seekBuffer, seekFill, seekGaps, seekChapters), seekThumb, seekPreview,
+    seekTip);
   // график чата над шкалой: сколько сообщений в каждом отрезке; всплески — щелчком
   const activityBars = document.createElementNS(SVG, "svg");
   activityBars.setAttribute("class", "watch-activity-bars");
@@ -157,6 +160,10 @@ export function openWatch(item, options) {
     video.muted = !video.volume;
   });
   const time = h("span", { class: "watch-time" });
+  // раздел, который сейчас идёт; щелчок — список разделов, чтобы перейти к любому
+  const chapterButton = h("button", { type: "button", class: "watch-chapter-now", title: t("Разделы эфира") });
+  chapterButton.hidden = true;
+  chapterButton.addEventListener("click", () => openChapterMenu());
   // идущая запись: у края — «В ЭФИРЕ», перемотали назад — «К ЭФИРУ»
   const liveBadge = h("button", { type: "button", class: "watch-live", title: t("К тому, что идёт сейчас") });
   liveBadge.hidden = true;
@@ -173,6 +180,7 @@ export function openWatch(item, options) {
     activityGraph, seek,
     h("div", { class: "watch-buttons" },
       play, h("div", { class: "watch-volume-group" }, mute, volume), liveBadge, time,
+      h("div", { class: "watch-menu-anchor watch-chapter-anchor" }, chapterButton),
       h("span", { class: "spacer" }),
       rateBadge, h("div", { class: "watch-menu-anchor" }, settingsButton), clipButton, theatreButton, fullButton));
   const stage = h("div", { class: "watch-stage paused" }, video, bigPlay, top, expandChat, controls, problem);
@@ -310,8 +318,10 @@ export function openWatch(item, options) {
     const x = Math.max(half, Math.min(width - half, at.share * width));
     seekPreview.style.left = seekTip.style.left = x + "px";
     const gap = gapAt(at.seconds);
+    const section = chapterAt(at.seconds);
     // у длинной записи кадры делаются с минуту: пусть видно, что они будут
-    setText(seekTip, fmt.duration(at.seconds) + (gap ? " · " + gapText(gap) : "")
+    setText(seekTip, fmt.duration(at.seconds) + (section ? " · " + chapterName(section) : "")
+      + (gap ? " · " + gapText(gap) : "")
       + (boardWorking && !shown ? " · " + (boardPercent ? t("кадры готовятся… {percent}%", { percent: boardPercent })
                                                         : t("кадры готовятся…")) : ""));
     if (dragging !== null) {
@@ -346,6 +356,9 @@ export function openWatch(item, options) {
     if (video.buffered.length) buffered = base + video.buffered.end(video.buffered.length - 1);
     seekBuffer.style.width = (total ? Math.min(1, buffered / total) * 100 : 0) + "%";
     setText(time, fmt.duration(now) + " / " + fmt.duration(total));
+    const section = chapters.length ? chapterAt(now) : null;
+    chapterButton.hidden = !section;
+    if (section) setText(chapterButton, chapterName(section));
     play.replaceChildren(icon(video.paused ? "play" : "pause"));
     play.title = play.ariaLabel = video.paused ? t("Смотреть (пробел)") : t("Пауза (пробел)");
     const silent = video.muted || !video.volume;
@@ -641,6 +654,7 @@ export function openWatch(item, options) {
     update();
     // у mp4 длительность видна только теперь — по ней график и пометки
     drawGaps();
+    drawChapters();
     loadActivity();
   });
   video.addEventListener("playing", () => { recoveries = 0; });
@@ -736,6 +750,52 @@ export function openWatch(item, options) {
       + -Math.floor(within / board.columns) * board.height + "px";
     seekPreview.hidden = false;
     return true;
+  }
+
+  // разделы эфира по категориям: [{start, game, title}], раздел идёт до следующего
+  let chapters = [];
+
+  function chapterName(section) {
+    return section.game || t("без категории");
+  }
+
+  function chapterAt(seconds) {
+    let found = null;
+    for (const section of chapters) {
+      if (section.start <= seconds) found = section;
+    }
+    return found;
+  }
+
+  // деление — на начале каждого раздела, кроме самого начала записи
+  function drawChapters() {
+    seekChapters.replaceChildren();
+    if (!duration) return;
+    for (const section of chapters) {
+      if (section.start <= 0 || section.start >= span()) continue;
+      const mark = h("span", { class: "watch-chapter" });
+      mark.style.left = (section.start / span() * 100) + "%";
+      seekChapters.append(mark);
+    }
+  }
+
+  function openChapterMenu() {
+    popover(chapterButton, (menu, close) => {
+      menu.classList.add("watch-chapter-menu");
+      menu.append(h("div", { class: "watch-menu-title", text: t("Разделы эфира") }));
+      const now = chapterAt(position());
+      for (const section of chapters) {
+        const row = h("button", { type: "button", class: "watch-menu-item" + (section === now ? " checked" : ""),
+                                  title: section.title || null },
+          icon("check"), h("span", { class: "watch-chapter-time", text: fmt.duration(section.start) }),
+          h("span", { class: "watch-chapter-name", text: chapterName(section) }));
+        row.addEventListener("click", () => {
+          jump(section.start);
+          close();
+        });
+        menu.append(row);
+      }
+    });
   }
 
   // пропуск: оставшийся во времени — полосой, склеенный — чертой
@@ -896,6 +956,8 @@ export function openWatch(item, options) {
     const from = result.position;
     gaps = result.gaps || [];
     drawGaps();
+    chapters = result.chapters || [];
+    drawChapters();
     if (!result.live) loadStoryboard(0);
     if (result.live) {
       // идущая запись — с её края; назад — шкалой, вперёд — «К эфиру»
@@ -980,6 +1042,9 @@ export function openWatch(item, options) {
     if (closed || !live) return;
     if (answer.duration) {
       duration = answer.duration;
+      // у идущей записи разделы прибавляются, а шкала растёт — деления переставляются
+      chapters = answer.chapters || chapters;
+      drawChapters();
       update();
       loadActivity();
     }
@@ -1074,6 +1139,7 @@ export function openWatch(item, options) {
     if (event.detail.path === item.path && event.detail.gaps) {
       gaps = event.detail.gaps;
       drawGaps();
+      drawChapters();
     }
   };
   window.addEventListener("integrity", onChecked);

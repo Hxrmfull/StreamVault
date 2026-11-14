@@ -36,7 +36,7 @@ import uuid
 
 import requests
 
-from .. import chatgaps, util
+from .. import chatgaps, netproxy, util
 from ..archive import chat as archive_chat
 from ..i18n import plural, tr
 from ..settings import channel_setting
@@ -159,11 +159,15 @@ class ChatReader(threading.Thread):
         with self._lock:
             self._write_locked(record)
 
-    def _mark_alive(self):
-        """Связь с чатом есть (пришли данные): был разрыв — он записывается."""
+    def _mark_alive(self, lost=True):
+        """
+        Связь с чатом есть (пришли данные): был разрыв — он записывается.
+        lost=False — площадка сама отдала всё, что было за время разрыва
+        (VK отдаёт последние сообщения): потерь нет, отмечать нечего.
+        """
         now = time.time()
         with self._lock:
-            if self._lost is not None and now - self._lost >= chatgaps.MIN_RECORDED:
+            if self._lost is not None and lost and now - self._lost >= chatgaps.MIN_RECORDED:
                 self._write_locked({"type": "gap", "from": self._lost, "to": now})
             self._lost = None
             self._alive = now
@@ -186,7 +190,7 @@ class ChatReader(threading.Thread):
     # ------------------------------------------------------------ соединение
 
     def run(self):
-        failures = 0
+        failures, reported = 0, False
         while not self._stopping.is_set():
             started = time.monotonic()
             try:
@@ -195,16 +199,21 @@ class ChatReader(threading.Thread):
                 if self._stopping.is_set():
                     break
                 self._note_lost()
-                # долгий обрыв не засоряет журнал: пишется первая неудача подряд
-                if not failures:
+                # долгий обрыв не засоряет журнал: пишется первая неудача подряд — та, что
+                # оборвала долго работавшее соединение (было: и следующая за ней тоже)
+                reported = reported and time.monotonic() - started <= 60
+                if not reported:
                     logging.info(tr("чат {channel}: связь прервалась ({error}), переподключение",
                                     channel=self.channel, error=error.__class__.__name__))
+                reported = True
             except Exception:
                 if self._stopping.is_set():
                     break
                 self._note_lost()
-                if not failures:
+                reported = reported and time.monotonic() - started <= 60
+                if not reported:
                     logging.exception(tr("чат {channel}: сбой, переподключение", channel=self.channel))
+                reported = True
             finally:
                 self._interrupt()
             # долго проработавшее соединение — повод начать отсчёт пауз заново
@@ -245,7 +254,7 @@ class TwitchChat(ChatReader):
 
     @staticmethod
     def _tls_connect(host, port):
-        raw = socket.create_connection((host, port), timeout=15)
+        raw = netproxy.connect(host, port, timeout=15, platform="twitch")
         return ssl.create_default_context().wrap_socket(raw, server_hostname=host)
 
     def _session(self):
@@ -394,7 +403,8 @@ def fetch_image(url):
     if not str(url).startswith("https://"):
         return None
     try:
-        with requests.get(url, timeout=IMAGE_TIMEOUT, headers=IMAGE_HEADERS, stream=True) as response:
+        with requests.get(url, timeout=IMAGE_TIMEOUT, headers=IMAGE_HEADERS, stream=True,
+                          **netproxy.requests_kwargs(url=url)) as response:
             if response.status_code != 200:
                 return None
             chunks, size = [], 0

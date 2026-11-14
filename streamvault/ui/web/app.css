@@ -1496,6 +1496,19 @@ body.sidebar-animate .selection-bar { transition: left .22s ease; }
 .watch-seek:not(:hover):not(.dragging) .watch-seek-preview { display: none; }
 /* пропуски: оставшийся во времени — полосой, склеенный конвертацией — чертой */
 .watch-seek-gaps { position: absolute; inset: 0; pointer-events: none; }
+/* разделы эфира по категориям: шкала разрезана на начале каждого */
+.watch-seek-chapters { position: absolute; inset: 0; pointer-events: none; }
+.watch-chapter { position: absolute; top: -2px; bottom: -2px; width: 3px; margin-left: -1px; background: #0e0e10;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .55); border-radius: 1px; }
+.watch-chapter-anchor { min-width: 0; margin-left: 10px; }
+.watch-chapter-now { max-width: 320px; height: 26px; padding: 0 9px; border: 0; border-radius: 13px;
+  background: rgba(255, 255, 255, .14); color: #fff; font: inherit; font-size: 13px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.watch-chapter-now:hover { background: rgba(255, 255, 255, .26); }
+.watch-chapter-now[hidden] { display: none; }
+.watch-menu.watch-chapter-menu { right: auto; left: 0; min-width: 280px; max-width: 460px; max-height: 60vh; overflow-y: auto; }
+.watch-chapter-time { flex: none; min-width: 58px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.watch-chapter-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .watch-gap { position: absolute; top: -1px; bottom: -1px; min-width: 3px; background: var(--warn); border-radius: 1px; }
 .watch-gap.cut { width: 3px; margin-left: -1px; }
 
@@ -1702,6 +1715,36 @@ button.summary-top-row:hover .summary-name { text-decoration: underline; }
 .options-section .switch .track { flex: none; margin-top: 1px; }
 .options-section .switch.off { opacity: .45; cursor: default; }
 .modal.channel-options .actions { margin-top: 18px; }
+/* прокси в настройках: площадки переключателями в ряд, итог проверки — строкой на площадку */
+.proxy-platforms { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.proxy-result { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.proxy-result:empty { display: none; }
+/* фильтры автозаписи — полосой под тремя столбцами */
+.options-filters { margin-top: 14px; }
+.options-filter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.options-filter-foot { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 14px; align-items: start; }
+.tags-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; min-height: 34px; padding: 3px 4px; background: var(--bg);
+  border: 2px solid var(--control-border); border-radius: var(--radius); cursor: text;
+  transition: border-color .15s ease, box-shadow .15s ease; }
+.tags:hover { border-color: #7c7c86; }
+.tags:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(145, 71, 255, .22); }
+.modal .field .tags input[type=text] { flex: 1 1 60px; width: auto; min-width: 60px; height: 24px; padding: 0 4px;
+  border: 0; background: transparent; box-shadow: none; }
+.tag { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; height: 24px; padding: 0 2px 0 8px;
+  background: rgba(145, 71, 255, .22); color: var(--accent-text); border-radius: 4px; font-size: 13px; font-weight: 600; }
+.tag > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag > button { flex: none; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent;
+  color: inherit; font-size: 15px; line-height: 1; cursor: pointer; }
+.tag > button:hover { background: rgba(255, 255, 255, .16); }
+.tags-offer { display: flex; flex-wrap: wrap; gap: 4px; }
+.tags-offer[hidden] { display: none; }
+.tag-offer { max-width: 100%; padding: 1px 8px; border: 1px dashed var(--control-border); border-radius: 4px;
+  background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.tag-offer:hover { color: var(--text); border-color: var(--accent); }
 @media (max-width: 900px) {
   .options-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .options-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .options-filter-foot { grid-template-columns: minmax(0, 1fr); }
 }

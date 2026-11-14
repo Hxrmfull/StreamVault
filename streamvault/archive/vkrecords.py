@@ -10,6 +10,7 @@ describe_entry у yt-dlp, чтобы окно показывало их как �
 
 import requests
 
+from .. import netproxy
 from ..i18n import tr
 
 RECORDS = "https://api.live.vkvideo.ru/v1/blog/{blog}/public_video_stream/record/"
@@ -55,7 +56,8 @@ def list_records(blog, limit=30, start=1, session=None, kind="vods"):
         params["order"] = "created"          # новые сверху, как у записей
     try:
         response = (session or requests).get((CLIPS if clips else RECORDS).format(blog=requests.utils.quote(blog)),
-                                             params=params, headers=HEADERS, timeout=TIMEOUT)
+                                             params=params, headers=HEADERS, timeout=TIMEOUT,
+                                             **netproxy.requests_kwargs("vkvideolive"))
     except requests.RequestException as error:
         raise VkRecordsError(tr("VK Video Live не ответил: {error}", error=error.__class__.__name__))
     if response.status_code == 404:

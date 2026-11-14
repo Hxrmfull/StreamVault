@@ -228,7 +228,7 @@ export const fmt = {
     const units = english() ? ["B", "KB", "MB", "GB", "TB"] : ["Б", "КБ", "МБ", "ГБ", "ТБ"];
     let value = bytes, unit = 0;
     while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
-    const text = unit === 0 ? String(value) : value.toFixed(value < 10 ? 1 : 0);
+    const text = unit === 0 ? String(Math.round(value)) : value.toFixed(value < 10 ? 1 : 0);
     return (english() ? text : text.replace(".", ",")) + " " + units[unit];
   },
   duration(seconds) {
@@ -667,7 +667,10 @@ export function stateText(channel) {
   if (recordStarting(channel.id, channel)) return t("запись начинается…");
   switch (channel.state) {
     case "recording": return t("идёт запись");
-    case "live": return t("в эфире, не записывается");
+    // message — почему автозапись пропускает этот эфир (фильтры канала)
+    case "live": return channel.message
+      ? t("в эфире, автозапись пропускает: {reason}", { reason: channel.message })
+      : t("в эфире, не записывается");
     case "unavailable": return channel.message
       ? t("в эфире, но записать не удаётся: {reason}", { reason: channel.message })
       : t("в эфире, но записать не удаётся");

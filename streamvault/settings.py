@@ -126,6 +126,11 @@ DEFAULTS = {
     "twitch_auth_token": "",
     # Дополнительные аргументы yt-dlp, например ["--cookies-from-browser", "firefox"].
     "ytdlp_extra_args": [],
+    # Прокси (netproxy.py): адрес — http://, socks5://… с логином и паролем, если нужны
+    # ("socks5://user:pass@127.0.0.1:1080"); пусто — без прокси. И площадки, которые
+    # через него ходят: остальные — напрямую, как и обновления программы.
+    "proxy_url": "",
+    "proxy_platforms": ["twitch", "kick", "youtube", "vkvideolive"],
     # Чат записей и клипов Twitch по умолчанию (через TwitchDownloader):
     # none — без чата, text — чат для браузера (HTML) и JSON, render — ещё и видео чата.
     "chat_mode": "none",

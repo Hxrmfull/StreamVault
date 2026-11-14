@@ -16,7 +16,7 @@ import tempfile
 import time
 from urllib.parse import urlencode, urlsplit
 
-from .. import util
+from .. import netproxy, util
 from ..platforms import is_url
 from ..i18n import tr
 
@@ -236,9 +236,12 @@ def run_json(args, timeout=INSPECT_TIMEOUT, env=None):
     файлы: ответ про большой плейлист YouTube весит мегабайты. env — окружение
     (с обновлённым yt-dlp, если он есть).
     """
+    # прокси — по площадке того, что открывает yt-dlp: ссылка или поиск по YouTube — последним
+    target = str(args[-1]) if args else ""
+    proxy = netproxy.ytdlp_args(platform="youtube") if target.startswith("ytsearch") else netproxy.ytdlp_args(url=target)
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         try:
-            process = subprocess.Popen([*util.YTDLP, *args], stdout=out, stderr=err,
+            process = subprocess.Popen([*util.YTDLP, *proxy, *args], stdout=out, stderr=err,
                                        stdin=subprocess.DEVNULL,
                                        env=env or util.child_environment(),
                                        creationflags=util.subprocess_flags())
@@ -338,7 +341,12 @@ def format_args(quality):
     if lowered.startswith(H264):
         rest = value[len(H264):]
         if rest.lower() == "worst":
-            same = "wv*[vcodec^=avc1]+wa[acodec^=mp4a]/w[vcodec^=avc1]/"
+            # худшим yt-dlp считает и способ отдачи: у YouTube это видео плейлистом HLS, которое
+            # ffmpeg качает медленнее, чем оно идёт. Сначала — то же видео файлом (его отрезок
+            # берётся своими запросами, archive/dashsection.py); нет такого — как раньше
+            file = "[protocol!*=m3u8]"
+            same = ("wv*[vcodec^=avc1]{0}+wa[acodec^=mp4a]{0}/".format(file)
+                    + "wv*[vcodec^=avc1]+wa[acodec^=mp4a]/w[vcodec^=avc1]/")
             return ["-f", same + format_args(rest)[1]]
         if rest.lower() == "best":
             limit = ""
@@ -388,6 +396,8 @@ def download_command(url, base, quality, section, fragments, ffmpeg_path, extra_
     # папка, а не сам ffmpeg.exe: в ней yt-dlp найдёт и ffprobe
     if ffmpeg_path:
         args += ["--ffmpeg-location", ffmpeg_path]
+    # прокси площадки; свой --proxy в дополнительных аргументах его перекрывает
+    args += netproxy.ytdlp_args(url=url)
     args += list(extra_args or [])
     args += ["--", url]
     return args

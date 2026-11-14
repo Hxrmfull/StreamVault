@@ -1,4 +1,5 @@
 requests>=2.31
+PySocks>=1.7.1
 websockets>=13
 streamlink>=8.0
 yt-dlp[default]>=2026.10.21

@@ -32,7 +32,7 @@ import time
 
 import requests
 
-from .. import util
+from .. import netproxy, util
 from ..i18n import tr
 from ..live.livechat import parse_line
 
@@ -90,7 +90,7 @@ def _get(path, stream=False):
     """Запрос к архиву: только свой адрес, без переадресаций."""
     try:
         response = requests.get(BASE + path, timeout=TIMEOUT, headers=HEADERS, stream=stream,
-                                allow_redirects=False)
+                                allow_redirects=False, **netproxy.requests_kwargs("twitch"))
     except requests.RequestException as error:
         raise ArchiveError(tr("архив чатов не отвечает: {error}", error=error.__class__.__name__))
     if 300 <= response.status_code < 400:

@@ -25,13 +25,13 @@ import subprocess
 import tempfile
 import time
 import uuid
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import requests
 from websockets.exceptions import WebSocketException
 from websockets.sync.client import connect as ws_connect
 
-from .. import util
+from .. import netproxy, util
 from ..platforms import stream_url
 from .livechat import ChatReader, TwitchChat
 
@@ -83,9 +83,19 @@ KICK_DELETED = "App\\Events\\MessageDeletedEvent"
 KICK_BANNED = "App\\Events\\UserBannedEvent"
 
 
+# На сколько секунд часы зрителя могут расходиться с часами Kick, чтобы им верить.
+KICK_CLOCK_SLACK = 3
+
+
 def _kick_time(message):
-    # metadata.message_ref — миллисекунды отправки; created_at — с точностью до секунды.
-    # В истории чата metadata приходит строкой JSON.
+    """
+    Когда отправлено сообщение. created_at ставит Kick — с точностью до секунды;
+    metadata.message_ref — миллисекунды отправки, но по часам зрителя. А они врут:
+    у кого на секунды, у кого на часы (не тот часовой пояс) — такое сообщение
+    вставало в чате записи на два часа позже, и чат выходил длиннее видео.
+    Поэтому message_ref только уточняет секунду created_at, пока сходится с ним.
+    В истории чата metadata приходит строкой JSON.
+    """
     metadata = message.get("metadata") or {}
     if isinstance(metadata, str):
         try:
@@ -93,12 +103,13 @@ def _kick_time(message):
         except ValueError:
             metadata = {}
     ref = str((metadata if isinstance(metadata, dict) else {}).get("message_ref") or "")
-    if ref.isdigit() and len(ref) == 13:
-        return int(ref) / 1000
     try:
-        return datetime.datetime.fromisoformat(message["created_at"].replace("Z", "+00:00")).timestamp()
-    except (KeyError, TypeError, ValueError):
-        return time.time()
+        created = datetime.datetime.fromisoformat(message["created_at"].replace("Z", "+00:00")).timestamp()
+    except (KeyError, TypeError, ValueError, AttributeError):
+        created = time.time()
+    if ref.isdigit() and len(ref) == 13 and abs(int(ref) / 1000 - created) <= KICK_CLOCK_SLACK:
+        return int(ref) / 1000
+    return created
 
 
 def kick_subscriber_badges(channel):
@@ -160,9 +171,8 @@ class KickChat(ChatReader):
     def __init__(self, channel, session=None, connect=None):
         """session — requests; connect(адрес) -> websocket. Тесты подставляют свои."""
         super().__init__(channel)
-        self._http = session or requests.Session()
-        self._ws_connect = connect or (lambda url: ws_connect(url, open_timeout=REQUEST_TIMEOUT,
-                                                              close_timeout=2, max_size=2 ** 22))
+        self._http = session or netproxy.session("kick")
+        self._ws_connect = connect or self._connect
         self._ws = None
         self._subscriber_badges = []
 
@@ -173,6 +183,16 @@ class KickChat(ChatReader):
                 ws.close()
             except Exception:
                 pass
+
+    @staticmethod
+    def _connect(url):
+        """Websocket чата; с прокси для Kick — через него (сам websockets прокси не знает)."""
+        options = {}
+        if netproxy.for_platform("kick"):
+            parts = urlsplit(url)
+            options["sock"] = netproxy.connect(parts.hostname, parts.port or (443 if parts.scheme == "wss" else 80),
+                                               timeout=REQUEST_TIMEOUT, platform="kick")
+        return ws_connect(url, open_timeout=REQUEST_TIMEOUT, close_timeout=2, max_size=2 ** 22, **options)
 
     def _json(self, method, url, **kwargs):
         headers = dict(HEADERS, **{"x-app-platform": "web"})
@@ -309,7 +329,7 @@ class VkVideoChat(ChatReader):
 
     def __init__(self, channel, session=None):
         super().__init__(channel)
-        self._http = session or requests.Session()
+        self._http = session or netproxy.session("vkvideolive")
         self._since = time.time() - CLOCK_SLACK
         self._last_id = None
         self._written = _Seen()
@@ -324,10 +344,17 @@ class VkVideoChat(ChatReader):
     def _session(self):
         while not self._stopping.is_set():
             messages = self._fetch(self.LIMIT)
-            self._mark_alive()
-            if (self._last_id is not None and len(messages) >= self.LIMIT
-                    and min(message["id"] for message in messages) > self._last_id):
+            # ответ дошёл до уже записанного (или короче предела) — пропущенного нет
+            caught_up = len(messages) < self.LIMIT or (
+                self._last_id is not None and min(message["id"] for message in messages) <= self._last_id)
+            if not caught_up and self._last_id is not None:
                 messages = self._fetch(self.LIMIT_CATCH_UP)
+                caught_up = (len(messages) < self.LIMIT_CATCH_UP
+                             or min(message["id"] for message in messages) <= self._last_id)
+            # после разрыва связи VK отдаёт и то, что написали за это время: разрыв отмечается,
+            # только если сообщений было больше, чем он отдаёт за раз (было: всегда —
+            # и чат записи показывал пропуск там, где все сообщения на месте)
+            self._mark_alive(lost=not caught_up)
             self._take(messages)
             self._stopping.wait(self.POLL)
 
@@ -459,6 +486,10 @@ class YouTubeChat(ChatReader):
     platform = "youtube"
     ERRORS = ChatReader.ERRORS + (ValueError,)
     POLL = 1
+    # Сколько ждать первых строк чата после того, как yt-dlp создал файл: по ним видно,
+    # покрыт ли разрыв связи. yt-dlp пишет их не сразу — бывает, секунд через 15 после
+    # создания файла; а чат может и молчать — дольше не ждём.
+    FIRST_LINES_WAIT = 30
 
     def __init__(self, channel, environment=None, command=None):
         """environment() — окружение yt-dlp (с обновлённой копией); command — сам yt-dlp."""
@@ -469,6 +500,8 @@ class YouTubeChat(ChatReader):
         self._process = None
         self._since = time.time() - CLOCK_SLACK
         self._seen = _Seen()
+        # самое раннее сообщение, отданное этим запуском yt-dlp (с хвостом чата за прошлые минуты)
+        self._oldest = None
 
     def _interrupt(self):
         process, self._process = self._process, None
@@ -484,7 +517,8 @@ class YouTubeChat(ChatReader):
             env = self._environment() if self._environment else util.child_environment()
             with open(log_path, "wb") as log:
                 process = self._process = subprocess.Popen(
-                    [*self._command, "--skip-download", "--write-subs", "--sub-langs", "live_chat",
+                    [*self._command, *netproxy.ytdlp_args(platform="youtube"),
+                     "--skip-download", "--write-subs", "--sub-langs", "live_chat",
                      "--no-part", "--no-warnings", "--color", "never", "--no-progress",
                      "-o", os.path.join(folder, "chat"), "--", self._url],
                     stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
@@ -502,7 +536,8 @@ class YouTubeChat(ChatReader):
 
     def _follow(self, process, folder, log_path):
         """Читает файл чата, пока yt-dlp его дописывает."""
-        source, position, pending = None, 0, b""
+        source, position, pending, appeared = None, 0, b"", None
+        self._oldest = None
         while not self._stopping.is_set():
             finished = process.poll() is not None
             if source is None:
@@ -519,8 +554,23 @@ class YouTubeChat(ChatReader):
             if finished:
                 raise OSError(self._last_error(log_path) or "yt-dlp: %s" % process.returncode)
             if source is not None:
-                self._mark_alive()          # yt-dlp жив и пишет чат — связь есть, даже если чат молчит
+                appeared = appeared or time.monotonic()
+                # yt-dlp жив и пишет чат — связь есть, даже если чат молчит. Первые сообщения —
+                # хвост чата за последние минуты: дошёл до разрыва связи — потерь нет. Пока
+                # не разобрано ни одного (файл создан, строка ещё не дописана) — недолго ждём
+                if self._oldest is not None or time.monotonic() - appeared > self.FIRST_LINES_WAIT:
+                    self._mark_alive(lost=not self._covered())
             self._stopping.wait(self.POLL)
+
+    def _covered(self):
+        """
+        После разрыва связи YouTube отдаёт и то, что написали за последние минуты: если
+        этот хвост начинается раньше разрыва, сообщения за время разрыва уже в файле
+        (было: участок всё равно отмечался как пропуск чата).
+        """
+        with self._lock:
+            lost = self._lost
+        return lost is not None and self._oldest is not None and self._oldest <= lost
 
     @staticmethod
     def _last_error(log_path):
@@ -543,6 +593,8 @@ class YouTubeChat(ChatReader):
                 self._write({"type": "delete_user", "user_id": parsed[1]})
             else:
                 record = parsed[1]
+                if self._oldest is None or record["ts"] < self._oldest:
+                    self._oldest = record["ts"]
                 # хвост чата до начала записи и повторы после перезапуска yt-dlp — мимо
                 if record["ts"] >= self._since and self._seen.add(record["id"]):
                     self._emit(record, parsed[2], parsed[3])

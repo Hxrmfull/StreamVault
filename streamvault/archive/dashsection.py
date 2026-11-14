@@ -1,16 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Начало записи YouTube — своими запросами, с докачкой после обрыва.
+Отрезок записи YouTube — своими запросами, с докачкой после обрыва.
 
 Отрезок yt-dlp отдаёт ffmpeg, а тот держит к YouTube долгие соединения, и
 YouTube их рвёт (WSAECONNRESET): у пользователя загрузка начала эфира падала
-раз за разом через полминуты-три, переподключение ffmpeg не помогало.
+раз за разом через полминуты-три, переподключение ffmpeg не помогало. А
+отрезок из середины YouTube отдавал ffmpeg в несколько раз медленнее, чем
+идёт само видео: пять минут качались полчаса.
 
 Видео и звук YouTube — отдельные mp4 с оглавлением sidx в начале: оно
 говорит, сколько байт занимает каждый кусок времени. Значит, первые N секунд —
-это первые байты файла. Они качаются частями по 10 МБ (так YouTube не
-тормозит отдачу), обрыв — повтор с того же байта. Потом ffmpeg без сети
-собирает видео со звуком и обрезает по N секунд.
+это первые байты файла, а отрезок из середины — шапка файла и байты его
+кусков. Они качаются частями по 10 МБ (так YouTube не тормозит отдачу),
+обрыв — повтор с того же байта. Потом ffmpeg без сети собирает видео со
+звуком и обрезает по отрезку.
 """
 
 import logging
@@ -26,10 +29,12 @@ from ..i18n import tr
 
 TIMEOUT = 30
 CHUNK = 10 * 1024 * 1024
-ATTEMPTS = 5
+ATTEMPTS = 6
 HEADER = 256 * 1024
 # Пауза перед следующей попыткой, секунды: сразу после обрыва YouTube чаще рвёт снова.
-RETRY_PAUSES = (1, 2, 4, 8)
+# И только что выданную ссылку он первые секунды не принимает (403), а когда рядом идёт
+# другая загрузка — дольше: 15 с ожидания не хватало.
+RETRY_PAUSES = (1, 2, 4, 8, 15)
 
 
 class DashSectionError(Exception):
@@ -40,10 +45,24 @@ class NoIndex(DashSectionError):
     """У файла нет оглавления sidx: отрезок так не взять — качать обычным путём, через ffmpeg."""
 
 
+class Refused(DashSectionError):
+    """Площадка не отдала и начала файла: до скачивания дело не дошло — качать обычным путём."""
+
+
 def section_end(data, length):
     """
     Начало mp4 (ftyp, moov, sidx) -> сколько байт с начала файла покрывают
     первые length секунд. Нет оглавления — DashSectionError.
+    """
+    return section_range(data, 0, length)["end"]
+
+
+def section_range(data, start, end):
+    """
+    Начало mp4 (ftyp, moov, sidx) -> какие байты покрывают отрезок start–end
+    секунд: {"header": докуда шапка (всё до первого куска), "begin", "end":
+    байты кусков отрезка, "lead": сколько секунд в первом куске до start,
+    "sidx": где в шапке лежит название оглавления}. Нет оглавления — NoIndex.
     """
     position = 0
     while position + 8 <= len(data):
@@ -53,12 +72,13 @@ def section_end(data, length):
         if kind == b"sidx":
             if position + size > len(data):
                 raise NoIndex(tr("оглавление записи не уместилось в начало файла"))
-            return _walk_sidx(data[position + 8:position + size], position + size, length)
+            found = _walk_sidx(data[position + 8:position + size], position + size, start, end)
+            return dict(found, sidx=position + 4)
         position += size
     raise NoIndex(tr("у записи нет оглавления (sidx)"))
 
 
-def _walk_sidx(body, after, length):
+def _walk_sidx(body, after, start, end):
     version = body[0]
     timescale = struct.unpack(">I", body[8:12])[0]
     if version == 0:
@@ -69,43 +89,81 @@ def _walk_sidx(body, after, length):
         position = 28
     count = struct.unpack(">H", body[position + 2:position + 4])[0]
     position += 4
-    end, covered = after + first_offset, 0.0
+    header = cursor = after + first_offset
+    begin, lead, covered = None, 0.0, 0.0
     for index in range(count):
         reference, duration = struct.unpack(">II", body[position + 12 * index:position + 12 * index + 8])
-        end += reference & 0x7FFFFFFF
-        covered += duration / float(timescale or 1)
-        if covered >= length:
+        seconds = duration / float(timescale or 1)
+        if begin is None and covered + seconds > start:
+            begin, lead = cursor, max(0.0, start - covered)
+        cursor += reference & 0x7FFFFFFF
+        covered += seconds
+        if covered >= end:
             break
-    return end
+    if begin is None:
+        raise DashSectionError(tr("отрезок начинается позже конца записи"))
+    return {"header": header, "begin": begin, "end": cursor, "lead": lead}
 
 
-def download(streams, length, target, ffmpeg, progress=None, stopped=None, session=None):
+def download(streams, length, target, ffmpeg, progress=None, stopped=None, session=None, start=0, whole=False,
+             found=None):
     """
-    streams — [(ссылка, заголовки)] видео и звука YouTube. Первые length
-    секунд — в target.mp4. progress(доля 0..1, байт), stopped() — прервать.
+    streams — [(ссылка, заголовки)] видео и звука YouTube. Запись до length
+    секунд — в target.mp4; start — с этого места (отрезок из середины: шапка
+    файла и куски, что его покрывают). whole — отрезок начинается раньше
+    start, с начала куска первой дорожки (видео): его первый кадр — ключевой,
+    и скрытых кадров перед ним нет (такой отрезок вклеивают в запись,
+    archive/videogaps.py); found["start"] — с какой секунды он вышел на деле.
+    progress(доля 0..1, байт), stopped() — прервать.
     Возвращает путь файла; промежуточное удаляется.
     """
     session = session or requests.Session()
     path, parts = target + ".mp4", []
+    start = float(start or 0)
+    note = found
+    if note is not None:
+        note["start"] = start
     try:
         plans = []
         for index, (url, headers) in enumerate(streams):
-            head = _range(session, url, headers, 0, HEADER - 1)
-            plans.append((url, headers, section_end(head, length)))
-        total, done = sum(end for _, _, end in plans), 0
-        for index, (url, headers, end) in enumerate(plans):
+            try:
+                head = _range(session, url, headers, 0, HEADER - 1)
+            except DashSectionError as error:
+                raise Refused(str(error))
+            found = section_range(head, start, length)
+            if whole and not index and found["lead"]:
+                # с начала куска видео; звук дальше ровняется по этому же месту
+                start = max(0.0, start - found["lead"])
+                found = dict(found, lead=0.0)
+                if note is not None:
+                    note["start"] = start
+            if found["begin"] <= found["header"]:
+                # с начала записи — файл как есть, до конца отрезка
+                plans.append((url, headers, b"", 0, found["end"], 0.0))
+                continue
+            if found["header"] > len(head):
+                head = _range(session, url, headers, 0, found["header"] - 1)
+            # оглавление говорит о байтах целого файла, а в нашем их нет: с ним ffmpeg
+            # искал бы куски не там. Переименованное в free, оно пропускается
+            header = head[:found["sidx"]] + b"free" + head[found["sidx"] + 4:found["header"]]
+            plans.append((url, headers, header, found["begin"], found["end"], found["lead"]))
+        total, done = sum(len(header) + end - begin for _, _, header, begin, end, _ in plans), 0
+        for index, (url, headers, header, begin, end, _) in enumerate(plans):
             part = "%s.f%d.part" % (target, index)
             parts.append(part)
             with open(part, "wb") as output:
-                while output.tell() < end:
+                output.write(header)
+                position = begin
+                while position < end:
                     if stopped and stopped():
                         raise DashSectionError(tr("остановлено"))
-                    start = output.tell()
-                    output.write(_range(session, url, headers, start, min(end, start + CHUNK) - 1))
+                    data = _range(session, url, headers, position, min(end, position + CHUNK) - 1)
+                    output.write(data)
+                    position += len(data)
                     if progress:
                         progress((done + output.tell()) / float(total), done + output.tell())
-            done += end
-        _mux(ffmpeg, parts, length, path)
+            done += len(header) + end - begin
+        _mux(ffmpeg, parts, length - start, path, [plan[5] for plan in plans] if start else None)
     except BaseException:
         util.remove_quietly(path)
         raise
@@ -137,14 +195,24 @@ def _range(session, url, headers, start, last):
     raise DashSectionError(tr("часть записи не скачалась: {error}", error=error))
 
 
-def _mux(ffmpeg, parts, length, path):
-    """Видео со звуком — в один mp4, ровно length секунд. Без сети: файлы уже на диске."""
+def _mux(ffmpeg, parts, length, path, leads=None):
+    """
+    Видео со звуком — в один mp4, ровно length секунд. Без сети: файлы уже на
+    диске. leads — отрезок из середины: сколько секунд в начале каждого файла
+    до начала отрезка (у видео и звука куски разной длины). От этого места
+    считается время обоих — звук не расходится с видео. Кадры от ключевого
+    до начала отрезка в файле остаются (с них декодируется), но помечены
+    «не показывать»: и видео, и звук идут ровно с начала отрезка.
+    """
     command = [ffmpeg, "-hide_banner", "-nostdin", "-y", "-loglevel", "error"]
-    for part in parts:
+    for index, part in enumerate(parts):
+        if leads:
+            command += ["-ss", "%.3f" % leads[index]]
         command += ["-i", part]
     for index in range(len(parts)):
         command += ["-map", "%d:0" % index]
-    command += ["-c", "copy", "-t", "%.3f" % length, "-movflags", "+faststart", "-f", "mp4", path]
+    command += ["-c", "copy", "-t", "%.3f" % length]
+    command += ["-movflags", "+faststart", "-f", "mp4", path]
     result = subprocess.run(command, capture_output=True, creationflags=util.subprocess_flags())
     if result.returncode != 0 or not os.path.isfile(path):
         raise DashSectionError(tr("ffmpeg не собрал начало записи: {error}",

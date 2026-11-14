@@ -12,6 +12,8 @@ BUILD = os.path.join(ROOT, "build")
 # не видит. _plugins.json и метаданные пакета нужны для быстрой загрузки:
 # streamlink сверяет файл с суммой из RECORD.
 hiddenimports = collect_submodules("streamlink") + collect_submodules("streamlink_cli")
+# прокси socks5 (streamvault/netproxy.py): PySocks берут requests, streamlink и чат Twitch и Kick
+hiddenimports += ["socks", "sockshandler"]
 
 
 def plugin_files():

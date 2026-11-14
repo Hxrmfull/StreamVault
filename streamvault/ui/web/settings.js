@@ -3,7 +3,7 @@
  * TwitchDownloader и обновление самой программы.
  */
 
-import { CHAT_MODES, CONVERT_FORMATS, DOWNLOAD_QUALITIES, bridge, button, confirmDialog, failed, fmt, h, helpTip, icon, liveQualitySelect, openModal, platformName, setText, showStopped, state, t, toast } from "./common.js";
+import { CHAT_MODES, CONVERT_FORMATS, DOWNLOAD_QUALITIES, bridge, button, confirmDialog, english, failed, fmt, h, helpTip, icon, liveQualitySelect, openModal, platformName, setText, showStopped, state, t, toast } from "./common.js";
 import { render } from "./app.js";
 
 // Полезные аргументы yt-dlp: полный список — сотни строк, здесь — то, что пригождается
@@ -667,6 +667,36 @@ export function openSettings() {
     return h("div", { class: "field" }, h("label", null, name === "all" ? t("Со всех площадок") : platformName(name)), input);
   });
 
+  // прокси: адрес и площадки, которые через него ходят; проверить можно до сохранения
+  const proxyUrl = h("input", { type: "text", spellcheck: "false", placeholder: t("не используется") });
+  proxyUrl.value = settings.proxy_url || "";
+  const proxyPlatforms = {};
+  const proxyPlatformFields = Object.keys(settings.refresh || {}).map((platform) => {
+    const input = h("input", { type: "checkbox" });
+    input.checked = (settings.proxy_platforms || []).includes(platform);
+    proxyPlatforms[platform] = input;
+    return h("label", { class: "switch" }, input, h("span", { class: "track" }), platformName(platform));
+  });
+  const chosenProxyPlatforms = () => Object.keys(proxyPlatforms).filter((name) => proxyPlatforms[name].checked);
+  const proxyResult = h("div", { class: "proxy-result" });
+  const proxyCheck = button(t("Проверить"), {
+    title: t("Спросить каждую выбранную площадку через этот прокси"),
+    onclick: async () => {
+      proxyCheck.disabled = true;
+      proxyResult.replaceChildren(h("span", { class: "muted", text: t("проверка…") }));
+      try {
+        const answer = await bridge.call("check_proxy", proxyUrl.value, chosenProxyPlatforms());
+        proxyUrl.value = answer.url;
+        proxyResult.replaceChildren(...answer.results.map((item) => h("span", { class: item.ok ? "ok-text" : "error-text",
+          text: platformName(item.platform) + ": " + (item.ok ? t("отвечает за {seconds} с", { seconds: String(item.seconds).replace(".", english() ? "." : ",") })
+                                                               : item.error) })));
+      } catch (problem) {
+        proxyResult.replaceChildren(h("span", { class: "error-text", text: problem.message }));
+      } finally {
+        proxyCheck.disabled = false;
+      }
+    } });
+
   const language = h("select", null, Object.entries(state.info.languages || {})
     .map(([code, name]) => h("option", { value: code, text: name })));
   language.value = state.info.language;
@@ -837,6 +867,20 @@ export function openSettings() {
              { number: true, help: fragmentsHelp }),
         text("ytdlp_extra_args", t("Свои аргументы yt-dlp"), t("Для опытных, например --limit-rate 5M"),
              { help: ytdlpArgsHelp }))], t("Скачивание")],
+    [t("Прокси"), [
+      h("div", { class: "field" },
+        h("label", { text: t("Адрес прокси") }),
+        h("div", { class: "with-button" }, proxyUrl, proxyCheck),
+        h("div", { class: "hint", text: t("Например socks5://127.0.0.1:1080 или http://host:3128; с логином — " +
+          "socks5://user:pass@host:1080. Пусто — без прокси. Действует сразу после сохранения: со следующей " +
+          "проверки, записи или загрузки.") }),
+        proxyResult),
+      h("div", { class: "field" },
+        h("label", { text: t("Через прокси ходят") }),
+        h("div", { class: "proxy-platforms" }, proxyPlatformFields),
+        h("div", { class: "hint", text: t("Всё, что относится к выбранной площадке: проверка эфира, запись, загрузки, " +
+          "списки записей и чат. Остальные площадки, обновления программы и её инструментов — напрямую. " +
+          "Картинки в окне (аватарки, кадры эфиров) окно грузит само, мимо этого прокси.") }))]],
     ["Twitch", [
       subhead(t("Ключи")),
       h("div", { class: "two" },
@@ -953,6 +997,10 @@ export function openSettings() {
       if (chosenLimits[name] !== settings.record_limits[name]) limitsChanged = true;
     }
     if (limitsChanged) changes.record_limits = chosenLimits;
+    if (proxyUrl.value.trim() !== (settings.proxy_url || "")) changes.proxy_url = proxyUrl.value.trim();
+    if (chosenProxyPlatforms().join() !== (settings.proxy_platforms || []).join()) {
+      changes.proxy_platforms = chosenProxyPlatforms();
+    }
     const ffmpegValue = manualFfmpeg.checked ? ffmpegPath.value.trim() : "";
     if (ffmpegValue !== configured) changes.ffmpeg_path = ffmpegValue;
     if (!Object.keys(changes).length) { modal.close(); return; }

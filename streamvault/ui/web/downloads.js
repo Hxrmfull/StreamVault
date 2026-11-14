@@ -346,6 +346,7 @@ export function qualityText(quality) {
   if (plain === CHAT_ONLY.quality) return t("только чат");
   if (plain === "chat-archive") return t("чат из стороннего архива logs.zonian.dev");
   if (plain === "chat-gaps") return t("пропуски чата");
+  if (plain === "video-gaps") return t("пропуски видео");
   const known = DOWNLOAD_QUALITIES.find((option) => option.quality === plain);
   return known ? t(known.label) : quality;
 }
@@ -359,7 +360,8 @@ export function progressText(job) {
       ? t("{done} из {total}", { done: fmt.size(progress.downloaded), total: fmt.size(progress.total) })
       : t("скачано {size}", { size: fmt.size(progress.downloaded) }));
   }
-  if (progress.speed) parts.push(t("{speed}/с", { speed: fmt.size(progress.speed) }));
+  // меньше байта в секунду — не скорость: так выглядит загрузка, которая ещё ничего не записала
+  if (progress.speed >= 1) parts.push(t("{speed}/с", { speed: fmt.size(progress.speed) }));
   if (progress.eta !== null && progress.eta !== undefined && progress.percent < 100) parts.push(t("осталось {time}", { time: fmt.duration(progress.eta) }));
   return parts.join(" · ") || t("запуск…");
 }

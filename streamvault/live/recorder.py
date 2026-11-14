@@ -13,7 +13,7 @@ import threading
 import time
 import traceback
 
-from .. import util
+from .. import chapters, netproxy, util
 from ..i18n import tr
 from ..platforms import MIN_REFRESH_STREAMLINK, channel_id, channel_label, stream_url
 from ..util import build_recording_path, remove_quietly, unique_path
@@ -27,6 +27,9 @@ from .storage import CRITICAL, DISK_CHECK_INTERVAL, human_size
 SLOT_RETRY = 30
 # как часто читать вывод streamlink идущей записи, секунды
 TROUBLE_CHECK = 5
+# Идёт запись: чаще этого (секунды) канал не проверяется — что сейчас в эфире (разделы по
+# категориям, chapters.py) и подходит ли он ещё под фильтры автозаписи. Это запрос к площадке.
+STREAM_CHECK = 60
 
 
 class Trouble:
@@ -170,7 +173,7 @@ class ChannelRecorder(threading.Thread):
     def __init__(self, platform, channel, probe, quality, refresh, root_path,
                  processing, fallback_probe=None, bus=None, live_chat=None, chat_factory=None,
                  autorecord=True, once=False, on_exit=None, live_restart=None, disk=None,
-                 beginning=None, slots=None):
+                 beginning=None, slots=None, record_filter=None, filter_stop=None):
         """
         live_chat() — писать ли чат эфира (режим chat.MODES).
         live_restart() — записывать ли эфир с начала, если запись началась позже;
@@ -182,6 +185,9 @@ class ChannelRecorder(threading.Thread):
         его записали кнопкой: поток завершается вместе с этой записью.
         on_exit(рекордер) — когда поток завершился. slots — (занять(id, площадка),
         освободить(id)): лимит одновременных записей; занять отвечает None или почему нельзя.
+        record_filter(эфир, strict) — фильтры автозаписи канала: None — эфир подходит, иначе
+        почему нет (platforms.record_refusal); filter_stop() — останавливать ли запись,
+        когда идущий эфир перестал подходить. Записи, начатой кнопкой, фильтры не касаются.
         """
         self._platform = platform
         self._channel = channel
@@ -209,6 +215,13 @@ class ChannelRecorder(threading.Thread):
         self._slots = slots
         self._live_restart = live_restart
         self._beginning = beginning
+        self._record_filter = record_filter
+        self._filter_stop = filter_stop
+        # этот эфир уже пропускали из-за фильтров: его начало (другая категория) не докачивается
+        self._filtered = False
+        # смены категории и названия, пока пишется часть, — разделы готовой записи
+        self._timeline = chapters.Timeline()
+        self._stream_check = None     # поток идущей проверки эфира
         self._session_meta = {}
         self._disk = disk
         self._disk_full = False   # запись остановлена: на диске не осталось места
@@ -329,6 +342,12 @@ class ChannelRecorder(threading.Thread):
 
     def _wants_recording(self):
         return (self._autorecord or self._manual) and not self._skip
+
+    def _refusal(self, stream, strict=True):
+        """Почему автозапись не берёт этот эфир (фильтры канала) или None. Запись по кнопке — берёт любой."""
+        if self._manual or self._record_filter is None:
+            return None
+        return self._record_filter(stream, strict)
 
     def set_quality(self, quality):
         """Новое качество действует со следующей записи или её части."""
@@ -464,6 +483,19 @@ class ChannelRecorder(threading.Thread):
                 self._set(state="live", message="", stream=stream, recording=None)
                 self._sleep(self._refresh)
                 return
+            # фильтры автозаписи: не та категория или название — эфир только показывается
+            stream = describe_stream(meta, self._platform, self._channel)
+            refusal = self._refusal(stream)
+            if refusal:
+                self._filtered = True
+                # в журнал — раз на причину: смена категории меняет и её
+                if self._announced != ("filter", refusal):
+                    logging.info(tr("{tag} в эфире: {title} — автозапись пропускает: {reason}", tag=self.tag,
+                                    title=stream["title"] or tr("без названия"), reason=refusal))
+                    self._announced = ("filter", refusal)
+                self._set(state="live", message=refusal, stream=stream, recording=None)
+                self._sleep(self._refresh)
+                return
             waited, self._announced = self._announced, None
             if self._no_room():
                 # места нет — запись не начинается, пока его не освободят
@@ -522,7 +554,7 @@ class ChannelRecorder(threading.Thread):
         elif status is Status.OFFLINE:
             self._network_failures = self._api_failures = self._fruitless = 0
             # эфир кончился: кнопки «начать» и «остановить» относились к нему
-            self._manual = self._skip = False
+            self._manual = self._skip = self._filtered = False
             # первый раз говорим вслух, дальше молчим: иначе при опросе
             # раз в минуту лог заполнится одинаковыми строками
             if self._announced is not Status.OFFLINE:
@@ -602,7 +634,7 @@ class ChannelRecorder(threading.Thread):
         запись идёт в дочернем python.exe.
         """
         stop_seen_at = None
-        disk_checked = watched = time.monotonic()
+        disk_checked = watched = filtered = time.monotonic()
         while True:
             try:
                 process.wait(timeout=1)
@@ -616,6 +648,15 @@ class ChannelRecorder(threading.Thread):
                     watch()
                 except OSError:
                     pass
+            # что сейчас в эфире: смена категории — новый раздел записи, а с фильтрами
+            # автозаписи — и повод её остановить. Своим потоком: площадка может отвечать
+            # долго, а «Остановить запись» ждать её не должна
+            if time.monotonic() - filtered >= max(self._refresh, STREAM_CHECK) and not self._end_session.is_set():
+                filtered = time.monotonic()
+                if self._stream_check is None or not self._stream_check.is_alive():
+                    self._stream_check = threading.Thread(target=self._check_stream, name=self.tag + "-stream",
+                                                          daemon=True)
+                    self._stream_check.start()
             if time.monotonic() - disk_checked >= DISK_CHECK_INTERVAL:
                 disk_checked = time.monotonic()
                 if self._no_room():
@@ -638,6 +679,34 @@ class ChannelRecorder(threading.Thread):
                     pass
                 return
 
+    def _check_stream(self):
+        """
+        Идёт запись: канал проверяется, как между записями. Категория и название
+        в окне обновляются, их смена ложится в разделы записи (chapters.py). А если
+        у канала велено останавливать запись, когда эфир перестал подходить под
+        фильтры автозаписи, — она останавливается. Сбой проверки или категория,
+        которую площадка не назвала, записи не мешают.
+        """
+        try:
+            status, meta = self._probe.check(self._platform, self._channel)
+        except Exception:
+            return
+        if status is not Status.ONLINE:
+            return
+        stream = describe_stream(meta, self._platform, self._channel)
+        self._timeline.note(stream)
+        if stream["title"]:
+            self._set(stream=stream)
+        if self._manual or self._record_filter is None or self._filter_stop is None or not self._filter_stop():
+            return
+        refusal = self._refusal(stream, strict=False)
+        if not refusal:
+            return
+        logging.info(tr("{tag}: эфир больше не подходит под фильтры автозаписи ({reason}) — запись остановлена",
+                        tag=self.tag, reason=refusal))
+        self._filtered = True
+        self._end_session.set()
+
     def _run_streamlink(self, url, recorded):
         """
         Пишет поток в файл до конца эфира или остановки. Возвращает вывод
@@ -652,7 +721,7 @@ class ChannelRecorder(threading.Thread):
             with output, open(output.name, "rb") as reader:
                 try:
                     process = subprocess.Popen(
-                        [*util.STREAMLINK, *STREAMLINK_RESILIENCE_ARGS,
+                        [*util.STREAMLINK, *netproxy.streamlink_args(self._platform), *STREAMLINK_RESILIENCE_ARGS,
                          url, quality_with_fallback(self._quality),
                          "-o", streamlink_output_arg(recorded)],
                         stdout=output, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
@@ -748,6 +817,10 @@ class ChannelRecorder(threading.Thread):
         """
         if self._beginning is None or self._live_restart is None or not self._live_restart():
             return
+        # запись ждала, пока эфир подойдёт под фильтры автозаписи: его начало — как раз
+        # то, что записывать не просили
+        if self._filtered:
+            return
         target = os.path.splitext(build_recording_path(self.processed_path, self._label, title, started, 0))[0]
         chat_mode = self._live_chat() if self._live_chat else "none"
         self._beginning.session_started(self._platform, self._channel, began, target, title, self._quality,
@@ -776,6 +849,7 @@ class ChannelRecorder(threading.Thread):
             began = time.time()
             if chat is not None:
                 chat.begin_part(recorded, began)
+            self._timeline.begin(recorded, began, self.snapshot()["stream"])
             if part == 1 and not recorded_any:
                 self._fetch_beginning(began, title, started)
             try:
@@ -783,6 +857,8 @@ class ChannelRecorder(threading.Thread):
             finally:
                 if chat is not None:
                     chat.end_part()
+                # пустой части разделы не нужны
+                self._timeline.end(keep=os.path.exists(recorded) and os.path.getsize(recorded) > 0)
                 self._processing.unmark_active(recorded)
 
             size = os.path.getsize(recorded) if os.path.exists(recorded) else 0

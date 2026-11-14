@@ -9,6 +9,7 @@ import time
 
 import requests
 
+from .. import netproxy
 from ..i18n import tr
 from ..platforms import channel_id
 
@@ -21,10 +22,16 @@ class SiteError(Exception):
     """Площадка не ответила или ответила непонятно: текст — для человека."""
 
 
+class Gone(SiteError):
+    """Того, что спрашивали, на площадке нет и не будет (удалено, закрыто): ждать и спрашивать снова незачем."""
+
+
 def get_json(method, url, **kwargs):
     """Ответ площадки как JSON; 404 — None (такого нет), прочие сбои — SiteError."""
     kwargs.setdefault("timeout", TIMEOUT)
     kwargs.setdefault("headers", HEADERS)
+    # прокси — по площадке, чей это адрес
+    kwargs.update(netproxy.requests_kwargs(url=url))
     try:
         response = requests.request(method, url, **kwargs)
     except requests.exceptions.RequestException as error:

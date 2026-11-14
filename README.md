@@ -60,7 +60,8 @@ themselves from the app.
   (off by default) — for any channel, in favorites or not. Each channel has
   its own recording settings: quality, chat, recording from the start,
   conversion (MP4, MKV or sound only), splitting and how long to keep
-  recordings. An optional limit on simultaneous recordings (in total and per
+  recordings. Auto-record filters: record only chosen categories or streams
+  with certain words in the title. An optional limit on simultaneous recordings (in total and per
   platform) queues extra streams by channel priority, and a recording warns
   when it falls behind or the platform seems to limit downloading.
 - **From the very start:** if recording begins mid-stream, the part before it
@@ -84,10 +85,14 @@ themselves from the app.
 - **Library and player:** everything recorded and downloaded, with
   thumbnails, filters and disk usage. Watch in the window with synced chat,
   keyboard shortcuts and speed control, even while it is still recording;
-  cut a clip or burn the chat video into the picture. "Edit…" converts any
+  the seek bar shows the stream's sections by the categories the streamer
+  switched between; cut a clip or burn the chat video into the picture. "Edit…" converts any
   recording or download (`.ts`, MP4, MKV, WebM → MP4, MKV or sound only)
   without re-encoding and splits it by size, duration or into equal parts,
   or both at once.
+- **Gaps:** what a recording is missing — pieces of video and stretches of
+  chat — is downloaded from the stream recording on the platform and put
+  back in place.
 - **Safety:** stops recording before the disk fills up, can move old
   recordings to the Recycle Bin, and checks recordings for gaps. However the
   program is closed — from Task Manager or by shutting Windows down — what
@@ -129,6 +134,8 @@ python packaging/release.py <version> --dry-run    # plus the installer
 
 ## Other
 
+- **Proxy:** the settings take an address (HTTP or SOCKS5) and the platforms
+  that go through it; the others connect directly.
 - **Updates:** on start the app checks GitHub for a new release and shows
   an update button. An installed copy downloads and runs the new installer,
   a portable copy the new archive; either file must match the size and

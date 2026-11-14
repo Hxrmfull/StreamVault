@@ -46,6 +46,8 @@
   "download_fragments": 4,
   "twitch_auth_token": "",
   "ytdlp_extra_args": [],
+  "proxy_url": "",
+  "proxy_platforms": ["twitch", "kick", "youtube", "vkvideolive"],
   "chat_mode": "none",
   "live_chat": "text",
   "chat_width": 422,

@@ -21,7 +21,7 @@ import time
 import traceback
 import uuid
 
-from .. import sites, util
+from .. import netproxy, sites, util
 from ..ffmpeg import FFmpegLocator, own_dir_for
 from ..twitchdownloader import TwitchDownloaderLocator
 from ..twitchdownloader import own_dir_for as twitchdownloader_dir
@@ -47,6 +47,26 @@ CHAT_ONLY = "chat"
 CHAT_ARCHIVE = "chat-archive"
 # докачка пропусков в чате своей записи (chatgaps): с площадки, потом из архива чатов
 CHAT_GAPS = "chat-gaps"
+# докачка пропусков видео своей записи из записи эфира на площадке (archive/videogaps.py)
+VIDEO_GAPS = "video-gaps"
+# Пока ffmpeg, качающий отрезок, не начал писать, в файле один заголовок (десятки байт):
+# по нему ни размера, ни скорости не понять
+SECTION_SIZE_MIN = 64 * 1024
+
+
+def section_progress(position, size, speed, spent, length):
+    """
+    Ход отрезка, который качает ffmpeg: position — докуда он дошёл (секунды отрезка),
+    size — сколько записал, speed — байт в секунду, spent — сколько уже качается.
+    Размеру и скорости веры нет, пока записан один заголовок: было «48 Б из 2,0 КБ ·
+    0,0020664143694423473 Б/с».
+    """
+    share = min(0.999, max(0.0, position / length))
+    sized = size >= SECTION_SIZE_MIN
+    return {"percent": share * 100.0, "downloaded": size if sized else None,
+            "total": size / share if sized and share > 0.02 else None,
+            "speed": speed if sized and speed and speed >= 1 else None,
+            "eta": spent * (1 - share) / share if share > 0.02 else None}
 # участок пропуска с площадки — с запасом по краям: на стыках сообщения сверяются по id
 GAP_PADDING = 3
 
@@ -177,10 +197,11 @@ def build_download_base(directory, label, title, moment, video_id, suffix=""):
     return os.path.join(directory, name)
 
 
-# Отрезок с начала записи качается своими запросами, а не ffmpeg — у всех площадок:
-# ffmpeg качает HLS по куску и у записи идущего эфира Twitch и Kick шёл в десятки раз
-# медленнее CDN (archive/hlssection.py); VK — ffmpeg ещё и не доверяет сертификату
-# CDN; YouTube — рвёт долгие соединения ffmpeg (archive/dashsection.py)
+# Отрезок записи (с начала или из середины) качается своими запросами, а не ffmpeg —
+# у всех площадок: ffmpeg качает HLS по куску и у записи идущего эфира Twitch и Kick
+# шёл в десятки раз медленнее CDN (archive/hlssection.py); VK — ffmpeg ещё и не доверяет
+# сертификату CDN; YouTube — рвёт долгие соединения ffmpeg, а отрезок из середины отдаёт
+# ему медленнее, чем идёт видео (archive/dashsection.py)
 OWN_SECTION_PLATFORMS = ("twitch", "kick", "vkvideolive", "youtube")
 
 
@@ -485,6 +506,41 @@ class DownloadManager:
             self._emit(existing)
             return existing
         logging.info(tr("загрузка добавлена: {name}", name=tr("пропуски чата: {name}", name=os.path.basename(part))))
+        if self._bus is not None:
+            self._bus.emit("download", job=snapshot)
+        return snapshot["id"]
+
+    def add_gap_video(self, part, platform, channel, start, gaps, title="", height=None):
+        """
+        Докачать пропуски видео части своей записи: gaps — пропуски из проверки
+        записи ([{"at", "length", "kept"}], время — от начала части), start —
+        когда часть началась (секунды эпохи), height — высота её кадра (отрезки
+        берутся в том же качестве). Та же часть второй раз не ставится, пока её
+        загрузка не закончена. Возвращает id.
+        """
+        stem = os.path.splitext(part)[0]
+        with self._lock:
+            for job in self._jobs:
+                if job["quality"] == VIDEO_GAPS and job.get("fixed_target") == stem and job["state"] in UNFINISHED:
+                    if job["state"] in (PAUSED, FAILED):
+                        self._requeue(job)
+                    existing = job["id"]
+                    break
+            else:
+                existing = None
+                snapshot = self._new_job(stream_url(platform, channel), VIDEO_GAPS, None,
+                                         {"title": title, "channel": channel, "platform": platform, "kind": "vod",
+                                          "timestamp": start}, chat.NONE, stem)
+                job = self._job(snapshot["id"])
+                job["gaps"] = {"channel": channel, "start": float(start), "video": part, "height": height,
+                               "gaps": [dict(gap) for gap in gaps]}
+                job["video_id"] = "gaps"         # сведения у yt-dlp не спрашиваются: это не видео
+                self._save()
+                snapshot = copy.deepcopy(job)
+        if existing is not None:
+            self._emit(existing)
+            return existing
+        logging.info(tr("загрузка добавлена: {name}", name=tr("пропуски видео: {name}", name=os.path.basename(part))))
         if self._bus is not None:
             self._bus.emit("download", job=snapshot)
         return snapshot["id"]
@@ -984,6 +1040,8 @@ class DownloadManager:
             return self._chat_from_archive(job_id, runtime, job)
         if job["quality"] == CHAT_GAPS:
             return self._fill_chat_gaps(job_id, runtime, job)
+        if job["quality"] == VIDEO_GAPS:
+            return self._fill_video_gaps(job_id, runtime, job)
 
         if job.get("chat_only"):
             if job["file"] and os.path.exists(job["file"]):
@@ -1024,9 +1082,9 @@ class DownloadManager:
         if job["quality"] == CHAT_ONLY:
             return self._chat_without_video(job_id, runtime, job)
 
-        # отрезок из середины своими запросами — только у VK (ffmpeg не доверяет сертификату CDN);
-        # у остальных его качает ffmpeg через yt-dlp, как и раньше
-        if job["platform"] in OWN_SECTION_PLATFORMS and job["section"]                 and (not job["section"][0] or job["platform"] == "vkvideolive"):
+        # клип — один небольшой файл, а не запись кусками: его середину берёт yt-dlp, как и раньше
+        if job["platform"] in OWN_SECTION_PLATFORMS and job["section"] and (
+                not job["section"][0] or job["platform"] == "vkvideolive" or job.get("kind") != "clip"):
             done = self._own_section(job_id, runtime, job)
             if done:
                 return None
@@ -1054,7 +1112,7 @@ class DownloadManager:
 
     def _own_section(self, job_id, runtime, job):
         """
-        Отрезок с начала записи — своими запросами: HLS одним потоком (VK)
+        Отрезок записи — своими запросами: HLS одним потоком (Twitch, Kick, VK)
         или видео и звук mp4 с оглавлением (YouTube). Возвращает True, если
         загрузка этим и кончилась; False — формат не тот, качать как обычно.
         """
@@ -1069,9 +1127,7 @@ class DownloadManager:
         hls = len(chosen) == 1 and protocols[0].startswith("m3u8")
         dash = all(protocol == "https" for protocol in protocols) \
             and all(item.get("ext") in ("mp4", "m4a") for item in chosen)
-        # отрезок из середины — только HLS (куски плейлиста); видео и звук mp4 — ffmpeg, как раньше
         start = float(job["section"][0] or 0)
-        dash = dash and not start
         ffmpeg = self._ffmpeg.path()
         if not all(item.get("url") for item in chosen) or not (hls or (dash and ffmpeg)):
             return False
@@ -1099,19 +1155,24 @@ class DownloadManager:
                 found = {}
                 produced = hlssection.download(chosen[0]["url"], chosen[0].get("http_headers"), job["section"][1],
                                                job["target"], progress, stopped=stopped,
-                                               workers=self._settings["download_fragments"], start=start, found=found)
+                                               workers=self._settings["download_fragments"], start=start, found=found,
+                                               proxies=netproxy.requests_proxies(job["platform"]))
                 if ffmpeg:
                     produced = hlssection.from_zero(ffmpeg, produced, found.get("lead") or 0.0,
                                                     job["section"][1] - start if start else None)
             else:
                 produced = dashsection.download([(item["url"], item.get("http_headers")) for item in chosen],
-                                                job["section"][1], job["target"], ffmpeg, progress, stopped=stopped)
+                                                job["section"][1], job["target"], ffmpeg, progress, stopped=stopped,
+                                                start=start, session=netproxy.session(job["platform"]))
         except hlssection.PlaylistError as error:
             # плейлист не взять своими запросами — до кусков не дошло: тот же отрезок через ffmpeg
             logging.info(tr("{name}: {error}, скачивание через ffmpeg", name=job["title"] or job["url"], error=error))
             return False
-        except dashsection.NoIndex as error:
-            # оглавления нет — до скачивания дело не дошло: тот же отрезок обычным путём
+        except (dashsection.NoIndex, dashsection.Refused) as error:
+            # оглавления нет или файл не отдаётся — до скачивания дело не дошло: тот же отрезок обычным путём
+            if runtime["stop"]:
+                self._finish(job_id, runtime, None)
+                return True
             logging.info(tr("{name}: {error}, скачивание через ffmpeg", name=job["title"] or job["url"], error=error))
             return False
         except (hlssection.HlsSectionError, dashsection.DashSectionError) as error:
@@ -1119,6 +1180,162 @@ class DownloadManager:
             return True
         self._finish_with_chat(job_id, runtime, produced)
         return True
+
+    def _gap_piece(self, formats, platform, start, end, target, progress, stopped):
+        """
+        Отрезок записи эфира для вклейки на место пропуска — своими запросами,
+        целыми кусками: начинается с ключевого кадра (чуть раньше start), время —
+        от нуля. formats — выбранные yt-dlp форматы записи эфира. Возвращает путь
+        файла; так не взять — videogaps.GapError.
+        """
+        from . import videogaps
+        protocols = [str(item.get("protocol") or "") for item in formats]
+        hls = len(formats) == 1 and protocols[0].startswith("m3u8")
+        dash = all(protocol == "https" for protocol in protocols) \
+            and all(item.get("ext") in ("mp4", "m4a") for item in formats)
+        ffmpeg = self._ffmpeg.path()
+        if not ffmpeg or not all(item.get("url") for item in formats) or not (hls or dash):
+            raise videogaps.GapError(tr("запись эфира на площадке отдаётся в виде, из которого отрезок не взять"))
+        try:
+            if hls:
+                produced = hlssection.download(formats[0]["url"], formats[0].get("http_headers"), end, target, progress,
+                                               stopped=stopped, workers=self._settings["download_fragments"],
+                                               start=start, proxies=netproxy.requests_proxies(platform))
+                # целыми кусками, со временем от нуля: начало куска — ключевой кадр
+                return hlssection.from_zero(ffmpeg, produced)
+            return dashsection.download([(item["url"], item.get("http_headers")) for item in formats], end, target,
+                                        ffmpeg, progress, stopped=stopped, start=start, whole=True,
+                                        session=netproxy.session(platform))
+        except (hlssection.HlsSectionError, dashsection.DashSectionError) as error:
+            raise videogaps.GapError(str(error))
+
+    def _fill_video_gaps(self, job_id, runtime, job):
+        """
+        Пропуски видео части своей записи (add_gap_video): вокруг каждого из записи
+        эфира на площадке скачивается отрезок с запасом и вклеивается на место по
+        кадрам (archive/videogaps.py). Запись заменяется результатом, только когда
+        он готов и его длина сошлась; до того она не трогается. Не закрытые
+        пропуски остаются в итогах проверки записи — со сдвигом на вклеенное.
+        """
+        from . import videogaps
+        from .. import integrity
+        from ..library import probe_duration
+        info = job.get("gaps") or {}
+        video = info.get("video") or ""
+        gaps = [gap for gap in info.get("gaps") or () if gap.get("length")]
+        if not video or not os.path.exists(video):
+            return self._finish(job_id, runtime, FAILED, error=tr("записи, в которой пропуски, больше нет"))
+        ffmpeg = self._ffmpeg.path()
+        if not ffmpeg:
+            return self._finish(job_id, runtime, FAILED, error=tr("нужен ffmpeg — его можно скачать в настройках"))
+        if not gaps:
+            return self._finish(job_id, runtime, FAILED, error=tr("пропусков, длина которых известна, в записи нет"))
+        platform = job.get("platform") or "twitch"
+        site = sites.site(platform).NAME
+        self._update(job_id, state=DOWNLOADING, file=video, error="")
+        logging.info(tr("пропуски видео: {name}, участков: {count}", name=os.path.basename(video), count=len(gaps)))
+        stopped = lambda: bool(runtime["stop"])     # noqa: E731
+        steps = len(gaps) + 1
+
+        def report(step, share):
+            with self._lock:
+                self._job(job_id)["progress"] = {"percent": min(99.0, (step + share) / steps * 100.0),
+                                                 "downloaded": None, "total": None, "speed": None, "eta": None}
+            self._emit(job_id, progress_only=True)
+
+        try:
+            vod = self.find_vod(platform, info["channel"], info["start"] + gaps[0]["at"], job.get("title") or "")
+        except Exception as error:
+            return self._finish(job_id, runtime, FAILED, error=tr("запись эфира на {site} не нашлась: {error}",
+                                                                  site=site, error=error))
+        if runtime["stop"]:
+            return self._finish(job_id, runtime, None)
+        if vod is None:
+            return self._finish(job_id, runtime, FAILED, error=tr("записи эфира на {site} нет", site=site))
+        # те же кодеки и та же высота кадра, что у записи: иначе без перекодирования не вклеить
+        quality = "h264:%d" % int(info["height"]) if info.get("height") else "h264:best"
+        try:
+            described = self.ytdlp_json(["-J", "--no-warnings", "--color", "never", *ytdlp.format_args(quality),
+                                         "--", vod["url"]])
+        except ytdlp.YtdlpError as error:
+            return self._finish(job_id, runtime, FAILED, error=str(error))
+        formats = (described or {}).get("requested_formats") or [described or {}]
+        shift = info["start"] - (vod.get("timestamp") or info["start"])
+        duration = vod.get("duration") or 0
+        folder = os.path.join(os.path.dirname(os.path.abspath(self._settings.path)), "cache", "videogaps")
+        os.makedirs(folder, exist_ok=True)
+        pieces, notes, made = {}, [], []
+        glued = 0.0          # сколько секунд эфира выпало из времени записи до этого пропуска
+        try:
+            for index, gap in enumerate(gaps):
+                if runtime["stop"]:
+                    return self._finish(job_id, runtime, None)
+                # где пропуск в записи эфира: время записи плюс то, что из него уже выпало
+                on_vod = gap["at"] + glued + shift
+                if not gap.get("kept"):
+                    glued += gap["length"]
+                # запас вперёд больше: эфир доходит до записи с задержкой, пропуск на деле — раньше расчёта
+                begin = max(0.0, on_vod - videogaps.PAD - videogaps.LATENCY)
+                end = on_vod + gap["length"] + videogaps.PAD
+                if duration and begin >= duration:
+                    notes.append(tr("этого места в записи эфира на {site} нет", site=site))
+                    continue
+                target = os.path.join(folder, "%s.%d" % (job_id, index))
+                try:
+                    piece = self._gap_piece(formats, platform, begin, end, target,
+                                            lambda share, _written, step=index: report(step, share), stopped)
+                except videogaps.GapError as error:
+                    if runtime["stop"]:
+                        return self._finish(job_id, runtime, None)
+                    notes.append(str(error))
+                    logging.info(tr("пропуск на {at} не закрыт: {error}", at=videogaps.clock(gap["at"]), error=error))
+                    continue
+                made.append(piece)
+                pieces[index] = (piece, on_vod - begin)
+            if not pieces:
+                return self._finish(job_id, runtime, FAILED, error="; ".join(dict.fromkeys(notes))
+                                    or tr("отрезки записи эфира не скачались"))
+            self._update(job_id, state=PROCESSING)
+            output = os.path.splitext(video)[0] + videogaps.FILLING + os.path.splitext(video)[1]
+            before = probe_duration(ffmpeg, video)
+            try:
+                plans, refused = videogaps.fill(ffmpeg, video, gaps, pieces, output,
+                                                lambda share: report(len(gaps), share))
+            except OSError as error:
+                return self._finish(job_id, runtime, FAILED, error=tr("отрезки не вклеились: {error}", error=error))
+            notes += refused
+            if not plans:
+                return self._finish(job_id, runtime, FAILED, error="; ".join(dict.fromkeys(notes)))
+            done, added = len(plans), sum(item["added"] for item in plans)
+            after = probe_duration(ffmpeg, output)
+            if not before or not after or abs(after - (before + added)) > videogaps.LENGTH_SLACK:
+                util.remove_quietly(output)
+                return self._finish(job_id, runtime, FAILED, error=tr(
+                    "длина вышла {got} вместо {want} — запись оставлена как была",
+                    got=videogaps.clock(after or 0), want=videogaps.clock((before or 0) + added)))
+            try:
+                os.replace(output, video)
+            except OSError:
+                util.remove_quietly(output)
+                return self._finish(job_id, runtime, FAILED, error=tr(
+                    "запись открыта в другой программе (или в проигрывателе окна) — закрой её и попробуй снова"))
+            # что осталось не закрытым — в итоги проверки записи, со временем после вклейки
+            # (пропуски неизвестной длины в gaps не входят: они остаются как были)
+            closed = {id(gaps[item["index"]]): item["added"] for item in plans}
+            left, moved = [], 0.0
+            for gap in info.get("gaps") or ():
+                if id(gap) in closed:
+                    moved += closed[id(gap)]
+                else:
+                    left.append(dict(gap, at=round(gap["at"] + moved, 3)))
+            integrity.IntegrityStore.at(integrity.integrity_path(self._settings)).put(video, left, after)
+        finally:
+            for piece in made:
+                util.remove_quietly(piece)
+        logging.info(tr("пропуски видео: {name}, закрыто {done} из {count}, запись стала длиннее на {added}",
+                        name=os.path.basename(video), done=done, count=len(gaps), added=videogaps.clock(added)))
+        return self._finish(job_id, runtime, DONE, file=video, error="",
+                            reason=tr("закрыто {done} из {count}", done=done, count=len(gaps)) if done < len(gaps) else "")
 
     def _chat_without_video(self, job_id, runtime, job):
         """
@@ -1708,14 +1925,9 @@ class DownloadManager:
                         rate = (meter["size"] - meter["bytes"]) / (now - meter["time"])
                         meter["speed"] = rate if meter["speed"] is None else meter["speed"] * 0.7 + rate * 0.3
                         meter.update(time=now, bytes=meter["size"])
-                    share = min(0.999, max(0.0, meter["position"] / length))
-                    spent = now - meter["began"]
                     with self._lock:
-                        self._job(job_id)["progress"] = {
-                            "percent": share * 100.0, "downloaded": meter["size"] or None,
-                            "total": meter["size"] / share if share > 0.02 and meter["size"] else None,
-                            "speed": meter["speed"],
-                            "eta": spent * (1 - share) / share if share > 0.02 else None}
+                        self._job(job_id)["progress"] = section_progress(
+                            meter["position"], meter["size"], meter["speed"], now - meter["began"], length)
                     self._emit(job_id, progress_only=True)
                 elif kind == "postprocess":
                     if data.get("status") == "started" and ytdlp.is_heavy_postprocessor(data):
@@ -1750,7 +1962,8 @@ class DownloadManager:
                     state = PAUSED
             retry = None
             # чат из архива — не начало эфира: его отказ по делу, повтор ничего не даст
-            if state == FAILED and job.get("fixed_target") and job["quality"] not in (CHAT_ARCHIVE, CHAT_GAPS) \
+            if state == FAILED and job.get("fixed_target") \
+                    and job["quality"] not in (CHAT_ARCHIVE, CHAT_GAPS, VIDEO_GAPS) \
                     and not runtime.get("remove"):
                 # начало эфира — само ещё раз, а не ждать, пока нажмут «Повторить»;
                 # в строке — короткая причина, текст ошибки — в журнале
